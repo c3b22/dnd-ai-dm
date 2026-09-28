@@ -10,6 +10,11 @@ export interface RoundContext {
 
 export interface RoundRepository {
   getRoundContext(roundId: string): Promise<RoundContext>;
+  insertPlayerActionMessages(
+    campaignId: string,
+    roundId: string,
+    actions: RoundAction[]
+  ): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
   updateCampaignSummary(
@@ -75,6 +80,19 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           actionText: row.action_text,
         })),
       };
+    },
+
+    async insertPlayerActionMessages(campaignId, roundId, actions) {
+      if (actions.length === 0) return;
+      const { error } = await supabase.from('messages').insert(
+        actions.map((a) => ({
+          campaign_id: campaignId,
+          round_id: roundId,
+          role: 'player' as const,
+          content: `${a.playerDisplayName}: ${a.actionText}`,
+        }))
+      );
+      if (error) throw error;
     },
 
     async insertDmMessagePlaceholder(campaignId, roundId) {

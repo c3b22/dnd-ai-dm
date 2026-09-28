@@ -25,9 +25,14 @@ export async function processRound(
   const context = await deps.repository.getRoundContext(roundId);
   const prompt = assemblePrompt(context.campaignSummary, context.recentMessages, context.actions);
 
+  // Generate before writing anything: the real adapter resolves only once Gemini has
+  // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
+  // DM message or player-action messages that a stale-reclaim retry would duplicate.
+  const stream = await deps.generateNarration(prompt);
+
+  await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
   const messageId = await deps.repository.insertDmMessagePlaceholder(context.campaignId, roundId);
 
-  const stream = await deps.generateNarration(prompt);
   for await (const chunk of stream) {
     await deps.repository.appendToMessage(messageId, chunk);
   }

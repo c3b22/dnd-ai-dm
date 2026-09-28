@@ -14,6 +14,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       recentMessages: [],
       actions: [{ playerDisplayName: 'Prem', actionText: 'Look around' }],
     }),
+    insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
     updateCampaignSummary: vi.fn().mockResolvedValue(undefined),
@@ -55,6 +56,43 @@ describe('processRound', () => {
     expect(repository.appendToMessage).toHaveBeenNthCalledWith(2, 'msg-1', 'a torch.');
     expect(repository.closeRoundAndOpenNext).toHaveBeenCalledWith('camp-1', 'round-1');
     expect(repository.updateCampaignSummary).not.toHaveBeenCalled();
+  });
+
+  it('persists the round actions as player messages before the DM narration message', async () => {
+    const repository = createFakeRepository();
+    const deps: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi.fn().mockResolvedValue(fakeStream(['Narration.'])),
+    };
+
+    await processRound(deps, 'round-1');
+
+    expect(repository.insertPlayerActionMessages).toHaveBeenCalledWith('camp-1', 'round-1', [
+      { playerDisplayName: 'Prem', actionText: 'Look around' },
+    ]);
+    const order = (fn: unknown) => vi.mocked(fn as () => void).mock.invocationCallOrder[0];
+    expect(order(repository.getRoundContext)).toBeLessThan(
+      order(repository.insertPlayerActionMessages)
+    );
+    expect(order(repository.insertPlayerActionMessages)).toBeLessThan(
+      order(repository.insertDmMessagePlaceholder)
+    );
+  });
+
+  it('writes nothing and leaves the round open if narration generation fails', async () => {
+    const repository = createFakeRepository();
+    const deps: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi.fn().mockRejectedValue(new Error('Gemini down')),
+    };
+
+    await expect(processRound(deps, 'round-1')).rejects.toThrow('Gemini down');
+
+    expect(repository.insertPlayerActionMessages).not.toHaveBeenCalled();
+    expect(repository.insertDmMessagePlaceholder).not.toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).not.toHaveBeenCalled();
   });
 
   it('rotates the campaign summary when recent history has grown past the threshold', async () => {
