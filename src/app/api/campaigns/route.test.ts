@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createCampaign } from './route';
+import { createCampaign } from '@/lib/campaign/createCampaign';
 
 function createFakeSupabase(responses: Record<string, any>) {
   const calls: { table: string; action: string }[] = [];

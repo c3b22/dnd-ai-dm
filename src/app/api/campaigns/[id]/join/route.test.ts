@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { joinCampaign } from './route';
+import { joinCampaign } from '@/lib/campaign/joinCampaign';
 
 function createFakeSupabase(playerResponse: any) {
   return {
