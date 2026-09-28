@@ -27,6 +27,16 @@ describe('ActionInput', () => {
     expect(onSubmit).toHaveBeenCalledWith('I search the chest');
   });
 
+  it('shows an error and keeps input enabled when the submit is rejected', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('RLS violation'));
+    render(<ActionInput onSubmit={onSubmit} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Attack' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not submit/i);
+    expect(screen.getByRole('button', { name: 'Move' })).toBeEnabled();
+  });
+
   it('ignores a submit of empty free text', async () => {
     const onSubmit = vi.fn();
     render(<ActionInput onSubmit={onSubmit} />);

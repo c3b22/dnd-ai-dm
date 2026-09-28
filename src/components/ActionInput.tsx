@@ -11,11 +11,17 @@ export interface ActionInputProps {
 export function ActionInput({ onSubmit }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(actionText: string) {
     if (!actionText.trim() || submitted) return;
-    await onSubmit(actionText.trim());
-    setSubmitted(true);
+    setError(null);
+    try {
+      await onSubmit(actionText.trim());
+      setSubmitted(true);
+    } catch {
+      setError('Could not submit your action. Please try again.');
+    }
   }
 
   return (
@@ -48,6 +54,7 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
           Send
         </button>
       </form>
+      {error && <p role="alert">{error}</p>}
       {submitted && <p>Action submitted — waiting for the rest of the table.</p>}
     </div>
   );

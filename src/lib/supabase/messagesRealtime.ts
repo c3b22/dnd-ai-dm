@@ -6,10 +6,11 @@ export async function fetchInitialMessages(campaignId: string): Promise<Message[
     .from('messages')
     .select('id, role, content')
     .eq('campaign_id', campaignId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(50);
   if (error) throw error;
-  return data as Message[];
+  // Newest 50, flipped back to chronological order for display.
+  return (data as Message[]).reverse();
 }
 
 export function subscribeToNewMessages(

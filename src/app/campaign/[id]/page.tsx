@@ -16,6 +16,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
   const playerId = searchParams.get('playerId') ?? '';
   const [roundId, setRoundId] = useState<string | null>(null);
+  const [actionStatus, setActionStatus] = useState<{ acted: number; total: number } | null>(null);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
     fetch('/api/round/process', {
@@ -41,7 +42,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   useEffect(() => {
     if (!roundId) return;
+    setActionStatus(null);
     const unsubscribe = subscribeToRoundActionCount(campaignId, roundId, (actionCount, playerCount) => {
+      setActionStatus({ acted: actionCount, total: playerCount });
       if (playerCount > 0 && actionCount >= playerCount) {
         triggerProcessing(roundId);
       }
@@ -56,8 +59,16 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         fetchInitialMessages={fetchInitialMessages}
         subscribeToNewMessages={subscribeToNewMessages}
       />
+      {actionStatus && (
+        <p>
+          {actionStatus.acted} / {actionStatus.total} players have acted this round
+        </p>
+      )}
       {roundId && (
-        <ActionInput onSubmit={(actionText) => submitAction(roundId, playerId, actionText)} />
+        <ActionInput
+          key={roundId}
+          onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
+        />
       )}
       {roundId && (
         <button onClick={() => triggerProcessing(roundId)}>
