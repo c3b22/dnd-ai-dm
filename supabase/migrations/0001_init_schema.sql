@@ -65,25 +65,27 @@ alter table messages enable row level security;
 alter table game_state enable row level security;
 alter table campaign_summary enable row level security;
 
+create or replace function is_campaign_member(target_campaign_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from players
+    where players.campaign_id = target_campaign_id
+    and players.user_id = auth.uid()
+  );
+$$;
+
 create policy "players can view their campaigns"
   on campaigns for select
-  using (
-    exists (
-      select 1 from players
-      where players.campaign_id = campaigns.id
-      and players.user_id = auth.uid()
-    )
-  );
+  using (is_campaign_member(campaigns.id));
 
 create policy "users can view players in their campaigns"
   on players for select
-  using (
-    exists (
-      select 1 from players as me
-      where me.campaign_id = players.campaign_id
-      and me.user_id = auth.uid()
-    )
-  );
+  using (is_campaign_member(players.campaign_id));
 
 create policy "users can join a campaign as themselves"
   on players for insert
@@ -91,22 +93,15 @@ create policy "users can join a campaign as themselves"
 
 create policy "players can view rounds in their campaigns"
   on rounds for select
-  using (
-    exists (
-      select 1 from players
-      where players.campaign_id = rounds.campaign_id
-      and players.user_id = auth.uid()
-    )
-  );
+  using (is_campaign_member(rounds.campaign_id));
 
 create policy "players can view round actions in their campaigns"
   on round_actions for select
   using (
     exists (
-      select 1 from players
-      join rounds on rounds.id = round_actions.round_id
-      where players.campaign_id = rounds.campaign_id
-      and players.user_id = auth.uid()
+      select 1 from rounds
+      where rounds.id = round_actions.round_id
+      and is_campaign_member(rounds.campaign_id)
     )
   );
 
@@ -122,30 +117,14 @@ create policy "players can submit only their own action"
 
 create policy "players can view messages in their campaigns"
   on messages for select
-  using (
-    exists (
-      select 1 from players
-      where players.campaign_id = messages.campaign_id
-      and players.user_id = auth.uid()
-    )
-  );
+  using (is_campaign_member(messages.campaign_id));
 
 create policy "players can view game state in their campaigns"
   on game_state for select
-  using (
-    exists (
-      select 1 from players
-      where players.campaign_id = game_state.campaign_id
-      and players.user_id = auth.uid()
-    )
-  );
+  using (is_campaign_member(game_state.campaign_id));
 
 create policy "players can view campaign summary in their campaigns"
   on campaign_summary for select
-  using (
-    exists (
-      select 1 from players
-      where players.campaign_id = campaign_summary.campaign_id
-      and players.user_id = auth.uid()
-    )
-  );
+  using (is_campaign_member(campaign_summary.campaign_id));
+
+alter publication supabase_realtime add table messages, round_actions, campaigns;

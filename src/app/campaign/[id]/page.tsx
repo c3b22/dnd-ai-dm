@@ -8,7 +8,7 @@ import { fetchInitialMessages, subscribeToNewMessages } from '@/lib/supabase/mes
 import { submitAction } from '@/lib/supabase/submitAction';
 import {
   subscribeToRoundActionCount,
-  getActivePlayerCount,
+  subscribeToCurrentRound,
 } from '@/lib/supabase/roundActionsRealtime';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -32,15 +32,16 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       .eq('id', campaignId)
       .single()
       .then(({ data }) => setRoundId(data?.current_round_id ?? null));
+
+    const unsubscribe = subscribeToCurrentRound(campaignId, (newRoundId) => {
+      setRoundId(newRoundId);
+    });
+    return unsubscribe;
   }, [campaignId]);
 
   useEffect(() => {
     if (!roundId) return;
-    let playerCount = 0;
-    getActivePlayerCount(campaignId).then((count) => {
-      playerCount = count;
-    });
-    const unsubscribe = subscribeToRoundActionCount(roundId, (actionCount) => {
+    const unsubscribe = subscribeToRoundActionCount(campaignId, roundId, (actionCount, playerCount) => {
       if (playerCount > 0 && actionCount >= playerCount) {
         triggerProcessing(roundId);
       }
