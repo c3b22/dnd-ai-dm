@@ -40,14 +40,28 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       const { data: summaryRow } = await supabase
         .from('campaign_summary')
-        .select('summary')
+        .select('summary, covers_up_to_round')
         .eq('campaign_id', campaignId)
         .maybeSingle();
 
-      const { data: messageRows, error: messagesError } = await supabase
+      let sinceTimestamp: string | null = null;
+      if (summaryRow?.covers_up_to_round) {
+        const { data: coveredRound } = await supabase
+          .from('rounds')
+          .select('opened_at')
+          .eq('id', summaryRow.covers_up_to_round)
+          .maybeSingle();
+        sinceTimestamp = coveredRound?.opened_at ?? null;
+      }
+
+      let messagesQuery = supabase
         .from('messages')
         .select('role, content')
-        .eq('campaign_id', campaignId)
+        .eq('campaign_id', campaignId);
+      if (sinceTimestamp) {
+        messagesQuery = messagesQuery.gt('created_at', sinceTimestamp);
+      }
+      const { data: messageRows, error: messagesError } = await messagesQuery
         .order('created_at', { ascending: false })
         .limit(40);
       if (messagesError) throw messagesError;
