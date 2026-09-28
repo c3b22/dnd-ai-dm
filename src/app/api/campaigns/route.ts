@@ -30,10 +30,11 @@ export async function createCampaign(
     .single();
   if (roundError) throw roundError;
 
-  await supabase
+  const { error: campaignUpdateError } = await supabase
     .from('campaigns')
     .update({ current_round_id: round.id })
     .eq('id', campaign.id);
+  if (campaignUpdateError) throw campaignUpdateError;
 
   return { campaign, player, round };
 }

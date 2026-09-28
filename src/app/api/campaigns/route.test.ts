@@ -46,4 +46,28 @@ describe('createCampaign', () => {
       'update:campaigns',
     ]);
   });
+
+  it('throws when campaign update fails', async () => {
+    const updateError = new Error('network error');
+    const client = {
+      from: () => ({
+        insert: () => ({
+          select: () => ({
+            single: () => Promise.resolve({ data: { id: 'camp-1' }, error: null }),
+          }),
+        }),
+        update: () => ({
+          eq: () => Promise.resolve({ data: null, error: updateError }),
+        }),
+      }),
+    } as any;
+
+    await expect(
+      createCampaign(client, {
+        name: 'Test',
+        userId: 'user-1',
+        displayName: 'Prem',
+      })
+    ).rejects.toThrow(updateError);
+  });
 });
