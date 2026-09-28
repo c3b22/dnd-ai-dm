@@ -31,6 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 test-output.txt
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # IDE
 .vscode/
 .idea/
