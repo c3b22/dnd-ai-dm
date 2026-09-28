@@ -6,6 +6,10 @@ import { processRound } from '@/lib/round/processRound';
 import { generateNarration } from '@/lib/ai/geminiClient';
 import { realGeminiDeps } from '@/lib/ai/vercelAiSdkAdapter';
 
+// Explicit Vercel function timeout (seconds). Kept below claimRound's 90s stale-reclaim
+// window so a timed-out attempt is only re-claimed after it has definitely stopped.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const { roundId } = await request.json();
   if (!roundId) {

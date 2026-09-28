@@ -1995,10 +1995,10 @@ git commit -m "feat: wire join and campaign session pages end-to-end"
 This is the verification the spec calls for — it can't be automated:
 
 1. Deploy to Vercel (or run `npm run dev` locally) with `.env.local` filled in from Task 2.
-2. Call `POST /api/campaigns` with `{ "name": "Test Campaign", "userId": "<any-uuid>", "displayName": "GM" }` (or build a tiny form later) to create a campaign; note the returned `campaign.id`.
-3. Open `/join/<campaign.id>` in one browser tab per player, each entering a different display name.
-4. In each tab, submit an action for the open round (quick action or free text) and confirm every tab's session log updates with the same DM narration at the same time once the last player submits.
-5. Deliberately trigger a Gemini 429 (e.g. by sending several rounds in quick succession) and confirm the round still completes via the fallback model instead of erroring out.
+2. Open the home page (`/`), enter a campaign name and a display name, and click "Create campaign". This signs you in anonymously and creates the campaign with you as its first player, then redirects to `/campaign/<campaign.id>?playerId=...`; note the `campaign.id` from the URL. (Do not call `POST /api/campaigns` by hand with a made-up `userId` — `players.user_id` is a foreign key to `auth.users(id)`, so it must be the id of a real signed-in Supabase user.)
+3. Open `/join/<campaign.id>` once per additional player, each in a **separate browser profile or separate browser** (e.g. Chrome, Firefox, and an incognito/private window), each entering a different display name. Do **not** use multiple tabs of the same browser profile: Supabase stores the anonymous auth session in shared `localStorage`, so signing in from a second tab silently replaces the first tab's session.
+4. In each browser, submit an action for the open round (quick action or free text). Confirm the "N / M players have acted this round" counter updates in every browser, and that once the last player submits, every browser's session log shows the players' actions followed by the same DM narration, and the action input re-enables for the next round.
+5. Deliberately trigger a Gemini 429 (e.g. by sending several rounds in quick succession) and confirm the round still completes via the fallback model instead of erroring out. Note the SDK retries the primary model twice (≈6s of backoff) before surfacing the 429, so the fallback narration arrives noticeably later. If both models fail, the round must stay open (no empty DM message) and "Process round now" should retry it once the 90s stale-reclaim window has passed.
 6. Play one full session (~2–3 hours) with the actual target group, per the spec's testing approach, and note whether Gemini Flash's Thai narration quality and the free-tier rate limit hold up at this scale — both flagged as unverified-until-tried in the shared research doc.
 
 ---

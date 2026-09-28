@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-const DEFAULT_STALE_AFTER_MS = 30_000;
+// Must exceed the route's maxDuration (60s) so a still-running attempt is never re-claimed.
+const DEFAULT_STALE_AFTER_MS = 90_000;
 
 export async function claimRound(
   supabase: SupabaseClient,
