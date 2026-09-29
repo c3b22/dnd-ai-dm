@@ -3,6 +3,8 @@ import type { RoundRepository } from './roundRepository';
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
+  /** Hands a claimed round back to 'pending' so a retry doesn't wait out the stale window. */
+  releaseRound?: (roundId: string) => Promise<void>;
   repository: RoundRepository;
   generateNarration: (prompt: string) => Promise<AsyncIterable<string>>;
 }
@@ -22,13 +24,21 @@ export async function processRound(
     return { processed: false };
   }
 
-  const context = await deps.repository.getRoundContext(roundId);
-  const prompt = assemblePrompt(context.campaignSummary, context.recentMessages, context.actions);
-
-  // Generate before writing anything: the real adapter resolves only once Gemini has
-  // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
-  // DM message or player-action messages that a stale-reclaim retry would duplicate.
-  const stream = await deps.generateNarration(prompt);
+  let context: Awaited<ReturnType<RoundRepository['getRoundContext']>>;
+  let prompt: string;
+  let stream: AsyncIterable<string>;
+  try {
+    context = await deps.repository.getRoundContext(roundId);
+    prompt = assemblePrompt(context.campaignSummary, context.recentMessages, context.actions);
+    // Generate before writing anything: the real adapter resolves only once Gemini has
+    // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
+    // DM message or player-action messages that a retry would duplicate.
+    stream = await deps.generateNarration(prompt);
+  } catch (error) {
+    // Nothing was written yet, so it is safe to release the claim for an immediate retry.
+    await deps.releaseRound?.(roundId).catch(() => {});
+    throw error;
+  }
 
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
   const messageId = await deps.repository.insertDmMessagePlaceholder(context.campaignId, roundId);

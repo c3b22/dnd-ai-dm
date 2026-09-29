@@ -11,16 +11,20 @@ export interface ActionInputProps {
 export function ActionInput({ onSubmit }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(actionText: string) {
-    if (!actionText.trim() || submitted) return;
+    if (!actionText.trim() || submitted || submitting) return;
     setError(null);
+    setSubmitting(true);
     try {
       await onSubmit(actionText.trim());
       setSubmitted(true);
     } catch {
       setError('Could not submit your action. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -31,7 +35,7 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
           <button
             key={action}
             type="button"
-            disabled={submitted}
+            disabled={submitted || submitting}
             onClick={() => handleSubmit(action)}
           >
             {action}
@@ -47,11 +51,11 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
         <input
           aria-label="free text action"
           value={freeText}
-          disabled={submitted}
+          disabled={submitted || submitting}
           onChange={(e) => setFreeText(e.target.value)}
         />
-        <button type="submit" disabled={submitted}>
-          Send
+        <button type="submit" disabled={submitted || submitting}>
+          {submitting ? 'Sending…' : 'Send'}
         </button>
       </form>
       {error && <p role="alert">{error}</p>}

@@ -17,13 +17,19 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const playerId = searchParams.get('playerId') ?? '';
   const [roundId, setRoundId] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<{ acted: number; total: number } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadingCampaign, setLoadingCampaign] = useState(true);
+  const [processing, setProcessing] = useState(false);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
+    setProcessing(true);
     fetch('/api/round/process', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roundId: currentRoundId }),
-    });
+    })
+      .catch(() => {})
+      .finally(() => setProcessing(false));
   }, []);
 
   useEffect(() => {
@@ -31,8 +37,13 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       .from('campaigns')
       .select('current_round_id')
       .eq('id', campaignId)
-      .single()
-      .then(({ data }) => setRoundId(data?.current_round_id ?? null));
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) setLoadError(error.message);
+        else if (!data) setLoadError('Campaign not found, or this browser session is not a member of it. Try joining again.');
+        setRoundId(data?.current_round_id ?? null);
+        setLoadingCampaign(false);
+      });
 
     const unsubscribe = subscribeToCurrentRound(campaignId, (newRoundId) => {
       setRoundId(newRoundId);
@@ -54,6 +65,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   return (
     <main>
+      <style>{`@keyframes dm-spin{to{transform:rotate(360deg)}}`}</style>
+      {loadingCampaign && <p>Loading campaign…</p>}
+      {loadError && <p role="alert">{loadError}</p>}
       <MessageList
         campaignId={campaignId}
         fetchInitialMessages={fetchInitialMessages}
@@ -62,6 +76,25 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       {actionStatus && (
         <p>
           {actionStatus.acted} / {actionStatus.total} players have acted this round
+        </p>
+      )}
+      {processing && (
+        <p role="status" aria-live="polite">
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-block',
+              width: 14,
+              height: 14,
+              marginRight: 8,
+              border: '2px solid #ccc',
+              borderTopColor: '#333',
+              borderRadius: '50%',
+              animation: 'dm-spin 0.8s linear infinite',
+              verticalAlign: 'middle',
+            }}
+          />
+          The Dungeon Master is narrating… please wait.
         </p>
       )}
       {roundId && (

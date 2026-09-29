@@ -20,6 +20,13 @@ export async function POST(request: NextRequest) {
   const result = await processRound(
     {
       claimRound: (id) => claimRound(supabase, id),
+      releaseRound: async (id) => {
+        await supabase
+          .from('rounds')
+          .update({ status: 'pending', processing_started_at: null })
+          .eq('id', id)
+          .eq('status', 'processing');
+      },
       repository: createSupabaseRoundRepository(supabase),
       generateNarration: (prompt) => generateNarration(prompt, realGeminiDeps),
     },
