@@ -37,6 +37,24 @@ export function subscribeToCurrentScene(
   };
 }
 
+export function subscribeToCampaignStarted(
+  campaignId: string,
+  onStartedChange: (startedAt: string | null) => void
+): () => void {
+  const channel = supabaseBrowserClient
+    .channel(`campaign_started:${campaignId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
+      (payload) => onStartedChange((payload.new as { started_at?: string | null }).started_at ?? null)
+    )
+    .subscribe();
+
+  return () => {
+    supabaseBrowserClient.removeChannel(channel);
+  };
+}
+
 export function subscribeToRoundActionCount(
   campaignId: string,
   roundId: string,

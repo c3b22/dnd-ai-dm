@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { createCampaign } from '@/lib/campaign/createCampaign';
 
 function createFakeSupabase(responses: Record<string, any>) {
-  const calls: { table: string; action: string }[] = [];
+  const calls: { table: string; action: string; payload?: unknown }[] = [];
   const from = (table: string) => {
     const builder: any = {
-      insert: () => {
-        calls.push({ table, action: 'insert' });
+      insert: (payload: unknown) => {
+        calls.push({ table, action: 'insert', payload });
         return builder;
       },
       update: () => {
@@ -47,7 +47,7 @@ describe('createCampaign', () => {
     ]);
   });
 
-  it('posts an opening DM message when an adventure is chosen', async () => {
+  it('does not post an opening message yet — the campaign waits in the lobby until started', async () => {
     const { client, calls } = createFakeSupabase({
       campaigns: { id: 'camp-1', name: 'Test' },
       players: { id: 'player-1', campaign_id: 'camp-1' },
@@ -61,7 +61,20 @@ describe('createCampaign', () => {
       adventureId: 'sunken-bell-of-marrowmere',
     });
 
-    expect(calls.map((c) => `${c.action}:${c.table}`)).toContain('insert:messages');
+    expect(calls.map((c) => `${c.action}:${c.table}`)).not.toContain('insert:messages');
+  });
+
+  it('gives every new campaign a 6-character join code', async () => {
+    const { client, calls } = createFakeSupabase({
+      campaigns: { id: 'camp-1', name: 'Test' },
+      players: { id: 'player-1', campaign_id: 'camp-1' },
+      rounds: { id: 'round-1', campaign_id: 'camp-1', status: 'pending' },
+    });
+
+    await createCampaign(client, { name: 'Test', userId: 'user-1', displayName: 'Prem' });
+
+    const campaignInsert = calls.find((c) => c.action === 'insert' && c.table === 'campaigns');
+    expect((campaignInsert?.payload as { join_code: string }).join_code).toHaveLength(6);
   });
 
   it('throws when campaign update fails', async () => {

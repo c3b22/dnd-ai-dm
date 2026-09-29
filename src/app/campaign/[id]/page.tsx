@@ -6,6 +6,7 @@ import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import { CampaignLobby } from '@/components/CampaignLobby';
 import { D20Icon } from '@/components/D20Icon';
 import { RoundTimer } from '@/components/RoundTimer';
 import { CampaignSettingsPanel } from '@/components/CampaignSettingsPanel';
@@ -28,7 +29,9 @@ import {
   subscribeToRoundActionCount,
   subscribeToCurrentRound,
   subscribeToCurrentScene,
+  subscribeToCampaignStarted,
 } from '@/lib/supabase/roundActionsRealtime';
+import { startCampaignForClient } from '@/lib/supabase/startCampaign';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
@@ -40,6 +43,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [sceneId, setSceneId] = useState<string | null>(null);
   const [adventureId, setAdventureId] = useState<string | null>(null);
   const [campaignName, setCampaignName] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [startedAt, setStartedAt] = useState<string | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -62,7 +67,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   useEffect(() => {
     supabaseBrowserClient
       .from('campaigns')
-      .select('current_round_id, name')
+      .select('current_round_id, name, join_code, started_at')
       .eq('id', campaignId)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -70,6 +75,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         else if (!data) setLoadError('ไม่พบแคมเปญนี้ หรือเบราว์เซอร์นี้ยังไม่ได้เป็นสมาชิก ลองเข้าร่วมใหม่อีกครั้ง');
         setRoundId(data?.current_round_id ?? null);
         setCampaignName(data?.name ?? '');
+        setJoinCode(data?.join_code ?? '');
+        setStartedAt(data?.started_at ?? null);
         setLoadingCampaign(false);
       });
 
@@ -93,12 +100,18 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     const unsubscribeScene = subscribeToCurrentScene(campaignId, (newSceneId) => {
       if (newSceneId) setSceneId(newSceneId);
     });
+    const unsubscribeStarted = subscribeToCampaignStarted(campaignId, setStartedAt);
     return () => {
       unsubscribeRound();
       unsubscribeScene();
       unsubscribeSettings();
+      unsubscribeStarted();
     };
   }, [campaignId]);
+
+  async function handleStart() {
+    await startCampaignForClient(campaignId);
+  }
 
   const refreshPlayers = useCallback(() => {
     fetchRoundPlayers(campaignId, roundId)
@@ -177,14 +190,35 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   const adventure = getAdventure(adventureId);
 
+  if (loadingCampaign || loadError) {
+    return (
+      <main className="screen">
+        {loadingCampaign && <p className="status">กำลังโหลดแคมเปญ…</p>}
+        {loadError && (
+          <p role="alert" className="error">
+            {loadError}
+          </p>
+        )}
+      </main>
+    );
+  }
+
+  if (startedAt === null) {
+    return (
+      <CampaignLobby
+        campaignName={campaignName}
+        adventureTitle={adventure?.titleTh}
+        joinCode={joinCode}
+        players={players}
+        currentPlayerId={playerId}
+        isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
+        onStart={handleStart}
+      />
+    );
+  }
+
   return (
     <main className="screen">
-      {loadingCampaign && <p className="status">กำลังโหลดแคมเปญ…</p>}
-      {loadError && (
-        <p role="alert" className="error">
-          {loadError}
-        </p>
-      )}
       <div className="table-grid">
         <div className="stage">
           <div className="stage-head">

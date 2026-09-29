@@ -16,6 +16,9 @@ export default function Home() {
   const [adventureId, setAdventureId] = useState(ADVENTURES[0].id);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joiningByCode, setJoiningByCode] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [rolling, setRolling] = useState(false);
   const [rollText, setRollText] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -69,6 +72,26 @@ export default function Home() {
       router.push(`/campaign/${campaign.id}?playerId=${player.id}`);
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleJoinByCode() {
+    setJoinError(null);
+    setJoiningByCode(true);
+    try {
+      const response = await fetch('/api/campaigns/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ joinCode }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setJoinError(body.error ?? 'ไม่พบห้องนี้ ตรวจสอบรหัสอีกครั้ง');
+        return;
+      }
+      router.push(`/join/${body.campaignId}`);
+    } finally {
+      setJoiningByCode(false);
     }
   }
 
@@ -164,6 +187,34 @@ export default function Home() {
           )}
         </form>
       </div>
+
+      <form
+        className="panel join-by-code"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleJoinByCode();
+        }}
+      >
+        <div className="field">
+          <label htmlFor="join-code-input">มีรหัสห้องจากเพื่อนแล้ว?</label>
+          <input
+            id="join-code-input"
+            aria-label="join code"
+            placeholder="กรอกรหัสห้อง 6 หลัก"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            maxLength={6}
+          />
+        </div>
+        <button className="btn ghost" type="submit" disabled={!joinCode.trim() || joiningByCode}>
+          {joiningByCode ? 'กำลังค้นหา…' : 'เข้าร่วมห้อง'}
+        </button>
+        {joinError && (
+          <p role="alert" className="error">
+            {joinError}
+          </p>
+        )}
+      </form>
     </main>
   );
 }

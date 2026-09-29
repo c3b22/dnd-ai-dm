@@ -1,5 +1,5 @@
-import { getAdventure } from '@/lib/adventures/adventures';
 import { openingSceneId } from '@/lib/scenes/scenes';
+import { generateJoinCode } from './joinCode';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 export async function createCampaign(
@@ -8,7 +8,7 @@ export async function createCampaign(
 ) {
   const { data: campaign, error: campaignError } = await supabase
     .from('campaigns')
-    .insert({ name: params.name, adventure_id: params.adventureId ?? null })
+    .insert({ name: params.name, adventure_id: params.adventureId ?? null, join_code: generateJoinCode() })
     .select()
     .single();
   if (campaignError) throw campaignError;
@@ -47,21 +47,8 @@ export async function createCampaign(
     }
   }
 
-  // Open the story right away so players have a scene to react to before the first round.
-  const adventure = getAdventure(params.adventureId);
-  if (adventure) {
-    const { error: openingError } = await supabase.from('messages').insert({
-      campaign_id: campaign.id,
-      round_id: round.id,
-      role: 'dm',
-      content: `${adventure.titleTh}
-
-${adventure.openingTh}
-
-พวกคุณจะทำอะไร?`,
-    });
-    if (openingError) throw openingError;
-  }
+  // The opening scene posts when the owner starts the game (see startCampaign), not here —
+  // this campaign sits in the lobby first so the table can fill up before anyone sees it.
 
   return { campaign, player, round };
 }
