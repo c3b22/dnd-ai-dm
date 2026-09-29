@@ -1,0 +1,47 @@
+{
+  "styleGuide": "Wide cinematic environment concept art, digital matte painting with visible painterly brush strokes, high fantasy tabletop RPG setting, atmospheric depth, one clear light source. Keep the main subject inside the middle horizontal third of the frame because the image is cropped to a wide banner. No text, no logos, no watermark, no modern objects, no close-up faces, no people in the foreground.",
+  "genericLook": "Natural, slightly desaturated colour grading with balanced contrast (a colour tint may be applied later per adventure, so avoid extreme colour casts).",
+  "adventureLook": {
+    "sunken-bell-of-marrowmere": "Palette: cold teal, slate blue and fog grey with a single warm amber lantern glow. Mood: eerie, quiet, mournful, gothic mystery. Night, heavy mist.",
+    "the-wolf-king-of-ashenfell": "Palette: icy blue, pale white snow, deep charcoal, with small warm orange firelight accents. Mood: harsh, heroic, wintry saga. Nordic-inspired architecture.",
+    "the-thousand-doors-market": "Palette: deep indigo and violet dusk with jewel-toned glowing lanterns in gold, teal and magenta. Mood: enchanting, mischievous, slightly dangerous.",
+    "crown-of-the-sunken-king": "Palette: dusty ochre, warm torchlight orange against cool stone grey and shadow. Mood: adventurous, classic dungeon crawl, ancient and crumbling."
+  },
+  "scenes": [
+    { "id": "tavern-interior", "scope": "generic", "nameTh": "โรงเตี๊ยม (ภายใน)", "prompt": "The interior of a busy medieval fantasy tavern, warm firelight from a large stone hearth, heavy timber beams, long wooden tables with tankards and candles, a bar counter with barrels, cosy and lived-in, empty of people or with only distant silhouettes." },
+    { "id": "tavern-exterior-night", "scope": "generic", "nameTh": "หน้าโรงเตี๊ยมยามค่ำ", "prompt": "A roadside fantasy inn at night seen from the road, warm glowing windows, a hanging wooden sign with no readable text, smoke from the chimney, a stable beside it, lantern light on wet cobblestones." },
+    { "id": "city-market-day", "scope": "generic", "nameTh": "ตลาดในเมือง", "prompt": "A crowded medieval fantasy city market square in daylight, colourful cloth awnings, stalls of fruit cloth and metalwork, timber-framed buildings, banners, distant crowd as small silhouettes." },
+    { "id": "town-street-night", "scope": "generic", "nameTh": "ถนนในเมืองยามค่ำ", "prompt": "A narrow cobbled medieval fantasy town street at night, leaning half-timbered houses, a few oil lamps, wet stones reflecting light, a dark alley branching off, drifting mist." },
+    { "id": "forest-road", "scope": "generic", "nameTh": "ถนนในป่า", "prompt": "A dirt road winding through a sunlit old-growth forest, dappled light through tall trees, mossy roots, a wooden signpost with no readable text, sense of travel and quiet danger." },
+    { "id": "deep-forest", "scope": "generic", "nameTh": "ป่าลึก", "prompt": "The deep heart of an ancient dark forest, enormous gnarled trees, hanging moss, shafts of pale light, a faint narrow game trail, mysterious and slightly ominous." },
+    { "id": "mountain-pass", "scope": "generic", "nameTh": "ช่องเขา", "prompt": "A rugged mountain pass with a narrow trail between towering rock walls, distant snowy peaks, low clouds, a lone stone cairn marker, vast scale." },
+    { "id": "cave-entrance", "scope": "generic", "nameTh": "ปากถ้ำ", "prompt": "A large natural cave entrance in a rocky hillside, overgrown with vines, darkness inside, scattered bones and old torch stubs near the mouth, cool light outside and deep shadow within." },
+    { "id": "dungeon-corridor", "scope": "generic", "nameTh": "ทางเดินดันเจี้ยน", "prompt": "A long stone dungeon corridor with arched ceiling, wall torches casting flickering orange light, iron-bound wooden doors, damp floor, cobwebs, a distant vanishing point in darkness." },
+    { "id": "crypt", "scope": "generic", "nameTh": "สุสานใต้ดิน", "prompt": "An ancient underground crypt, rows of stone sarcophagi with carved lids, cold blue-green light seeping through cracks, thick dust, low mist along the floor, solemn and still." },
+    { "id": "throne-room", "scope": "generic", "nameTh": "ท้องพระโรง", "prompt": "A grand medieval fantasy throne room, tall stone columns, long banners, shafts of light from high windows, an empty carved throne on a dais at the end of a long red carpet." },
+    { "id": "castle-ruins", "scope": "generic", "nameTh": "ซากปราสาท", "prompt": "The ruins of a large castle on a hillside at dusk, collapsed towers and broken walls overgrown with ivy, long dramatic shadows, scattered rubble in the foreground, a dark gap suggesting a hidden entrance." },
+    { "id": "harbor-docks", "scope": "generic", "nameTh": "ท่าเรือ", "prompt": "A weathered wooden harbour dock with moored fishing boats, coiled rope, barrels and crates, lantern posts, calm water reflecting the sky, distant lighthouse, early evening." },
+    { "id": "campfire-night", "scope": "generic", "nameTh": "แคมป์ไฟกลางคืน", "prompt": "A travellers' campfire in a forest clearing at night, empty bedrolls and packs around it, warm firelight against cold blue moonlit trees, sparks rising, stars visible through the canopy." },
+
+    { "id": "bell-village", "scope": "sunken-bell-of-marrowmere", "nameTh": "หมู่บ้านริมทะเลสาบ", "prompt": "A fog-covered fishing village on the shore of a still lake at night, small dark cottages with a few lit windows, a pale moon behind clouds, the spire of a drowned chapel faintly visible under the black water." },
+    { "id": "bell-ferry", "scope": "sunken-bell-of-marrowmere", "nameTh": "กลางทะเลสาบ", "prompt": "A lone ferry boat with one small lantern drifting across an enormous foggy lake at night, the far shoreline barely visible, ripples spreading on dark water." },
+    { "id": "bell-hand", "scope": "sunken-bell-of-marrowmere", "nameTh": "ใต้ท่าเรือ", "prompt": "The end of a wooden pier over dark water at night, a faint ghostly teal glow beneath the surface, mist curling over the water, a sense of something rising from below." },
+
+    { "id": "wolf-hall", "scope": "the-wolf-king-of-ashenfell", "nameTh": "โถงยาวของยาร์ล", "prompt": "The interior of a vast Norse longhall, carved wooden pillars, a great central fire pit casting warm light, long feast tables, shadows in the rafters, a snow-dusted doorway in the distance." },
+    { "id": "wolf-snow", "scope": "the-wolf-king-of-ashenfell", "nameTh": "รอยเท้าบนหิมะ", "prompt": "A snowy pine forest at blue dawn, a trail of large paw prints in fresh snow leading toward distant mountains, cold pale light, breath-like mist." },
+    { "id": "wolf-pass", "scope": "the-wolf-king-of-ashenfell", "nameTh": "ช่องเขาโหยหวน", "prompt": "A narrow mountain pass in a howling blizzard, jagged black cliffs on both sides, swirling snow, several pairs of glowing yellow wolf eyes among the rocks." },
+
+    { "id": "market-square", "scope": "the-thousand-doors-market", "nameTh": "ลานตลาดยามสนธยา", "prompt": "A twilight city square filled with a magical bazaar, dozens of freestanding doorways and stalls glowing with different colours, strings of floating lanterns overhead, ornate awnings." },
+    { "id": "market-redroom", "scope": "the-thousand-doors-market", "nameTh": "ห้องพื้นกระจก", "prompt": "A surreal room with a mirror-like glass floor and an ocean for a ceiling, glowing fish swimming above, one towering red door in the centre emitting crimson light and reflecting below." },
+    { "id": "market-lanterns", "scope": "the-thousand-doors-market", "nameTh": "ร้านโคมไฟ", "prompt": "A narrow alley in a magical night market packed with hundreds of hanging lanterns in every colour, a cosy lantern seller's cart, layered depth, soft glowing bokeh." },
+
+    { "id": "crown-stairs", "scope": "crown-of-the-sunken-king", "nameTh": "บันไดลับ", "prompt": "A steep ancient stone staircase descending into darkness beneath a ruined keep, carved crescent moon and star symbols on the walls, torchlight glowing far below, dust in the air." },
+    { "id": "crown-vault", "scope": "crown-of-the-sunken-king", "nameTh": "ห้องของการ์กอยล์", "prompt": "A vaulted underground treasure chamber with a great stone arch, a stone gargoyle statue with glowing green eyes guarding a deep doorway, torches on the walls, scattered coins and rubble." }
+  ],
+  "adventureScenes": {
+    "sunken-bell-of-marrowmere": ["bell-village", "harbor-docks", "bell-ferry", "bell-hand"],
+    "the-wolf-king-of-ashenfell": ["wolf-hall", "wolf-snow", "campfire-night", "wolf-pass"],
+    "the-thousand-doors-market": ["market-square", "city-market-day", "market-redroom", "market-lanterns"],
+    "crown-of-the-sunken-king": ["castle-ruins", "castle-ruins", "crown-stairs", "crown-vault"]
+  }
+}
