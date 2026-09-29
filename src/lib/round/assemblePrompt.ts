@@ -1,4 +1,5 @@
 import { getAdventure, formatAdventureForPrompt } from '@/lib/adventures/adventures';
+import { sceneInstruction } from '@/lib/scenes/scenes';
 
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
@@ -30,7 +31,7 @@ export function assemblePrompt(
     'Narrate what happens next based on the players actions below.',
     'Always respond in Thai (ภาษาไทย), even if the players write in English.',
     '',
-    ...(adventure ? [formatAdventureForPrompt(adventure), ''] : []),
+    ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstruction(adventure.id), ''] : []),
     'Story so far:',
     campaignSummary || '(campaign just started)',
     '',

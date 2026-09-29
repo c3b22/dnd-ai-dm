@@ -1,4 +1,5 @@
 import { getAdventure } from '@/lib/adventures/adventures';
+import { openingSceneId } from '@/lib/scenes/scenes';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
 export async function createCampaign(
@@ -35,6 +36,16 @@ export async function createCampaign(
     .update({ current_round_id: round.id })
     .eq('id', campaign.id);
   if (campaignUpdateError) throw campaignUpdateError;
+
+  // Show the opening scene. Best effort: campaigns created before the scene column exists still work.
+  const sceneId = openingSceneId(params.adventureId);
+  if (sceneId) {
+    try {
+      await supabase.from('campaigns').update({ current_scene_id: sceneId }).eq('id', campaign.id);
+    } catch {
+      /* banner is optional */
+    }
+  }
 
   // Open the story right away so players have a scene to react to before the first round.
   const adventure = getAdventure(params.adventureId);

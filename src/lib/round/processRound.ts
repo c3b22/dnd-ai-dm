@@ -1,5 +1,6 @@
 import { assemblePrompt, shouldRotateSummary } from './assemblePrompt';
 import type { RoundRepository } from './roundRepository';
+import { allowedScenes, parseSceneTag } from '@/lib/scenes/scenes';
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
@@ -43,8 +44,27 @@ export async function processRound(
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
   const messageId = await deps.repository.insertDmMessagePlaceholder(context.campaignId, roundId);
 
+  // The DM ends with a [[scene: id]] tag. Hold back anything from a possible tag onward so it
+  // never reaches the visible message, then use it to move the scene banner.
+  let pending = '';
   for await (const chunk of stream) {
-    await deps.repository.appendToMessage(messageId, chunk);
+    pending += chunk;
+    const tagStart = pending.indexOf('[[');
+    let safeLength =
+      tagStart >= 0 ? tagStart : pending.endsWith('[') ? pending.length - 1 : pending.length;
+    // The tag sits on its own line, so also hold back the line break before it.
+    const lineBreak = /\s*\n\s*$/.exec(pending.slice(0, safeLength));
+    if (lineBreak) safeLength = lineBreak.index;
+    if (safeLength > 0) {
+      await deps.repository.appendToMessage(messageId, pending.slice(0, safeLength));
+      pending = pending.slice(safeLength);
+    }
+  }
+  const { sceneId, cleanText } = parseSceneTag(pending);
+  if (cleanText.trim()) await deps.repository.appendToMessage(messageId, cleanText);
+  if (sceneId && allowedScenes(context.adventureId).some((s) => s.id === sceneId)) {
+    // A missing scene column or a bad tag must never fail the round.
+    await deps.repository.setCurrentScene(context.campaignId, sceneId).catch(() => {});
   }
 
   if (shouldRotateSummary(context.recentMessages)) {

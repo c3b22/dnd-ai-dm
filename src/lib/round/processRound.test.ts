@@ -19,6 +19,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
     appendToMessage: vi.fn().mockResolvedValue(undefined),
     updateCampaignSummary: vi.fn().mockResolvedValue(undefined),
     closeRoundAndOpenNext: vi.fn().mockResolvedValue('round-2'),
+    setCurrentScene: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -123,5 +124,43 @@ describe('processRound', () => {
       'New summary.',
       'round-1'
     );
+  });
+
+  it('strips the scene tag from the message and moves the scene banner', async () => {
+    const repository = createFakeRepository();
+    const deps: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi
+        .fn()
+        .mockResolvedValue(fakeStream(['You enter the inn.', '\n[[sce', 'ne: tavern-interior]]'])),
+    };
+
+    await processRound(deps, 'round-1');
+
+    const appended = vi.mocked(repository.appendToMessage).mock.calls.map((c) => c[1]).join('');
+    expect(appended).toBe('You enter the inn.');
+    expect(repository.setCurrentScene).toHaveBeenCalledWith('camp-1', 'tavern-interior');
+  });
+
+  it('ignores a scene id the DM invented and never fails the round over it', async () => {
+    const repository = createFakeRepository({
+      setCurrentScene: vi.fn().mockRejectedValue(new Error('column missing')),
+    });
+    const deps: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi
+        .fn()
+        .mockResolvedValueOnce(fakeStream(['Text.\n[[scene: not-a-real-place]]']))
+        .mockResolvedValueOnce(fakeStream(['Text.\n[[scene: crypt]]'])),
+    };
+
+    await processRound(deps, 'round-1');
+    expect(repository.setCurrentScene).not.toHaveBeenCalled();
+
+    const second = await processRound(deps, 'round-1');
+    expect(repository.setCurrentScene).toHaveBeenCalledWith('camp-1', 'crypt');
+    expect(second.processed).toBe(true);
   });
 });

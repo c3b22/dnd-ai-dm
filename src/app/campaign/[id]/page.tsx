@@ -4,11 +4,13 @@ import { Suspense, use, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
+import { SceneBanner } from '@/components/SceneBanner';
 import { fetchInitialMessages, subscribeToNewMessages } from '@/lib/supabase/messagesRealtime';
 import { submitAction } from '@/lib/supabase/submitAction';
 import {
   subscribeToRoundActionCount,
   subscribeToCurrentRound,
+  subscribeToCurrentScene,
 } from '@/lib/supabase/roundActionsRealtime';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -17,6 +19,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const playerId = searchParams.get('playerId') ?? '';
   const [roundId, setRoundId] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<{ acted: number; total: number } | null>(null);
+  const [sceneId, setSceneId] = useState<string | null>(null);
+  const [adventureId, setAdventureId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -45,10 +49,27 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         setLoadingCampaign(false);
       });
 
-    const unsubscribe = subscribeToCurrentRound(campaignId, (newRoundId) => {
+    // Separate query so a database without the scene columns still loads the campaign.
+    supabaseBrowserClient
+      .from('campaigns')
+      .select('adventure_id, current_scene_id')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setAdventureId(data?.adventure_id ?? null);
+        setSceneId(data?.current_scene_id ?? null);
+      });
+
+    const unsubscribeRound = subscribeToCurrentRound(campaignId, (newRoundId) => {
       setRoundId(newRoundId);
     });
-    return unsubscribe;
+    const unsubscribeScene = subscribeToCurrentScene(campaignId, (newSceneId) => {
+      if (newSceneId) setSceneId(newSceneId);
+    });
+    return () => {
+      unsubscribeRound();
+      unsubscribeScene();
+    };
   }, [campaignId]);
 
   useEffect(() => {
@@ -68,6 +89,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       <style>{`@keyframes dm-spin{to{transform:rotate(360deg)}}`}</style>
       {loadingCampaign && <p>Loading campaign…</p>}
       {loadError && <p role="alert">{loadError}</p>}
+      <SceneBanner sceneId={sceneId} adventureId={adventureId} />
       <MessageList
         campaignId={campaignId}
         fetchInitialMessages={fetchInitialMessages}

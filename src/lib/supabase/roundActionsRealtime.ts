@@ -18,6 +18,25 @@ export function subscribeToCurrentRound(
   };
 }
 
+export function subscribeToCurrentScene(
+  campaignId: string,
+  onSceneChange: (sceneId: string | null) => void
+): () => void {
+  const channel = supabaseBrowserClient
+    .channel(`campaign_scene:${campaignId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
+      (payload) =>
+        onSceneChange((payload.new as { current_scene_id?: string | null }).current_scene_id ?? null)
+    )
+    .subscribe();
+
+  return () => {
+    supabaseBrowserClient.removeChannel(channel);
+  };
+}
+
 export function subscribeToRoundActionCount(
   campaignId: string,
   roundId: string,

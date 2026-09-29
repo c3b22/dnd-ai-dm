@@ -24,6 +24,7 @@ export interface RoundRepository {
     coversUpToRoundId: string
   ): Promise<void>;
   closeRoundAndOpenNext(campaignId: string, roundId: string): Promise<string>;
+  setCurrentScene(campaignId: string, sceneId: string): Promise<void>;
 }
 
 export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRepository {
@@ -158,6 +159,14 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       if (campaignError) throw campaignError;
 
       return nextRound.id as string;
+    },
+
+    async setCurrentScene(campaignId, sceneId) {
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ current_scene_id: sceneId })
+        .eq('id', campaignId);
+      if (error) throw error;
     },
   };
 }
