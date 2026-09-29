@@ -2,11 +2,11 @@ import { createServiceRoleClient } from '@/lib/supabase/server';
 
 export async function createCampaign(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  params: { name: string; userId: string; displayName: string }
+  params: { name: string; userId: string; displayName: string; adventureId?: string | null }
 ) {
   const { data: campaign, error: campaignError } = await supabase
     .from('campaigns')
-    .insert({ name: params.name })
+    .insert({ name: params.name, adventure_id: params.adventureId ?? null })
     .select()
     .single();
   if (campaignError) throw campaignError;

@@ -1,3 +1,5 @@
+import { getAdventure, formatAdventureForPrompt } from '@/lib/adventures/adventures';
+
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
   content: string;
@@ -11,8 +13,10 @@ export interface RoundAction {
 export function assemblePrompt(
   campaignSummary: string,
   recentMessages: StoredMessage[],
-  actions: RoundAction[]
+  actions: RoundAction[],
+  adventureId?: string | null
 ): string {
+  const adventure = getAdventure(adventureId);
   const historyText = recentMessages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n');
@@ -25,6 +29,7 @@ export function assemblePrompt(
     'You are the Dungeon Master for an ongoing D&D campaign.',
     'Narrate what happens next based on the players actions below.',
     '',
+    ...(adventure ? [formatAdventureForPrompt(adventure), ''] : []),
     'Story so far:',
     campaignSummary || '(campaign just started)',
     '',

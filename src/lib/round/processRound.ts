@@ -29,7 +29,7 @@ export async function processRound(
   let stream: AsyncIterable<string>;
   try {
     context = await deps.repository.getRoundContext(roundId);
-    prompt = assemblePrompt(context.campaignSummary, context.recentMessages, context.actions);
+    prompt = assemblePrompt(context.campaignSummary, context.recentMessages, context.actions, context.adventureId);
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
     // DM message or player-action messages that a retry would duplicate.

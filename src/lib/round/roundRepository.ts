@@ -3,6 +3,7 @@ import type { StoredMessage, RoundAction } from './assemblePrompt';
 
 export interface RoundContext {
   campaignId: string;
+  adventureId: string | null;
   campaignSummary: string;
   recentMessages: StoredMessage[];
   actions: RoundAction[];
@@ -36,6 +37,12 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       if (roundError) throw roundError;
 
       const campaignId = round.campaign_id as string;
+
+      const { data: campaignRow } = await supabase
+        .from('campaigns')
+        .select('adventure_id')
+        .eq('id', campaignId)
+        .maybeSingle();
 
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
@@ -73,6 +80,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       return {
         campaignId,
+        adventureId: (campaignRow?.adventure_id as string | null) ?? null,
         campaignSummary: summaryRow?.summary ?? '',
         recentMessages: (messageRows ?? []).reverse() as StoredMessage[],
         actions: (actionsRows ?? []).map((row: any) => ({

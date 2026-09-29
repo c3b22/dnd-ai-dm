@@ -32,4 +32,15 @@ describe('shouldRotateSummary', () => {
     const longMessage: StoredMessage = { role: 'dm', content: 'x'.repeat(9000) };
     expect(shouldRotateSummary([longMessage])).toBe(true);
   });
+
+  it('includes the chosen adventure outline as the story backbone', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], 'sunken-bell-of-marrowmere');
+    expect(prompt).toContain('The Sunken Bell of Marrowmere');
+    expect(prompt).toContain('Hidden truth');
+  });
+
+  it('omits adventure text when none is set', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }]);
+    expect(prompt).not.toContain('Adventure:');
+  });
 });

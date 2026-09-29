@@ -26,6 +26,16 @@ function createFakeSupabase(options: {
           }),
         };
       }
+      if (table === 'campaigns') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({ data: { adventure_id: 'test-adventure' }, error: null }),
+            }),
+          }),
+        };
+      }
       if (table === 'round_actions') {
         return {
           select: () => ({

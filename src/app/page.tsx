@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ADVENTURES } from '@/lib/adventures/adventures';
 
 export default function Home() {
   const [name, setName] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [adventureId, setAdventureId] = useState(ADVENTURES[0].id);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -23,7 +25,7 @@ export default function Home() {
     const response = await fetch('/api/campaigns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, userId: data.user.id, displayName }),
+      body: JSON.stringify({ name, userId: data.user.id, displayName, adventureId }),
     });
     if (!response.ok) {
       setError('Could not create the campaign. Please try again.');
@@ -49,6 +51,21 @@ export default function Home() {
         value={displayName}
         onChange={(e) => setDisplayName(e.target.value)}
       />
+      <fieldset>
+        <legend>Choose an adventure</legend>
+        {ADVENTURES.map((a) => (
+          <label key={a.id} style={{ display: 'block', margin: '6px 0' }}>
+            <input
+              type="radio"
+              name="adventure"
+              value={a.id}
+              checked={adventureId === a.id}
+              onChange={() => setAdventureId(a.id)}
+            />{' '}
+            <strong>{a.title}</strong> — {a.tagline}
+          </label>
+        ))}
+      </fieldset>
       <button onClick={handleCreate} disabled={!name.trim() || !displayName.trim()}>
         Create campaign
       </button>
