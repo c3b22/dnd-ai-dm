@@ -128,3 +128,29 @@ describe('setTurnOrder', () => {
     expect(updates).toHaveLength(0);
   });
 });
+
+describe('setTurnOrder with an owner-only table', () => {
+  it('lets only the owner reorder, even for their own place', async () => {
+    const { client, updates } = fakeSupabase();
+
+    await expect(
+      setTurnOrder(client, {
+        campaignId: 'c',
+        userId: 'u3',
+        playerId: 'p3',
+        orderedPlayerIds: ['p1', 'p3', 'p2'],
+        policy: 'owner',
+      })
+    ).rejects.toMatchObject({ status: 403 });
+    expect(updates).toHaveLength(0);
+
+    await setTurnOrder(client, {
+      campaignId: 'c',
+      userId: 'u1',
+      playerId: 'p1',
+      orderedPlayerIds: ['p3', 'p2', 'p1'],
+      policy: 'owner',
+    });
+    expect(updates).toHaveLength(3);
+  });
+});

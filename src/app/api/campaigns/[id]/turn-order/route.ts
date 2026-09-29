@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { setTurnOrder, TurnOrderError } from '@/lib/campaign/turnOrder';
+import { normalizeSettings } from '@/lib/campaign/settings';
 
 export async function POST(
   request: NextRequest,
@@ -23,8 +24,12 @@ export async function POST(
     return NextResponse.json({ error: 'sign in required' }, { status: 401 });
   }
 
+  const { data: campaign } = await supabase.from('campaigns').select('settings').eq('id', id).maybeSingle();
+  const policy = normalizeSettings(campaign?.settings).reorderPolicy;
+
   try {
     await setTurnOrder(supabase, {
+      policy,
       campaignId: id,
       userId: authData.user.id,
       playerId: body.playerId,

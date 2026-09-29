@@ -1,6 +1,7 @@
 import { assemblePrompt, shouldRotateSummary } from './assemblePrompt';
 import type { RoundRepository } from './roundRepository';
 import { allowedScenes, parseSceneTag } from '@/lib/scenes/scenes';
+import { normalizeSettings } from '@/lib/campaign/settings';
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
@@ -29,19 +30,23 @@ export async function processRound(
 
   let context: Awaited<ReturnType<RoundRepository['getRoundContext']>>;
   let prompt: string;
-  let rolled: { playerDisplayName: string; actionText: string; roll: number }[];
+  let rolled: { playerDisplayName: string; actionText: string; roll?: number }[];
+  let diceEnabled = true;
   let stream: AsyncIterable<string>;
   try {
     context = await deps.repository.getRoundContext(roundId);
     // The server rolls, not the model, so results are fair and can be shown to the table.
     const rollDie = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
-    rolled = context.actions.map((a) => ({ ...a, roll: rollDie() }));
+    const settings = normalizeSettings(context.settings);
+    diceEnabled = settings.diceEnabled;
+    rolled = context.actions.map((a) => (diceEnabled ? { ...a, roll: rollDie() } : { ...a }));
     prompt = assemblePrompt(
       context.campaignSummary,
       context.recentMessages,
       rolled,
       context.adventureId,
-      context.currentSceneId
+      context.currentSceneId,
+      settings
     );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
@@ -54,7 +59,15 @@ export async function processRound(
   }
 
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
-  await deps.repository.insertRollSummary(context.campaignId, roundId, rolled).catch(() => {});
+  if (diceEnabled) {
+    await deps.repository
+      .insertRollSummary(
+        context.campaignId,
+        roundId,
+        rolled.map((r) => ({ playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 }))
+      )
+      .catch(() => {});
+  }
   const messageId = await deps.repository.insertDmMessagePlaceholder(context.campaignId, roundId);
 
   // The DM ends with a [[scene: id]] tag. Hold back anything from a possible tag onward so it

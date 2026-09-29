@@ -1,5 +1,11 @@
 import { getAdventure, formatAdventureForPrompt } from '@/lib/adventures/adventures';
 import { sceneInstruction } from '@/lib/scenes/scenes';
+import {
+  DEFAULT_SETTINGS,
+  diceInstructions,
+  styleInstructions,
+  type CampaignSettings,
+} from '@/lib/campaign/settings';
 
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
@@ -18,7 +24,8 @@ export function assemblePrompt(
   recentMessages: StoredMessage[],
   actions: RoundAction[],
   adventureId?: string | null,
-  currentSceneId?: string | null
+  currentSceneId?: string | null,
+  settings: CampaignSettings = DEFAULT_SETTINGS
 ): string {
   const adventure = getAdventure(adventureId);
   const historyText = recentMessages
@@ -37,6 +44,7 @@ export function assemblePrompt(
     'You are the Dungeon Master for an ongoing D&D campaign.',
     'Narrate what happens next based on the players actions below.',
     'Always respond in Thai (ภาษาไทย), even if the players write in English.',
+    ...styleInstructions(settings),
     '',
     ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstruction(adventure.id, currentSceneId), ''] : []),
     'Story so far:',
@@ -53,12 +61,10 @@ export function assemblePrompt(
           'Resolve these actions one at a time in exactly this order. Each later action happens after the earlier ones, so it can build on, be helped by, or be blocked by what the earlier ones just did (for example the first player opens a door and the second sneaks through). Decide each outcome separately and mention who is acting as you go.',
         ]
       : []),
-    ...(actions.some((a) => a.roll !== undefined)
-      ? [
-          '',
-          'The dice results above are final. Let each roll decide how well that action goes: 1 is a disaster, 2-7 fails or has a real cost, 8-14 succeeds with complications, 15-19 succeeds well, 20 is an exceptional success. Never contradict or re-roll them.',
-        ]
-      : []),
+    ...(() => {
+      const dice = diceInstructions(settings, actions.some((a) => a.roll !== undefined));
+      return dice.length ? ['', ...dice] : [];
+    })(),
   ].join('\n');
 }
 

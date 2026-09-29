@@ -176,6 +176,13 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .pl-row.dragging { opacity: 0.45; }
 .pl-row.drag-over { outline-color: var(--accent); background: var(--surface-2); }
 .scene-title { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; pointer-events: none; font-family: var(--f-display); font-size: clamp(18px, 3.4vw, 26px); letter-spacing: 0.12em; color: #f6efe0; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8); opacity: 0; animation: title-flash 2.4s ease both; }
+.settings-list { margin: 0; display: grid; gap: 8px; }
+.settings-list div { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
+.settings-list dt { color: var(--muted); }
+.settings-list dd { margin: 0; text-align: right; }
+.settings-actions { display: flex; gap: 8px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; min-width: 0; width: 100%; }
 .timer { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .timer b { font-family: var(--f-display); font-size: 20px; font-variant-numeric: tabular-nums; }
 .timer.low b { color: var(--danger); }

@@ -11,16 +11,19 @@ export interface PlayerOrderProps {
   onMove: (playerId: string, direction: -1 | 1) => void;
   /** Drop the dragged player into the place of another one. */
   onReorder?: (draggedId: string, targetId: string) => void;
+  /** Table rule: 'owner' means only the owner arranges the order. */
+  reorderPolicy?: 'owner' | 'self';
 }
 
 const AVATAR_COLORS = ['#e0a94a', '#5fb3a5', '#d46a5a', '#8a7fd6', '#6fa8dc'];
 
-export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder }: PlayerOrderProps) {
+export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder, reorderPolicy = 'self' }: PlayerOrderProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const currentIsOwner = players.find((p) => p.id === currentPlayerId)?.isOwner ?? false;
   // The owner arranges everyone; other players only move themselves.
-  const canMove = (playerId: string) => !locked && (currentIsOwner || playerId === currentPlayerId);
+  const canMove = (playerId: string) =>
+    !locked && (currentIsOwner || (reorderPolicy === 'self' && playerId === currentPlayerId));
   const actedCount = players.filter((p) => p.acted).length;
   const progress = players.length ? (actedCount / players.length) * 100 : 0;
 
@@ -100,7 +103,11 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
       </p>
       <p className="order-hint">
         ลำดับนี้คือลำดับที่ DM ตัดสิน action ในรอบนี้ คนหลังต่อยอดจากผลของคนก่อนได้{' '}
-        {currentIsOwner ? 'คุณเป็นเจ้าของโต๊ะ จัดลำดับทุกคนได้' : 'คุณเลื่อนได้เฉพาะลำดับของตัวเอง'}
+        {currentIsOwner
+          ? 'คุณเป็นเจ้าของโต๊ะ จัดลำดับทุกคนได้'
+          : reorderPolicy === 'self'
+            ? 'คุณเลื่อนได้เฉพาะลำดับของตัวเอง'
+            : 'โต๊ะนี้ให้เจ้าของโต๊ะเป็นคนจัดลำดับ'}
       </p>
     </section>
   );

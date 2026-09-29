@@ -180,7 +180,7 @@ describe('processRound', () => {
 
     expect(generateNarration.mock.calls[0][0]).toContain('Prem (rolled 14 on a d20): Look around');
     expect(repository.insertRollSummary).toHaveBeenCalledWith('camp-1', 'round-1', [
-      { playerDisplayName: 'Prem', actionText: 'Look around', roll: 14 },
+      { playerDisplayName: 'Prem', roll: 14 },
     ]);
   });
 });

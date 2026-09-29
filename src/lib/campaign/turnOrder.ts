@@ -47,7 +47,14 @@ export function canReorder(params: {
 
 export async function setTurnOrder(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  params: { campaignId: string; userId: string; playerId: string; orderedPlayerIds: string[] }
+  params: {
+    campaignId: string;
+    userId: string;
+    playerId: string;
+    orderedPlayerIds: string[];
+    /** 'owner': only the owner may reorder. 'self' (default): players may also move themselves. */
+    policy?: 'owner' | 'self';
+  }
 ): Promise<void> {
   const { data, error } = await supabase
     .from('players')
@@ -77,6 +84,10 @@ export async function setTurnOrder(
     !ids.every((id) => submitted.has(id))
   ) {
     throw new TurnOrderError('orderedPlayerIds must list every player in the campaign exactly once');
+  }
+
+  if (params.policy === 'owner' && requester.id !== findOwnerId(players)) {
+    throw new TurnOrderError('this table lets only the owner set the order', 403);
   }
 
   const allowed = canReorder({

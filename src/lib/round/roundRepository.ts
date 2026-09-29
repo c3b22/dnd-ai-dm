@@ -1,11 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StoredMessage, RoundAction } from './assemblePrompt';
 import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
+import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
 
 export interface RoundContext {
   campaignId: string;
   adventureId: string | null;
   currentSceneId: string | null;
+  settings: CampaignSettings;
   campaignSummary: string;
   recentMessages: StoredMessage[];
   actions: RoundAction[];
@@ -52,6 +54,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .eq('id', campaignId)
         .maybeSingle();
 
+      // Separate query: a database without the settings column just plays with the defaults.
+      const { data: settingsRow } = await supabase
+        .from('campaigns')
+        .select('settings')
+        .eq('id', campaignId)
+        .maybeSingle();
+
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
         .select('action_text, players(display_name, turn_order, created_at)')
@@ -90,6 +99,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         campaignId,
         adventureId: (campaignRow?.adventure_id as string | null) ?? null,
         currentSceneId: (campaignRow?.current_scene_id as string | null) ?? null,
+        settings: normalizeSettings(settingsRow?.settings),
         campaignSummary: summaryRow?.summary ?? '',
         recentMessages: (messageRows ?? []).reverse() as StoredMessage[],
         // Actions reach the DM in the order the players chose for this round.
