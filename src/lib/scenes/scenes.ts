@@ -46,12 +46,22 @@ export function parseSceneTag(text: string): { sceneId: string | null; cleanText
   return { sceneId: match[1].toLowerCase(), cleanText: text.replace(SCENE_TAG, '').trimEnd() };
 }
 
-export function sceneInstruction(adventureId: string | null | undefined): string {
-  const list = allowedScenes(adventureId)
-    .map((s) => `${s.id} (${s.nameTh})`)
-    .join(', ');
+export function sceneInstruction(
+  adventureId: string | null | undefined,
+  currentSceneId?: string | null
+): string {
+  const own = allowedScenes(adventureId).filter((s) => s.scope !== 'generic');
+  const generic = allowedScenes(adventureId).filter((s) => s.scope === 'generic');
+  const format = (list: Scene[]) => list.map((s) => `${s.id} (${s.nameTh})`).join(', ');
+  const current = getScene(currentSceneId);
   return [
     'After your narration, add one final line containing only [[scene: ID]] to say where the party is now.',
-    `Choose the ID from this list, and keep the previous place if nothing changed: ${list}.`,
-  ].join(' ');
+    current
+      ? `The party is currently at ${current.id} (${current.nameTh}); repeat that ID unless the story has clearly moved them somewhere else.`
+      : '',
+    `Prefer this adventure's own places: ${format(own)}.`,
+    `Otherwise use a general place: ${format(generic)}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface Message {
   id: string;
@@ -17,12 +17,19 @@ export interface MessageListProps {
   ) => () => void;
 }
 
+const ROLE_CLASS: Record<Message['role'], string> = {
+  dm: 'msg dm',
+  player: 'msg pl',
+  system: 'msg system',
+};
+
 export function MessageList({
   campaignId,
   fetchInitialMessages,
   subscribeToNewMessages,
 }: MessageListProps) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,11 +53,18 @@ export function MessageList({
     };
   }, [campaignId, fetchInitialMessages, subscribeToNewMessages]);
 
+  // Keep the newest narration in view.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
   return (
-    <ul aria-label="session log">
+    <ul className="log" aria-label="session log" ref={listRef}>
       {messages.map((message) => (
-        <li key={message.id} data-role={message.role}>
-          {message.content}
+        <li key={message.id} className={ROLE_CLASS[message.role]} data-role={message.role}>
+          {message.role === 'dm' && <span className="who">DM</span>}
+          <span>{message.content}</span>
         </li>
       ))}
     </ul>

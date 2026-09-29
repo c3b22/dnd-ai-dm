@@ -6,6 +6,8 @@ import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import { D20Icon } from '@/components/D20Icon';
+import { getAdventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
   saveTurnOrder,
@@ -29,6 +31,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [players, setPlayers] = useState<RoundPlayer[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(null);
   const [adventureId, setAdventureId] = useState<string | null>(null);
+  const [campaignName, setCampaignName] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -47,13 +50,14 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   useEffect(() => {
     supabaseBrowserClient
       .from('campaigns')
-      .select('current_round_id')
+      .select('current_round_id, name')
       .eq('id', campaignId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) setLoadError(error.message);
-        else if (!data) setLoadError('Campaign not found, or this browser session is not a member of it. Try joining again.');
+        else if (!data) setLoadError('ไม่พบแคมเปญนี้ หรือเบราว์เซอร์นี้ยังไม่ได้เป็นสมาชิก ลองเข้าร่วมใหม่อีกครั้ง');
         setRoundId(data?.current_round_id ?? null);
+        setCampaignName(data?.name ?? '');
         setLoadingCampaign(false);
       });
 
@@ -117,55 +121,69 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     return unsubscribe;
   }, [roundId, campaignId, triggerProcessing]);
 
+  const adventure = getAdventure(adventureId);
+
   return (
-    <main>
-      <style>{`@keyframes dm-spin{to{transform:rotate(360deg)}}`}</style>
-      {loadingCampaign && <p>Loading campaign…</p>}
-      {loadError && <p role="alert">{loadError}</p>}
-      <SceneBanner sceneId={sceneId} adventureId={adventureId} />
-      <MessageList
-        campaignId={campaignId}
-        fetchInitialMessages={fetchInitialMessages}
-        subscribeToNewMessages={subscribeToNewMessages}
-      />
-      {players.length > 0 && (
-        <PlayerOrder
-          players={players}
-          currentPlayerId={playerId}
-          locked={players.find((p) => p.id === playerId)?.acted ?? false}
-          onMove={handleMove}
-        />
-      )}
-      {processing && (
-        <p role="status" aria-live="polite">
-          <span
-            aria-hidden="true"
-            style={{
-              display: 'inline-block',
-              width: 14,
-              height: 14,
-              marginRight: 8,
-              border: '2px solid #ccc',
-              borderTopColor: '#333',
-              borderRadius: '50%',
-              animation: 'dm-spin 0.8s linear infinite',
-              verticalAlign: 'middle',
-            }}
-          />
-          The Dungeon Master is narrating… please wait.
+    <main className="screen">
+      {loadingCampaign && <p className="status">กำลังโหลดแคมเปญ…</p>}
+      {loadError && (
+        <p role="alert" className="error">
+          {loadError}
         </p>
       )}
-      {roundId && (
-        <ActionInput
-          key={roundId}
-          onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
-        />
-      )}
-      {roundId && (
-        <button onClick={() => triggerProcessing(roundId)}>
-          Process round now (if someone is stuck)
-        </button>
-      )}
+      <div className="table-grid">
+        <div className="stage">
+          <div className="stage-head">
+            <span className="n">{campaignName || adventure?.titleTh || 'โต๊ะเล่น'}</span>
+            {adventure && <span className="round">{adventure.titleTh}</span>}
+          </div>
+          <SceneBanner sceneId={sceneId} adventureId={adventureId} />
+          <MessageList
+            campaignId={campaignId}
+            fetchInitialMessages={fetchInitialMessages}
+            subscribeToNewMessages={subscribeToNewMessages}
+          />
+          {processing && (
+            <div className="thinking" role="status" aria-live="polite">
+              <span className="d20">
+                <D20Icon />
+              </span>
+              <span>DM กำลังเรียบเรียงเรื่องราว… อาจใช้เวลาสักครู่ (ยังไม่ค้าง)</span>
+            </div>
+          )}
+          {roundId && (
+            <ActionInput
+              key={roundId}
+              onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
+            />
+          )}
+        </div>
+
+        <aside className="rail">
+          {players.length > 0 && (
+            <PlayerOrder
+              players={players}
+              currentPlayerId={playerId}
+              locked={players.find((p) => p.id === playerId)?.acted ?? false}
+              onMove={handleMove}
+            />
+          )}
+          {adventure && (
+            <section className="card" aria-label="เรื่องที่เล่น">
+              <h3>เรื่องที่เล่น</h3>
+              <div className="quest">
+                {adventure.titleTh}
+                <small>{adventure.taglineTh}</small>
+              </div>
+            </section>
+          )}
+          {roundId && (
+            <button type="button" className="btn ghost" onClick={() => triggerProcessing(roundId)}>
+              ให้ DM ตัดสินตอนนี้ (ถ้ามีคนติดอยู่)
+            </button>
+          )}
+        </aside>
+      </div>
     </main>
   );
 }
@@ -173,7 +191,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 export default function CampaignPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   return (
-    <Suspense fallback={<p>Loading…</p>}>
+    <Suspense fallback={<p className="status">กำลังโหลด…</p>}>
       <CampaignPageContent campaignId={id} />
     </Suspense>
   );

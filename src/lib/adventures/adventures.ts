@@ -9,6 +9,9 @@ export interface Adventure {
   openingTh: string;
   title: string;
   tagline: string;
+  titleTh: string;
+  taglineTh: string;
+  toneTh: string;
   tone: string;
   setting: string;
   hook: string;
@@ -20,6 +23,9 @@ export interface Adventure {
 export const ADVENTURES: Adventure[] = [
   {
     id: 'sunken-bell-of-marrowmere',
+    titleTh: 'ระฆังจมแห่งมาร์โรว์เมียร์',
+    taglineTh: 'ระฆังจากหมู่บ้านที่จมน้ำดังทุกคืน และคนตายกำลังตอบรับ',
+    toneTh: 'ลึกลับ ขนลุกเบาๆ',
     openingTh: 'หมอกหนาลอยเหนือทะเลสาบมาร์โรว์เมียร์ หมู่บ้านชาวประมงที่โบสถ์เก่าจมลงใต้น้ำเมื่อหลายสิบปีก่อน ตั้งแต่สัปดาห์ก่อนระฆังใต้น้ำก็ดังขึ้นทุกคืน และชาวประมงตื่นมาพบรอยเท้าเปียกๆ ทอดจากชายฝั่งมาถึงหน้าประตูบ้านตัวเอง คืนนี้ระฆังกำลังจะดังอีกครั้ง...',
     title: 'The Sunken Bell of Marrowmere',
     tagline: 'A drowned village rings its bell at night, and the dead are answering.',
@@ -42,6 +48,9 @@ export const ADVENTURES: Adventure[] = [
   },
   {
     id: 'the-wolf-king-of-ashenfell',
+    titleTh: 'ราชาหมาป่าแห่งแอชเชนเฟลล์',
+    taglineTh: 'อาณาจักรน้ำแข็งต้องการวีรบุรุษ หรือใครสักคนที่จะทำลายคำสาป',
+    toneTh: 'มหากาพย์ หนาวเหน็บ',
     openingTh: 'ฤดูหนาวในแอชเชนเฟลล์ยืดยาวเกินไปหนึ่งปีแล้ว ในโถงยาวของยาร์ลแอสกริม ไฟในเตากำลังริบหรี่ ทุกคืนพระจันทร์เต็มดวง หมาป่าที่เดินสองขาเหมือนมนุษย์จะบุกปล้นหมู่บ้าน ยาร์ลสัญญาทั้งทอง ที่ดิน และที่นั่งข้างโต๊ะแก่ผู้ที่นำหัวมันมา และเขากำลังมองมาที่พวกคุณ...',
     title: 'The Wolf King of Ashenfell',
     tagline: 'A frozen kingdom needs a hero, or someone to end a curse.',
@@ -64,6 +73,9 @@ export const ADVENTURES: Adventure[] = [
   },
   {
     id: 'the-thousand-doors-market',
+    titleTh: 'ตลาดพันประตู',
+    taglineTh: 'ตลาดเร่ที่มาทุกร้อยปี ขายได้ทุกอย่างในราคาที่ต้องจ่าย',
+    toneTh: 'แฟนตาซี เจ้าเล่ห์',
     openingTh: 'เมื่อพระอาทิตย์ตก ลานเมืองที่ว่างเปล่าก็คลี่ออกเป็นตลาดสุดวิเศษ ประตูของแต่ละแผงเปิดสู่ที่ที่เป็นไปไม่ได้ ทุกข้อตกลงมีผลผูกมัด เพื่อนร่วมทางคนหนึ่งของพวกคุณถูกขายไปในข้อตกลงเก่าโดยไม่รู้ตัว ตลาดยอมให้ซื้อสัญญาคืนได้ก่อนรุ่งสาง เท่านั้น...',
     title: 'The Market of a Thousand Doors',
     tagline: 'A traveling bazaar that appears once per century sells anything, at a price.',
@@ -86,6 +98,9 @@ export const ADVENTURES: Adventure[] = [
   },
   {
     id: 'crown-of-the-sunken-king',
+    titleTh: 'มงกุฎกษัตริย์ผู้จมสู่ใต้ดิน',
+    taglineTh: 'ลุยดันเจี้ยนใต้ปราสาทร้าง ตามหามงกุฎในตำนาน',
+    toneTh: 'ผจญภัยคลาสสิก สนุก',
     openingTh: 'แผนที่ที่ซื้อมาจากโรงเตี๊ยมพาพวกคุณมายังซากปราสาทดันมัวร์ บันไดลับที่ซ่อนอยู่ใต้ซากปรักหักพังนำลงไปสู่ห้องนิรภัยของกษัตริย์ผู้หายสาบสูญพร้อมมงกุฎ แต่เสียงขุดดินดังมาจากไม่ไกล นักล่าสมบัติคู่แข่งมาถึงก่อนแล้ว...',
     title: 'The Crown of the Sunken King',
     tagline: 'A dungeon crawl beneath a fallen keep, in search of a legendary crown.',

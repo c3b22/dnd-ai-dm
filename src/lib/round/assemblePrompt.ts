@@ -15,7 +15,8 @@ export function assemblePrompt(
   campaignSummary: string,
   recentMessages: StoredMessage[],
   actions: RoundAction[],
-  adventureId?: string | null
+  adventureId?: string | null,
+  currentSceneId?: string | null
 ): string {
   const adventure = getAdventure(adventureId);
   const historyText = recentMessages
@@ -32,7 +33,7 @@ export function assemblePrompt(
     'Narrate what happens next based on the players actions below.',
     'Always respond in Thai (ภาษาไทย), even if the players write in English.',
     '',
-    ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstruction(adventure.id), ''] : []),
+    ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstruction(adventure.id, currentSceneId), ''] : []),
     'Story so far:',
     campaignSummary || '(campaign just started)',
     '',

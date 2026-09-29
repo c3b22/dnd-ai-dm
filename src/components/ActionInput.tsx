@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-const QUICK_ACTIONS = ['Attack', 'Move', 'Talk', 'Look around'];
+const QUICK_ACTIONS = ['โจมตี', 'เคลื่อนที่', 'พูดคุย', 'สำรวจรอบๆ'];
 
 export interface ActionInputProps {
   onSubmit: (actionText: string) => Promise<void>;
@@ -21,21 +21,26 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
     try {
       await onSubmit(actionText.trim());
       setSubmitted(true);
+      setFreeText('');
     } catch {
-      setError('Could not submit your action. Please try again.');
+      setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
     } finally {
       setSubmitting(false);
     }
   }
 
+  const locked = submitted || submitting;
+
   return (
-    <div>
-      <div role="group" aria-label="quick actions">
+    <div className="dock">
+      <div className="hint-row" role="group" aria-label="quick actions">
+        <span className="lbl">เลือกเร็ว</span>
         {QUICK_ACTIONS.map((action) => (
           <button
             key={action}
             type="button"
-            disabled={submitted || submitting}
+            className="qa"
+            disabled={locked}
             onClick={() => handleSubmit(action)}
           >
             {action}
@@ -43,6 +48,7 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
         ))}
       </div>
       <form
+        className="compose"
         onSubmit={(e) => {
           e.preventDefault();
           handleSubmit(freeText);
@@ -50,16 +56,21 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
       >
         <input
           aria-label="free text action"
+          placeholder="หรือพิมพ์เอง เช่น “ค่อยๆ ย่องไปดูที่ท่าเรือ”"
           value={freeText}
-          disabled={submitted || submitting}
+          disabled={locked}
           onChange={(e) => setFreeText(e.target.value)}
         />
-        <button type="submit" disabled={submitted || submitting}>
-          {submitting ? 'Sending…' : 'Send'}
+        <button type="submit" className="btn" disabled={locked}>
+          {submitting ? 'กำลังส่ง…' : 'ส่ง'}
         </button>
       </form>
-      {error && <p role="alert">{error}</p>}
-      {submitted && <p>Action submitted — waiting for the rest of the table.</p>}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      {submitted && <p className="status ok">ส่ง action แล้ว รอเพื่อนร่วมโต๊ะ…</p>}
     </div>
   );
 }

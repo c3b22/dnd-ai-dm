@@ -1,75 +1,169 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ADVENTURES } from '@/lib/adventures/adventures';
+import { openingSceneId } from '@/lib/scenes/scenes';
+import { D20Icon } from '@/components/D20Icon';
+
+function sceneUrl(adventureId: string) {
+  return `/scenes/${openingSceneId(adventureId)}.jpg`;
+}
 
 export default function Home() {
   const [name, setName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [adventureId, setAdventureId] = useState(ADVENTURES[0].id);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [rolling, setRolling] = useState(false);
+  const [rollText, setRollText] = useState('');
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
+  const adventure = ADVENTURES.find((a) => a.id === adventureId) ?? ADVENTURES[0];
+
+  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+
+  function rollForAdventure() {
+    if (rolling) return;
+    setRolling(true);
+    let ticks = 0;
+    timer.current = setInterval(() => {
+      ticks += 1;
+      setRollText(String(1 + Math.floor(Math.random() * 20)));
+      setAdventureId(ADVENTURES[ticks % ADVENTURES.length].id);
+      if (ticks >= 12) {
+        if (timer.current) clearInterval(timer.current);
+        const roll = 1 + Math.floor(Math.random() * 20);
+        const picked = ADVENTURES[(roll - 1) % ADVENTURES.length];
+        setAdventureId(picked.id);
+        setRollText(`${roll} → ${picked.titleTh}`);
+        setRolling(false);
+      }
+    }, 110);
+  }
 
   async function handleCreate() {
     setError(null);
-    // Loaded on click, not at module scope: this page is statically prerendered at build
-    // time, and creating the Supabase client there would require its keys during `next build`.
-    const { supabaseBrowserClient } = await import('@/lib/supabase/client');
-    const { data, error: authError } = await supabaseBrowserClient.auth.signInAnonymously();
-    if (authError || !data.user) {
-      setError('Could not sign in. Please try again.');
-      return;
-    }
+    setCreating(true);
+    try {
+      // Loaded on click, not at module scope: this page is statically prerendered at build
+      // time, and creating the Supabase client there would require its keys during `next build`.
+      const { supabaseBrowserClient } = await import('@/lib/supabase/client');
+      const { data, error: authError } = await supabaseBrowserClient.auth.signInAnonymously();
+      if (authError || !data.user) {
+        setError('เข้าสู่ระบบไม่สำเร็จ ลองอีกครั้ง');
+        return;
+      }
 
-    const response = await fetch('/api/campaigns', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, userId: data.user.id, displayName, adventureId }),
-    });
-    if (!response.ok) {
-      setError('Could not create the campaign. Please try again.');
-      return;
+      const response = await fetch('/api/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, userId: data.user.id, displayName, adventureId }),
+      });
+      if (!response.ok) {
+        setError('สร้างแคมเปญไม่สำเร็จ ลองอีกครั้ง');
+        return;
+      }
+      const { campaign, player } = await response.json();
+      router.push(`/campaign/${campaign.id}?playerId=${player.id}`);
+    } finally {
+      setCreating(false);
     }
-    const { campaign, player } = await response.json();
-
-    router.push(`/campaign/${campaign.id}?playerId=${player.id}`);
   }
 
   return (
-    <main>
-      <h1>D&amp;D AI Dungeon Master</h1>
-      <input
-        aria-label="campaign name"
-        placeholder="Campaign name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <input
-        aria-label="display name"
-        placeholder="Your display name"
-        value={displayName}
-        onChange={(e) => setDisplayName(e.target.value)}
-      />
-      <fieldset>
-        <legend>Choose an adventure</legend>
-        {ADVENTURES.map((a) => (
-          <label key={a.id} style={{ display: 'block', margin: '6px 0' }}>
+    <main className="screen">
+      <div className="hero">
+        <div className="hero-die">
+          <D20Icon />
+        </div>
+        <div>
+          <h1 className="h-display" style={{ fontSize: 'clamp(26px, 5vw, 40px)' }}>
+            เลือกการผจญภัยของคุณ
+          </h1>
+          <p className="lede">
+            DM ที่เป็น AI จะเล่าเรื่องตามโครงเรื่องที่คุณเลือก และปรับตามการตัดสินใจของผู้เล่นทุกคนในโต๊ะ
+          </p>
+        </div>
+      </div>
+      <div className="roll-row">
+        <button type="button" className="btn ghost" onClick={rollForAdventure} disabled={rolling}>
+          ทอยเต๋าสุ่มเรื่อง
+        </button>
+        <span className="num" aria-live="polite">
+          {rollText}
+        </span>
+      </div>
+
+      <div className="home-grid">
+        <fieldset className="adv-list">
+          <legend className="lede" style={{ marginBottom: 8 }}>
+            เนื้อเรื่อง
+          </legend>
+          {ADVENTURES.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className="adv"
+              aria-pressed={adventureId === a.id}
+              onClick={() => setAdventureId(a.id)}
+            >
+              <span className="thumb">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={sceneUrl(a.id)} alt="" />
+              </span>
+              <span className="t">{a.titleTh}</span>
+              <span className="d">{a.taglineTh}</span>
+              <span className="chips">
+                <span className="chip">{a.toneTh}</span>
+              </span>
+            </button>
+          ))}
+        </fieldset>
+
+        <form
+          className="panel"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCreate();
+          }}
+        >
+          <div className="preview-art" key={adventure.id}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={sceneUrl(adventure.id)} alt={`ภาพฉากเปิดเรื่อง ${adventure.titleTh}`} />
+          </div>
+          <div className="preview-hook">{adventure.openingTh.split('...')[0].slice(0, 150)}…</div>
+          <div className="field">
+            <label htmlFor="campaign-name">ชื่อแคมเปญ</label>
             <input
-              type="radio"
-              name="adventure"
-              value={a.id}
-              checked={adventureId === a.id}
-              onChange={() => setAdventureId(a.id)}
-            />{' '}
-            <strong>{a.title}</strong> — {a.tagline}
-          </label>
-        ))}
-      </fieldset>
-      <button onClick={handleCreate} disabled={!name.trim() || !displayName.trim()}>
-        Create campaign
-      </button>
-      {error && <p role="alert">{error}</p>}
+              id="campaign-name"
+              aria-label="campaign name"
+              placeholder="เช่น ค่ำคืนแรกที่ทะเลสาบ"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="display-name">ชื่อตัวละครของคุณ</label>
+            <input
+              id="display-name"
+              aria-label="display name"
+              placeholder="ชื่อที่จะแสดงในโต๊ะ"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+          </div>
+          <button className="btn" type="submit" disabled={!name.trim() || !displayName.trim() || creating}>
+            {creating ? 'กำลังสร้าง…' : 'เริ่มผจญภัย'}
+          </button>
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+        </form>
+      </div>
     </main>
   );
 }

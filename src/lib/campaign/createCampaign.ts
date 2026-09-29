@@ -54,7 +54,7 @@ export async function createCampaign(
       campaign_id: campaign.id,
       round_id: round.id,
       role: 'dm',
-      content: `${adventure.title}
+      content: `${adventure.titleTh}
 
 ${adventure.openingTh}
 

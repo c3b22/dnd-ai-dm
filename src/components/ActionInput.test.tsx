@@ -8,13 +8,13 @@ describe('ActionInput', () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<ActionInput onSubmit={onSubmit} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Attack' }));
+    await userEvent.click(screen.getByRole('button', { name: 'โจมตี' }));
 
-    expect(onSubmit).toHaveBeenCalledWith('Attack');
+    expect(onSubmit).toHaveBeenCalledWith('โจมตี');
     await waitFor(() =>
-      expect(screen.getByText(/waiting for the rest of the table/i)).toBeInTheDocument()
+      expect(screen.getByText(/รอเพื่อนร่วมโต๊ะ/)).toBeInTheDocument()
     );
-    expect(screen.getByRole('button', { name: 'Move' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'เคลื่อนที่' })).toBeDisabled();
   });
 
   it('submits free text typed by the player', async () => {
@@ -22,7 +22,7 @@ describe('ActionInput', () => {
     render(<ActionInput onSubmit={onSubmit} />);
 
     await userEvent.type(screen.getByLabelText('free text action'), 'I search the chest');
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await userEvent.click(screen.getByRole('button', { name: 'ส่ง' }));
 
     expect(onSubmit).toHaveBeenCalledWith('I search the chest');
   });
@@ -31,17 +31,17 @@ describe('ActionInput', () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error('RLS violation'));
     render(<ActionInput onSubmit={onSubmit} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Attack' }));
+    await userEvent.click(screen.getByRole('button', { name: 'โจมตี' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/could not submit/i);
-    expect(screen.getByRole('button', { name: 'Move' })).toBeEnabled();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/ส่ง action ไม่สำเร็จ/);
+    expect(screen.getByRole('button', { name: 'เคลื่อนที่' })).toBeEnabled();
   });
 
   it('ignores a submit of empty free text', async () => {
     const onSubmit = vi.fn();
     render(<ActionInput onSubmit={onSubmit} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await userEvent.click(screen.getByRole('button', { name: 'ส่ง' }));
 
     expect(onSubmit).not.toHaveBeenCalled();
   });

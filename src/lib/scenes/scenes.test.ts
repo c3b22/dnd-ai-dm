@@ -50,3 +50,12 @@ describe('scene catalog', () => {
     expect(sceneInstruction(null)).toContain('[[scene: ID]]');
   });
 });
+
+describe('sceneInstruction with a current scene', () => {
+  it('tells the DM where the party is and prefers the adventure\'s own places', () => {
+    const text = sceneInstruction('sunken-bell-of-marrowmere', 'bell-village');
+
+    expect(text).toContain('currently at bell-village');
+    expect(text.indexOf('bell-ferry')).toBeLessThan(text.indexOf('tavern-interior'));
+  });
+});

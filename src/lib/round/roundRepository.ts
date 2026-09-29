@@ -5,6 +5,7 @@ import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 export interface RoundContext {
   campaignId: string;
   adventureId: string | null;
+  currentSceneId: string | null;
   campaignSummary: string;
   recentMessages: StoredMessage[];
   actions: RoundAction[];
@@ -42,7 +43,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       const { data: campaignRow } = await supabase
         .from('campaigns')
-        .select('adventure_id')
+        .select('adventure_id, current_scene_id')
         .eq('id', campaignId)
         .maybeSingle();
 
@@ -83,6 +84,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       return {
         campaignId,
         adventureId: (campaignRow?.adventure_id as string | null) ?? null,
+        currentSceneId: (campaignRow?.current_scene_id as string | null) ?? null,
         campaignSummary: summaryRow?.summary ?? '',
         recentMessages: (messageRows ?? []).reverse() as StoredMessage[],
         // Actions reach the DM in the order the players chose for this round.
