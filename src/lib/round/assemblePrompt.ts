@@ -28,6 +28,7 @@ export function assemblePrompt(
   return [
     'You are the Dungeon Master for an ongoing D&D campaign.',
     'Narrate what happens next based on the players actions below.',
+    'Always respond in Thai (ภาษาไทย), even if the players write in English.',
     '',
     ...(adventure ? [formatAdventureForPrompt(adventure), ''] : []),
     'Story so far:',

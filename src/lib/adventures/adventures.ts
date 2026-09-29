@@ -5,6 +5,8 @@
 
 export interface Adventure {
   id: string;
+  /** Thai opening narration posted as the first DM message. */
+  openingTh: string;
   title: string;
   tagline: string;
   tone: string;
@@ -18,6 +20,7 @@ export interface Adventure {
 export const ADVENTURES: Adventure[] = [
   {
     id: 'sunken-bell-of-marrowmere',
+    openingTh: 'หมอกหนาลอยเหนือทะเลสาบมาร์โรว์เมียร์ หมู่บ้านชาวประมงที่โบสถ์เก่าจมลงใต้น้ำเมื่อหลายสิบปีก่อน ตั้งแต่สัปดาห์ก่อนระฆังใต้น้ำก็ดังขึ้นทุกคืน และชาวประมงตื่นมาพบรอยเท้าเปียกๆ ทอดจากชายฝั่งมาถึงหน้าประตูบ้านตัวเอง คืนนี้ระฆังกำลังจะดังอีกครั้ง...',
     title: 'The Sunken Bell of Marrowmere',
     tagline: 'A drowned village rings its bell at night, and the dead are answering.',
     tone: 'Gothic mystery, eerie but not gory',
@@ -39,6 +42,7 @@ export const ADVENTURES: Adventure[] = [
   },
   {
     id: 'the-wolf-king-of-ashenfell',
+    openingTh: 'ฤดูหนาวในแอชเชนเฟลล์ยืดยาวเกินไปหนึ่งปีแล้ว ในโถงยาวของยาร์ลแอสกริม ไฟในเตากำลังริบหรี่ ทุกคืนพระจันทร์เต็มดวง หมาป่าที่เดินสองขาเหมือนมนุษย์จะบุกปล้นหมู่บ้าน ยาร์ลสัญญาทั้งทอง ที่ดิน และที่นั่งข้างโต๊ะแก่ผู้ที่นำหัวมันมา และเขากำลังมองมาที่พวกคุณ...',
     title: 'The Wolf King of Ashenfell',
     tagline: 'A frozen kingdom needs a hero, or someone to end a curse.',
     tone: 'Heroic saga, grim and wintry',
@@ -60,6 +64,7 @@ export const ADVENTURES: Adventure[] = [
   },
   {
     id: 'the-thousand-doors-market',
+    openingTh: 'เมื่อพระอาทิตย์ตก ลานเมืองที่ว่างเปล่าก็คลี่ออกเป็นตลาดสุดวิเศษ ประตูของแต่ละแผงเปิดสู่ที่ที่เป็นไปไม่ได้ ทุกข้อตกลงมีผลผูกมัด เพื่อนร่วมทางคนหนึ่งของพวกคุณถูกขายไปในข้อตกลงเก่าโดยไม่รู้ตัว ตลาดยอมให้ซื้อสัญญาคืนได้ก่อนรุ่งสาง เท่านั้น...',
     title: 'The Market of a Thousand Doors',
     tagline: 'A traveling bazaar that appears once per century sells anything, at a price.',
     tone: 'Whimsical fantasy with a dark edge',
@@ -81,6 +86,7 @@ export const ADVENTURES: Adventure[] = [
   },
   {
     id: 'crown-of-the-sunken-king',
+    openingTh: 'แผนที่ที่ซื้อมาจากโรงเตี๊ยมพาพวกคุณมายังซากปราสาทดันมัวร์ บันไดลับที่ซ่อนอยู่ใต้ซากปรักหักพังนำลงไปสู่ห้องนิรภัยของกษัตริย์ผู้หายสาบสูญพร้อมมงกุฎ แต่เสียงขุดดินดังมาจากไม่ไกล นักล่าสมบัติคู่แข่งมาถึงก่อนแล้ว...',
     title: 'The Crown of the Sunken King',
     tagline: 'A dungeon crawl beneath a fallen keep, in search of a legendary crown.',
     tone: 'Classic dungeon adventure, light-hearted',
@@ -108,6 +114,7 @@ export function getAdventure(id: string | null | undefined): Adventure | undefin
 
 export function formatAdventureForPrompt(adventure: Adventure): string {
   return [
+    'Language: narrate and speak in Thai (ภาษาไทย) at all times, including dialogue. Keep proper names as written.',
     `Adventure: ${adventure.title}`,
     `Tone: ${adventure.tone}`,
     `Setting: ${adventure.setting}`,

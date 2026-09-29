@@ -45,11 +45,9 @@ export async function createCampaign(
       role: 'dm',
       content: `${adventure.title}
 
-${adventure.setting}
+${adventure.openingTh}
 
-${adventure.hook}
-
-What do you do?`,
+พวกคุณจะทำอะไร?`,
     });
     if (openingError) throw openingError;
   }
