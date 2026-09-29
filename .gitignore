@@ -46,3 +46,6 @@ test-output.txt
 *.exe
 *.dll
 *.dylib
+
+# Supabase CLI local state
+supabase/.temp/

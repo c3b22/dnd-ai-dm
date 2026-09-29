@@ -47,6 +47,23 @@ describe('createCampaign', () => {
     ]);
   });
 
+  it('posts an opening DM message when an adventure is chosen', async () => {
+    const { client, calls } = createFakeSupabase({
+      campaigns: { id: 'camp-1', name: 'Test' },
+      players: { id: 'player-1', campaign_id: 'camp-1' },
+      rounds: { id: 'round-1', campaign_id: 'camp-1', status: 'pending' },
+    });
+
+    await createCampaign(client, {
+      name: 'Test',
+      userId: 'user-1',
+      displayName: 'Prem',
+      adventureId: 'sunken-bell-of-marrowmere',
+    });
+
+    expect(calls.map((c) => `${c.action}:${c.table}`)).toContain('insert:messages');
+  });
+
   it('throws when campaign update fails', async () => {
     const updateError = new Error('network error');
     const client = {
