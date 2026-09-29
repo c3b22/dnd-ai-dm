@@ -44,3 +44,23 @@ describe('shouldRotateSummary', () => {
     expect(prompt).not.toContain('Adventure:');
   });
 });
+
+describe('assemblePrompt action order', () => {
+  it('numbers several actions and tells the DM to resolve them in that order', () => {
+    const prompt = assemblePrompt('', [], [
+      { playerDisplayName: 'Prem', actionText: 'open the door' },
+      { playerDisplayName: 'Mila', actionText: 'sneak inside' },
+    ]);
+
+    expect(prompt.indexOf('1. Prem: open the door')).toBeLessThan(prompt.indexOf('2. Mila: sneak inside'));
+    expect(prompt).toContain('one at a time in exactly this order');
+  });
+
+  it('keeps a single action unnumbered without ordering instructions', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'look' }]);
+
+    expect(prompt).toContain('Prem: look');
+    expect(prompt).not.toContain('1. Prem');
+    expect(prompt).not.toContain('exactly this order');
+  });
+});

@@ -5,6 +5,13 @@ import { useSearchParams } from 'next/navigation';
 import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { SceneBanner } from '@/components/SceneBanner';
+import { PlayerOrder } from '@/components/PlayerOrder';
+import {
+  fetchRoundPlayers,
+  saveTurnOrder,
+  subscribeToPlayers,
+  type RoundPlayer,
+} from '@/lib/supabase/players';
 import { fetchInitialMessages, subscribeToNewMessages } from '@/lib/supabase/messagesRealtime';
 import { submitAction } from '@/lib/supabase/submitAction';
 import {
@@ -19,6 +26,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const playerId = searchParams.get('playerId') ?? '';
   const [roundId, setRoundId] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<{ acted: number; total: number } | null>(null);
+  const [players, setPlayers] = useState<RoundPlayer[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(null);
   const [adventureId, setAdventureId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -72,6 +80,31 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     };
   }, [campaignId]);
 
+  const refreshPlayers = useCallback(() => {
+    fetchRoundPlayers(campaignId, roundId)
+      .then(setPlayers)
+      .catch(() => {});
+  }, [campaignId, roundId]);
+
+  useEffect(() => {
+    refreshPlayers();
+    return subscribeToPlayers(campaignId, refreshPlayers);
+  }, [campaignId, refreshPlayers, actionStatus?.acted]);
+
+  async function handleMove(movedId: string, direction: -1 | 1) {
+    const index = players.findIndex((p) => p.id === movedId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= players.length) return;
+    const reordered = [...players];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    setPlayers(reordered);
+    try {
+      await saveTurnOrder(campaignId, playerId, reordered.map((p) => p.id));
+    } catch {
+      refreshPlayers();
+    }
+  }
+
   useEffect(() => {
     if (!roundId) return;
     setActionStatus(null);
@@ -95,10 +128,13 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         fetchInitialMessages={fetchInitialMessages}
         subscribeToNewMessages={subscribeToNewMessages}
       />
-      {actionStatus && (
-        <p>
-          {actionStatus.acted} / {actionStatus.total} players have acted this round
-        </p>
+      {players.length > 0 && (
+        <PlayerOrder
+          players={players}
+          currentPlayerId={playerId}
+          locked={players.find((p) => p.id === playerId)?.acted ?? false}
+          onMove={handleMove}
+        />
       )}
       {processing && (
         <p role="status" aria-live="polite">

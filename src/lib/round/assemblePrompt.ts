@@ -22,8 +22,9 @@ export function assemblePrompt(
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n');
 
+  const inOrder = actions.length > 1;
   const actionsText = actions
-    .map((a) => `${a.playerDisplayName}: ${a.actionText}`)
+    .map((a, i) => `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}: ${a.actionText}`)
     .join('\n');
 
   return [
@@ -38,8 +39,14 @@ export function assemblePrompt(
     'Recent narration and dialogue:',
     historyText || '(no recent messages)',
     '',
-    "This round's player actions:",
+    "This round's player actions" + (inOrder ? ' (listed in the order the players chose):' : ':'),
     actionsText,
+    ...(inOrder
+      ? [
+          '',
+          'Resolve these actions one at a time in exactly this order. Each later action happens after the earlier ones, so it can build on, be helped by, or be blocked by what the earlier ones just did (for example the first player opens a door and the second sneaks through). Decide each outcome separately and mention who is acting as you go.',
+        ]
+      : []),
   ].join('\n');
 }
 

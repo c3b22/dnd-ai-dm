@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StoredMessage, RoundAction } from './assemblePrompt';
+import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 
 export interface RoundContext {
   campaignId: string;
@@ -47,7 +48,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
-        .select('action_text, players(display_name)')
+        .select('action_text, players(display_name, turn_order, created_at)')
         .eq('round_id', roundId);
       if (actionsError) throw actionsError;
 
@@ -84,10 +85,15 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         adventureId: (campaignRow?.adventure_id as string | null) ?? null,
         campaignSummary: summaryRow?.summary ?? '',
         recentMessages: (messageRows ?? []).reverse() as StoredMessage[],
-        actions: (actionsRows ?? []).map((row: any) => ({
-          playerDisplayName: row.players?.display_name ?? 'Unknown',
-          actionText: row.action_text,
-        })),
+        // Actions reach the DM in the order the players chose for this round.
+        actions: sortByTurnOrder(
+          (actionsRows ?? []).map((row: any) => ({
+            playerDisplayName: row.players?.display_name ?? 'Unknown',
+            actionText: row.action_text as string,
+            turnOrder: (row.players?.turn_order ?? null) as number | null,
+            joinedAt: (row.players?.created_at ?? '') as string,
+          }))
+        ).map(({ playerDisplayName, actionText }) => ({ playerDisplayName, actionText })),
       };
     },
 
