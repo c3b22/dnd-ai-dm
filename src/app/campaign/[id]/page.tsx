@@ -1,12 +1,13 @@
 'use client';
 
-import { Suspense, use, useCallback, useEffect, useState } from 'react';
+import { Suspense, use, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
 import { D20Icon } from '@/components/D20Icon';
+import { RoundTimer } from '@/components/RoundTimer';
 import { getAdventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
@@ -23,6 +24,9 @@ import {
 } from '@/lib/supabase/roundActionsRealtime';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 
+// How long a round stays open before the DM goes ahead with the actions already in.
+const ROUND_DURATION_MS = 5 * 60 * 1000;
+
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
   const playerId = searchParams.get('playerId') ?? '';
@@ -35,6 +39,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [openedAt, setOpenedAt] = useState<string | null>(null);
+  const [timeUp, setTimeUp] = useState(false);
+  const autoProcessedRound = useRef<string | null>(null);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
     setProcessing(true);
@@ -95,12 +102,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     return subscribeToPlayers(campaignId, refreshPlayers);
   }, [campaignId, refreshPlayers, actionStatus?.acted]);
 
-  async function handleMove(movedId: string, direction: -1 | 1) {
-    const index = players.findIndex((p) => p.id === movedId);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= players.length) return;
-    const reordered = [...players];
-    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+  async function applyOrder(reordered: RoundPlayer[]) {
     setPlayers(reordered);
     try {
       await saveTurnOrder(campaignId, playerId, reordered.map((p) => p.id));
@@ -108,6 +110,45 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       refreshPlayers();
     }
   }
+
+  function handleMove(movedId: string, direction: -1 | 1) {
+    const index = players.findIndex((p) => p.id === movedId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= players.length) return;
+    const reordered = [...players];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    applyOrder(reordered);
+  }
+
+  function handleReorder(draggedId: string, targetId: string) {
+    const from = players.findIndex((p) => p.id === draggedId);
+    const to = players.findIndex((p) => p.id === targetId);
+    if (from < 0 || to < 0 || from === to) return;
+    const reordered = [...players];
+    reordered.splice(to, 0, reordered.splice(from, 1)[0]);
+    applyOrder(reordered);
+  }
+
+  useEffect(() => {
+    setOpenedAt(null);
+    setTimeUp(false);
+    if (!roundId) return;
+    supabaseBrowserClient
+      .from('rounds')
+      .select('opened_at')
+      .eq('id', roundId)
+      .maybeSingle()
+      .then(({ data }) => setOpenedAt(data?.opened_at ?? null));
+  }, [roundId]);
+
+  // Once time is up the DM goes ahead with whatever has been submitted (one client wins the claim).
+  useEffect(() => {
+    if (!roundId || !timeUp || processing) return;
+    if ((actionStatus?.acted ?? 0) > 0 && autoProcessedRound.current !== roundId) {
+      autoProcessedRound.current = roundId;
+      triggerProcessing(roundId);
+    }
+  }, [roundId, timeUp, processing, actionStatus?.acted, triggerProcessing]);
 
   useEffect(() => {
     if (!roundId) return;
@@ -166,6 +207,15 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               currentPlayerId={playerId}
               locked={players.find((p) => p.id === playerId)?.acted ?? false}
               onMove={handleMove}
+              onReorder={handleReorder}
+            />
+          )}
+          {roundId && (
+            <RoundTimer
+              openedAt={openedAt}
+              durationMs={ROUND_DURATION_MS}
+              paused={processing}
+              onExpire={() => setTimeUp(true)}
             />
           )}
           {adventure && (

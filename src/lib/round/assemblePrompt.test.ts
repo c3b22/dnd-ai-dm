@@ -64,3 +64,20 @@ describe('assemblePrompt action order', () => {
     expect(prompt).not.toContain('exactly this order');
   });
 });
+describe('assemblePrompt dice', () => {
+  it('shows each roll and tells the DM the results are final', () => {
+    const prompt = assemblePrompt('', [], [
+      { playerDisplayName: 'Prem', actionText: 'open the door', roll: 3 },
+      { playerDisplayName: 'Mila', actionText: 'sneak inside', roll: 19 },
+    ]);
+
+    expect(prompt).toContain('1. Prem (rolled 3 on a d20): open the door');
+    expect(prompt).toContain('2. Mila (rolled 19 on a d20): sneak inside');
+    expect(prompt).toContain('dice results above are final');
+  });
+
+  it('adds no dice text when nothing was rolled', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'look' }]);
+    expect(prompt).not.toContain('rolled');
+  });
+});

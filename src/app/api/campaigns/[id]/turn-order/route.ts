@@ -14,15 +14,25 @@ export async function POST(
       { status: 400 }
     );
   }
+
+  // Identify the caller from their Supabase session instead of trusting ids in the body.
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const supabase = createServiceRoleClient();
+  const { data: authData } = token ? await supabase.auth.getUser(token) : { data: { user: null } };
+  if (!authData.user) {
+    return NextResponse.json({ error: 'sign in required' }, { status: 401 });
+  }
+
   try {
-    await setTurnOrder(createServiceRoleClient(), {
+    await setTurnOrder(supabase, {
       campaignId: id,
+      userId: authData.user.id,
       playerId: body.playerId,
       orderedPlayerIds: body.orderedPlayerIds,
     });
   } catch (error) {
     if (error instanceof TurnOrderError) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
     throw error;
   }

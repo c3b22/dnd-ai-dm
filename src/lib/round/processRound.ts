@@ -8,6 +8,8 @@ export interface ProcessRoundDeps {
   releaseRound?: (roundId: string) => Promise<void>;
   repository: RoundRepository;
   generateNarration: (prompt: string) => Promise<AsyncIterable<string>>;
+  /** Rolls one d20 (1-20). Injectable so tests are deterministic. */
+  rollDie?: () => number;
 }
 
 export interface ProcessRoundResult {
@@ -27,10 +29,20 @@ export async function processRound(
 
   let context: Awaited<ReturnType<RoundRepository['getRoundContext']>>;
   let prompt: string;
+  let rolled: { playerDisplayName: string; actionText: string; roll: number }[];
   let stream: AsyncIterable<string>;
   try {
     context = await deps.repository.getRoundContext(roundId);
-    prompt = assemblePrompt(context.campaignSummary, context.recentMessages, context.actions, context.adventureId, context.currentSceneId);
+    // The server rolls, not the model, so results are fair and can be shown to the table.
+    const rollDie = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
+    rolled = context.actions.map((a) => ({ ...a, roll: rollDie() }));
+    prompt = assemblePrompt(
+      context.campaignSummary,
+      context.recentMessages,
+      rolled,
+      context.adventureId,
+      context.currentSceneId
+    );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
     // DM message or player-action messages that a retry would duplicate.
@@ -42,6 +54,7 @@ export async function processRound(
   }
 
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
+  await deps.repository.insertRollSummary(context.campaignId, roundId, rolled).catch(() => {});
   const messageId = await deps.repository.insertDmMessagePlaceholder(context.campaignId, roundId);
 
   // The DM ends with a [[scene: id]] tag. Hold back anything from a possible tag onward so it

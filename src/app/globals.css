@@ -172,6 +172,14 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .quest { font-family: var(--f-story); font-size: 14px; }
 .quest small { display: block; color: var(--muted); font-family: var(--f-ui); font-size: 12px; }
 
+.pl-row[draggable='true'] { cursor: grab; border-radius: 10px; padding: 4px; margin: -4px; outline: 2px solid transparent; transition: background 0.15s, outline-color 0.15s; }
+.pl-row.dragging { opacity: 0.45; }
+.pl-row.drag-over { outline-color: var(--accent); background: var(--surface-2); }
+.scene-title { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; pointer-events: none; font-family: var(--f-display); font-size: clamp(18px, 3.4vw, 26px); letter-spacing: 0.12em; color: #f6efe0; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8); opacity: 0; animation: title-flash 2.4s ease both; }
+.timer { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.timer b { font-family: var(--f-display); font-size: 20px; font-variant-numeric: tabular-nums; }
+.timer.low b { color: var(--danger); }
+@keyframes title-flash { 0% { opacity: 0; letter-spacing: 0.3em; } 25% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; letter-spacing: 0.12em; } }
 @keyframes tumble { to { transform: rotate(360deg); } }
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes scene-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -186,7 +194,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .embers, .hero-die svg { display: none; }
-  .scene img, .log > *, .pl-row.done .av, .preview-art, .thinking { animation: none; }
+  .scene-title, .scene img, .log > *, .pl-row.done .av, .preview-art, .thinking { animation: none; }
   .d20 svg { animation-duration: 6s; }
   .log { scroll-behavior: auto; }
 }

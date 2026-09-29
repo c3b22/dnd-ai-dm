@@ -25,3 +25,13 @@ describe('SceneBanner', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('SceneBanner place announcement', () => {
+  it('announces a new place only when the scene changes, not on first load', () => {
+    const { rerender } = render(<SceneBanner sceneId="crypt" adventureId={null} />);
+    expect(screen.queryByTestId('scene-title')).toBeNull();
+
+    rerender(<SceneBanner sceneId="throne-room" adventureId={null} />);
+    expect(screen.getByTestId('scene-title').textContent).toContain('ท้องพระโรง');
+  });
+});

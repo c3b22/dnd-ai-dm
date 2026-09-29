@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { RoundPlayer } from '@/lib/supabase/players';
 
 export interface PlayerOrderProps {
@@ -8,11 +9,18 @@ export interface PlayerOrderProps {
   /** True once the current player has submitted: the order is then locked for this round. */
   locked: boolean;
   onMove: (playerId: string, direction: -1 | 1) => void;
+  /** Drop the dragged player into the place of another one. */
+  onReorder?: (draggedId: string, targetId: string) => void;
 }
 
 const AVATAR_COLORS = ['#e0a94a', '#5fb3a5', '#d46a5a', '#8a7fd6', '#6fa8dc'];
 
-export function PlayerOrder({ players, currentPlayerId, locked, onMove }: PlayerOrderProps) {
+export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder }: PlayerOrderProps) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const currentIsOwner = players.find((p) => p.id === currentPlayerId)?.isOwner ?? false;
+  // The owner arranges everyone; other players only move themselves.
+  const canMove = (playerId: string) => !locked && (currentIsOwner || playerId === currentPlayerId);
   const actedCount = players.filter((p) => p.acted).length;
   const progress = players.length ? (actedCount / players.length) * 100 : 0;
 
@@ -21,7 +29,29 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove }: Player
       <h3>ผู้เล่นรอบนี้</h3>
       <ol className="pl-list">
         {players.map((player, index) => (
-          <li key={player.id} className={`pl-row${player.acted ? ' done' : ''}`}>
+          <li
+            key={player.id}
+            className={`pl-row${player.acted ? ' done' : ''}${dragId === player.id ? ' dragging' : ''}${overId === player.id ? ' drag-over' : ''}`}
+            draggable={canMove(player.id) && !!onReorder}
+            onDragStart={() => setDragId(player.id)}
+            onDragEnd={() => {
+              setDragId(null);
+              setOverId(null);
+            }}
+            onDragOver={(e) => {
+              if (dragId && dragId !== player.id) {
+                e.preventDefault();
+                setOverId(player.id);
+              }
+            }}
+            onDragLeave={() => setOverId(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragId && dragId !== player.id) onReorder?.(dragId, player.id);
+              setDragId(null);
+              setOverId(null);
+            }}
+          >
             <span className="ord" title={`ออก action เป็นลำดับที่ ${index + 1}`}>
               {index + 1}
             </span>
@@ -45,7 +75,7 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove }: Player
               <button
                 type="button"
                 aria-label={`เลื่อน ${player.displayName} ขึ้น`}
-                disabled={locked || index === 0}
+                disabled={!canMove(player.id) || index === 0}
                 onClick={() => onMove(player.id, -1)}
               >
                 ▲
@@ -53,7 +83,7 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove }: Player
               <button
                 type="button"
                 aria-label={`เลื่อน ${player.displayName} ลง`}
-                disabled={locked || index === players.length - 1}
+                disabled={!canMove(player.id) || index === players.length - 1}
                 onClick={() => onMove(player.id, 1)}
               >
                 ▼
@@ -69,7 +99,8 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove }: Player
         {actedCount} / {players.length} players have acted this round
       </p>
       <p className="order-hint">
-        ลำดับนี้คือลำดับที่ DM ตัดสิน action ในรอบนี้ คนหลังต่อยอดจากผลของคนก่อนได้
+        ลำดับนี้คือลำดับที่ DM ตัดสิน action ในรอบนี้ คนหลังต่อยอดจากผลของคนก่อนได้{' '}
+        {currentIsOwner ? 'คุณเป็นเจ้าของโต๊ะ จัดลำดับทุกคนได้' : 'คุณเลื่อนได้เฉพาะลำดับของตัวเอง'}
       </p>
     </section>
   );

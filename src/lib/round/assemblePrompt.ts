@@ -9,6 +9,8 @@ export interface StoredMessage {
 export interface RoundAction {
   playerDisplayName: string;
   actionText: string;
+  /** d20 the server rolled for this action; the DM must respect it. */
+  roll?: number;
 }
 
 export function assemblePrompt(
@@ -25,7 +27,10 @@ export function assemblePrompt(
 
   const inOrder = actions.length > 1;
   const actionsText = actions
-    .map((a, i) => `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}: ${a.actionText}`)
+    .map((a, i) => {
+      const rolled = a.roll === undefined ? '' : ` (rolled ${a.roll} on a d20)`;
+      return `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}${rolled}: ${a.actionText}`;
+    })
     .join('\n');
 
   return [
@@ -46,6 +51,12 @@ export function assemblePrompt(
       ? [
           '',
           'Resolve these actions one at a time in exactly this order. Each later action happens after the earlier ones, so it can build on, be helped by, or be blocked by what the earlier ones just did (for example the first player opens a door and the second sneaks through). Decide each outcome separately and mention who is acting as you go.',
+        ]
+      : []),
+    ...(actions.some((a) => a.roll !== undefined)
+      ? [
+          '',
+          'The dice results above are final. Let each roll decide how well that action goes: 1 is a disaster, 2-7 fails or has a real cost, 8-14 succeeds with complications, 15-19 succeeds well, 20 is an exceptional success. Never contradict or re-roll them.',
         ]
       : []),
   ].join('\n');

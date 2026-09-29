@@ -18,6 +18,11 @@ export interface RoundRepository {
     roundId: string,
     actions: RoundAction[]
   ): Promise<void>;
+  insertRollSummary(
+    campaignId: string,
+    roundId: string,
+    rolls: { playerDisplayName: string; roll: number }[]
+  ): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
   updateCampaignSummary(
@@ -109,6 +114,17 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           content: `${a.playerDisplayName}: ${a.actionText}`,
         }))
       );
+      if (error) throw error;
+    },
+
+    async insertRollSummary(campaignId, roundId, rolls) {
+      if (rolls.length === 0) return;
+      const { error } = await supabase.from('messages').insert({
+        campaign_id: campaignId,
+        round_id: roundId,
+        role: 'system',
+        content: 'ผลทอยตามลำดับ: ' + rolls.map((r, i) => `${i + 1}. ${r.playerDisplayName} ทอย ${r.roll}`).join(' · '),
+      });
       if (error) throw error;
     },
 

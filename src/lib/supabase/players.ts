@@ -1,10 +1,12 @@
 import { supabaseBrowserClient } from './client';
-import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
+import { findOwnerId, sortByTurnOrder } from '@/lib/campaign/turnOrder';
 
 export interface RoundPlayer {
   id: string;
   displayName: string;
   acted: boolean;
+  /** The player who sat down first may arrange everyone. */
+  isOwner: boolean;
 }
 
 export async function fetchRoundPlayers(
@@ -26,14 +28,19 @@ export async function fetchRoundPlayers(
     actedIds = new Set((actions ?? []).map((a: { player_id: string }) => a.player_id));
   }
 
-  return sortByTurnOrder(
-    (players ?? []).map((p: any) => ({
-      id: p.id as string,
-      displayName: p.display_name as string,
-      turnOrder: p.turn_order as number | null,
-      joinedAt: p.created_at as string,
-    }))
-  ).map((p) => ({ id: p.id, displayName: p.displayName, acted: actedIds.has(p.id) }));
+  const rows = (players ?? []).map((p: any) => ({
+    id: p.id as string,
+    displayName: p.display_name as string,
+    turnOrder: p.turn_order as number | null,
+    joinedAt: p.created_at as string,
+  }));
+  const ownerId = findOwnerId(rows);
+  return sortByTurnOrder(rows).map((p) => ({
+    id: p.id,
+    displayName: p.displayName,
+    acted: actedIds.has(p.id),
+    isOwner: p.id === ownerId,
+  }));
 }
 
 export function subscribeToPlayers(campaignId: string, onChange: () => void): () => void {
@@ -55,9 +62,13 @@ export async function saveTurnOrder(
   playerId: string,
   orderedPlayerIds: string[]
 ): Promise<void> {
+  const { data } = await supabaseBrowserClient.auth.getSession();
   const response = await fetch(`/api/campaigns/${campaignId}/turn-order`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+    },
     body: JSON.stringify({ playerId, orderedPlayerIds }),
   });
   if (!response.ok) throw new Error('could not save the turn order');

@@ -15,6 +15,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       actions: [{ playerDisplayName: 'Prem', actionText: 'Look around' }],
     }),
     insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
+    insertRollSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
     updateCampaignSummary: vi.fn().mockResolvedValue(undefined),
@@ -162,5 +163,24 @@ describe('processRound', () => {
     const second = await processRound(deps, 'round-1');
     expect(repository.setCurrentScene).toHaveBeenCalledWith('camp-1', 'crypt');
     expect(second.processed).toBe(true);
+  });
+
+  it('rolls a d20 per action on the server, tells the DM, and posts the results to the table', async () => {
+    const repository = createFakeRepository();
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['Narration.']));
+    const rollDie = vi.fn().mockReturnValueOnce(14);
+    const deps: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration,
+      rollDie,
+    };
+
+    await processRound(deps, 'round-1');
+
+    expect(generateNarration.mock.calls[0][0]).toContain('Prem (rolled 14 on a d20): Look around');
+    expect(repository.insertRollSummary).toHaveBeenCalledWith('camp-1', 'round-1', [
+      { playerDisplayName: 'Prem', actionText: 'Look around', roll: 14 },
+    ]);
   });
 });
