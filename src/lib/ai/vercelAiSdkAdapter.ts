@@ -3,8 +3,8 @@ import { google } from '@ai-sdk/google';
 import { bufferTextOrThrow, type GeminiClientDeps } from './geminiClient';
 
 export const GEMINI_MODELS = {
-  primary: 'gemini-2.0-flash',
-  fallback: 'gemini-2.0-flash-lite',
+  primary: 'gemini-3.5-flash-lite',
+  fallback: 'gemini-3.1-flash-lite',
 };
 
 export const realGeminiDeps: GeminiClientDeps = {
