@@ -32,6 +32,7 @@ import {
   subscribeToCampaignStarted,
 } from '@/lib/supabase/roundActionsRealtime';
 import { startCampaignForClient } from '@/lib/supabase/startCampaign';
+import { triggerRoundProcessing } from '@/lib/round/triggerRoundProcessing';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
@@ -55,16 +56,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
     setProcessing(true);
-    fetch('/api/round/process', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roundId: currentRoundId }),
-      // Just past the route's 60s maxDuration, so a killed function can't leave the spinner up
-      // forever; the "ให้ DM ตัดสินตอนนี้" button then works as a retry.
-      signal: AbortSignal.timeout(65_000),
-    })
-      .catch(() => {})
-      .finally(() => setProcessing(false));
+    triggerRoundProcessing(currentRoundId).finally(() => setProcessing(false));
   }, []);
 
   useEffect(() => {

@@ -17,21 +17,27 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
-  const result = await processRound(
-    {
-      claimRound: (id) => claimRound(supabase, id),
-      releaseRound: async (id) => {
-        await supabase
-          .from('rounds')
-          .update({ status: 'pending', processing_started_at: null })
-          .eq('id', id)
-          .eq('status', 'processing');
+  try {
+    const result = await processRound(
+      {
+        claimRound: (id) => claimRound(supabase, id),
+        releaseRound: async (id) => {
+          await supabase
+            .from('rounds')
+            .update({ status: 'pending', processing_started_at: null })
+            .eq('id', id)
+            .eq('status', 'processing');
+        },
+        repository: createSupabaseRoundRepository(supabase),
+        generateNarration: (prompt) => generateNarration(prompt, realGeminiDeps),
       },
-      repository: createSupabaseRoundRepository(supabase),
-      generateNarration: (prompt) => generateNarration(prompt, realGeminiDeps),
-    },
-    roundId
-  );
+      roundId
+    );
 
-  return NextResponse.json(result, { status: result.processed ? 200 : 409 });
+    return NextResponse.json(result, { status: result.processed ? 200 : 409 });
+  } catch {
+    // processRound already released the round claim before rethrowing, so the client's
+    // automatic retry (or the manual "ให้ DM ตัดสินตอนนี้" button) can attempt it fresh.
+    return NextResponse.json({ error: 'DM ตอบไม่สำเร็จ ลองอีกครั้ง' }, { status: 500 });
+  }
 }
