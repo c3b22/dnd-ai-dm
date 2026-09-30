@@ -91,6 +91,112 @@ describe('MessageList', () => {
     expect(screen.getByText('1')).toBeInTheDocument();
   });
 
+  it('animates a roll that arrives live before settling on the real number, but shows history instantly', async () => {
+    vi.useFakeTimers();
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    try {
+      const fetchInitialMessages = vi.fn().mockResolvedValue([]);
+      let deliverMessage: (message: any) => void = () => {};
+      const subscribeToNewMessages = vi.fn((_campaignId, onMessage) => {
+        deliverMessage = onMessage;
+        return () => {};
+      });
+
+      render(
+        <MessageList
+          campaignId="camp-1"
+          fetchInitialMessages={fetchInitialMessages}
+          subscribeToNewMessages={subscribeToNewMessages}
+        />
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      act(() => {
+        deliverMessage({
+          id: 'm1',
+          role: 'system',
+          content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
+        });
+      });
+
+      // Mid-tumble: shows the ticking placeholder, not the real result yet.
+      expect(screen.getByText('1')).toBeInTheDocument();
+      expect(screen.queryByText('20')).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+
+      expect(screen.getByText('20')).toBeInTheDocument();
+    } finally {
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not animate a roll message that was already in the history on load', async () => {
+    const fetchInitialMessages = vi.fn().mockResolvedValue([
+      {
+        id: 'm1',
+        role: 'system',
+        content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
+      },
+    ]);
+    const subscribeToNewMessages = vi.fn(() => () => {});
+
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={subscribeToNewMessages}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('20')).toBeInTheDocument());
+  });
+
+  it('skips the tumble animation when the player prefers reduced motion', async () => {
+    const originalMatchMedia = window.matchMedia;
+    (window as any).matchMedia = vi.fn().mockReturnValue({ matches: true });
+
+    try {
+      const fetchInitialMessages = vi.fn().mockResolvedValue([]);
+      let deliverMessage: (message: any) => void = () => {};
+      const subscribeToNewMessages = vi.fn((_campaignId, onMessage) => {
+        deliverMessage = onMessage;
+        return () => {};
+      });
+
+      render(
+        <MessageList
+          campaignId="camp-1"
+          fetchInitialMessages={fetchInitialMessages}
+          subscribeToNewMessages={subscribeToNewMessages}
+        />
+      );
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      act(() => {
+        deliverMessage({
+          id: 'm1',
+          role: 'system',
+          content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
+        });
+      });
+
+      expect(screen.getByText('20')).toBeInTheDocument();
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
   it('falls back to plain text for a system message that is not structured roll data', async () => {
     const fetchInitialMessages = vi
       .fn()
