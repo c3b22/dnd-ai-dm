@@ -11,6 +11,9 @@ function createFakeSupabase(options: {
   campaignSummary: { summary: string; covers_up_to_round: string | null } | null;
   players?: unknown[];
   pendingWipe?: boolean;
+  inventoryRows?: unknown[];
+  inventoryError?: Error;
+  actionRows?: unknown[];
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
 
@@ -44,8 +47,13 @@ function createFakeSupabase(options: {
       if (table === 'round_actions') {
         return {
           select: () => ({
-            eq: () => Promise.resolve({ data: [], error: null }),
+            eq: () => Promise.resolve({ data: options.actionRows ?? [], error: null }),
           }),
+        };
+      }
+      if (table === 'inventory_items') {
+        return {
+          select: () => ({ eq: () => Promise.resolve(options.inventoryError ? { data: null, error: options.inventoryError } : { data: options.inventoryRows ?? [], error: null }) }),
         };
       }
       if (table === 'campaign_summary') {
@@ -200,7 +208,7 @@ describe('createSupabaseRoundRepository character state', () => {
 
     expect(context.pendingWipe).toBe(true);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1 },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1 },
     ]);
   });
 
@@ -253,5 +261,127 @@ describe('createSupabaseRoundRepository character state', () => {
         content: JSON.stringify({ type: 'stats', changes: ['Prem −5 HP'] }),
       },
     ]);
+  });
+});
+
+describe('createSupabaseRoundRepository inventory', () => {
+  const premRow = { id: 'p1', display_name: 'Prem', weapon_id: 'staff', hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 };
+
+  it('derives weapon and armor from the equipped inventory and returns the inventories', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      players: [premRow],
+      inventoryRows: [
+        { player_id: 'p1', item_id: 'shortbow', custom_name: '', quantity: 1, slot: 'weapon', equipped: true },
+        { player_id: 'p1', item_id: 'armor_medium', custom_name: '', quantity: 1, slot: 'armor', equipped: true },
+      ],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.characters[0]).toMatchObject({ weaponId: 'shortbow', armorReduction: 2 });
+    expect(context.inventories.p1).toHaveLength(2);
+  });
+
+  it('treats a player with nothing equipped as bare-handed (the old weapon_id column is ignored)', async () => {
+    const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, players: [premRow] });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.characters[0]).toMatchObject({ weaponId: null, armorReduction: 0 });
+  });
+
+  it('carries player id and the potion being drunk on each action', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'ดื่มยา', use_item_id: 'potion_minor', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor' }]);
+  });
+});
+
+describe('createSupabaseRoundRepository inventory read failure', () => {
+  it('fails the round load instead of treating an unreadable inventory as empty (which a later save would then wipe)', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      inventoryError: new Error('read failed'),
+    });
+    await expect(createSupabaseRoundRepository(client).getRoundContext('r1')).rejects.toThrow('read failed');
+  });
+});
+
+describe('createSupabaseRoundRepository.saveInventories', () => {
+  it('deletes rows no longer present, then upserts the rest keyed by player, item and title', async () => {
+    const calls: string[] = [];
+    const client: any = {
+      from: (table: string) => {
+        expect(table).toBe('inventory_items');
+        return {
+          select: () => ({ eq: () => Promise.resolve({ data: [
+            { id: 'a', item_id: 'potion_minor', custom_name: '', slot: null, equipped: false },
+            { id: 'b', item_id: 'story', custom_name: 'Rusty Key', slot: null, equipped: false },
+          ], error: null }) }),
+          delete: () => ({ in: (col: string, ids: string[]) => { calls.push(`delete ${col} ${ids.join(',')}`); return Promise.resolve({ error: null }); } }),
+          upsert: (rows: unknown[], opts: unknown) => { calls.push(`upsert ${JSON.stringify(rows)} ${JSON.stringify(opts)}`); return Promise.resolve({ error: null }); },
+        };
+      },
+    };
+    await createSupabaseRoundRepository(client).saveInventories('c1', [
+      { playerId: 'p1', items: [{ itemId: 'potion_minor', customName: '', quantity: 2, slot: null, equipped: false }] },
+    ]);
+    expect(calls[0]).toBe('delete id b');
+    expect(calls[1]).toContain('"item_id":"potion_minor"');
+    expect(calls[1]).toContain('"quantity":2');
+    expect(calls[1]).toContain('"onConflict":"player_id,item_id,custom_name"');
+  });
+
+  it('skips the upsert for a player left with nothing and surfaces a write error', async () => {
+    const client: any = {
+      from: () => ({
+        select: () => ({ eq: () => Promise.resolve({ data: [{ id: 'a', item_id: 'potion_minor', custom_name: '' }], error: null }) }),
+        delete: () => ({ in: () => Promise.resolve({ error: new Error('nope') }) }),
+        upsert: () => { throw new Error('should not upsert an empty pack'); },
+      }),
+    };
+    await expect(createSupabaseRoundRepository(client).saveInventories('c1', [{ playerId: 'p1', items: [] }])).rejects.toThrow('nope');
+  });
+});
+
+describe('createSupabaseRoundRepository.saveInventories equip races', () => {
+  function recordingClient(existing: unknown[]) {
+    const upserts: any[][] = [];
+    const client: any = {
+      from: () => ({
+        select: () => ({ eq: () => Promise.resolve({ data: existing, error: null }) }),
+        delete: () => ({ in: () => Promise.resolve({ error: null }) }),
+        upsert: (rows: any[]) => { upserts.push(rows); return Promise.resolve({ error: null }); },
+      }),
+    };
+    return { client, upserts };
+  }
+  const item = (itemId: string, equipped: boolean, slot: 'weapon' | 'armor' | null = 'weapon') => ({ itemId, customName: '', quantity: 1, slot, equipped });
+
+  it('keeps the equipped flags the database has now, not the ones from the start of the round', async () => {
+    // The player swapped sword -> staff while the DM was writing; the round only changed the potion.
+    const { client, upserts } = recordingClient([
+      { id: '1', item_id: 'shortsword', custom_name: '', slot: 'weapon', equipped: false },
+      { id: '2', item_id: 'staff', custom_name: '', slot: 'weapon', equipped: true },
+    ]);
+    await createSupabaseRoundRepository(client).saveInventories('c1', [
+      { playerId: 'p1', items: [item('shortsword', true), item('staff', false)] },
+    ]);
+    const byId = Object.fromEntries(upserts[0].map((r) => [r.item_id, r.equipped]));
+    expect(byId).toEqual({ shortsword: false, staff: true });
+  });
+
+  it('does not equip a newly given item into a slot the player filled meanwhile', async () => {
+    const { client, upserts } = recordingClient([
+      { id: '2', item_id: 'staff', custom_name: '', slot: 'weapon', equipped: true },
+    ]);
+    await createSupabaseRoundRepository(client).saveInventories('c1', [
+      { playerId: 'p1', items: [item('staff', false), item('shortbow', true)] },
+    ]);
+    const byId = Object.fromEntries(upserts[0].map((r) => [r.item_id, r.equipped]));
+    expect(byId).toEqual({ staff: true, shortbow: false });
   });
 });

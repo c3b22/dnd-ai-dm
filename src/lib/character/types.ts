@@ -8,4 +8,6 @@ export interface Character {
   maxHp: number;
   status: CharacterStatus;
   revivesSinceSanctuary: number;
+  /** Flat damage the equipped armor absorbs from each hit; absent means none. */
+  armorReduction?: number;
 }

@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { DEFAULT_WEAPON_ID, isStartingWeapon } from '@/lib/character/constants';
+import { seedStartingKit } from '@/lib/inventory/startingKit';
 
 export async function joinCampaign(
   supabase: ReturnType<typeof createServiceRoleClient>,
@@ -15,16 +16,18 @@ export async function joinCampaign(
     .maybeSingle();
   if (existing) return existing;
 
+  const weaponId = isStartingWeapon(params.weaponId) ? params.weaponId : DEFAULT_WEAPON_ID;
   const { data, error } = await supabase
     .from('players')
     .insert({
       campaign_id: params.campaignId,
       user_id: params.userId,
       display_name: params.displayName,
-      weapon_id: isStartingWeapon(params.weaponId) ? params.weaponId : DEFAULT_WEAPON_ID,
+      weapon_id: weaponId,
     })
     .select()
     .single();
   if (error) throw error;
+  await seedStartingKit(supabase, { campaignId: params.campaignId, playerId: data.id, weaponId });
   return data;
 }

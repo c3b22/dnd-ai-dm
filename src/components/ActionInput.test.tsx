@@ -55,4 +55,11 @@ describe('ActionInput', () => {
     expect(screen.getByLabelText('free text action')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'ส่ง' })).toBeDisabled();
   });
+
+  it('locks everything and says so when the player has already acted this round (for example by drinking a potion)', () => {
+    render(<ActionInput onSubmit={vi.fn()} alreadyActed />);
+    expect(screen.getByText(/ส่ง action แล้ว/)).toBeInTheDocument();
+    expect(screen.getByLabelText('free text action')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'โจมตี' })).toBeDisabled();
+  });
 });

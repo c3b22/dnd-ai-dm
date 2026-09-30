@@ -35,3 +35,23 @@ describe('parseCharacterTags', () => {
     expect(parseCharacterTags('Just narration.')).toEqual({ tags: [], cleanText: 'Just narration.' });
   });
 });
+
+describe('give and take tags', () => {
+  it('parses catalog items and story titles, keeping the title case and spaces', () => {
+    const { tags, cleanText } = parseCharacterTags(
+      'ได้ของ\n[[give: Prem | potion_minor]]\n[[give: Prem | story: Rusty Key]]\n[[take: Suki | Armor_Light]]'
+    );
+    expect(tags).toEqual([
+      { kind: 'give', name: 'Prem', itemId: 'potion_minor', customName: '' },
+      { kind: 'give', name: 'Prem', itemId: 'story', customName: 'Rusty Key' },
+      { kind: 'take', name: 'Suki', itemId: 'armor_light', customName: '' },
+    ]);
+    expect(cleanText).toBe('ได้ของ');
+  });
+
+  it('hides malformed give/take tags and applies nothing', () => {
+    const { tags, cleanText } = parseCharacterTags('ok [[give: Prem]] [[take]] end');
+    expect(tags).toEqual([]);
+    expect(cleanText).not.toContain('[[');
+  });
+});

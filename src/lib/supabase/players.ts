@@ -1,5 +1,7 @@
 import { supabaseBrowserClient } from './client';
 import { findOwnerId, sortByTurnOrder } from '@/lib/campaign/turnOrder';
+import { fetchCampaignInventories } from './inventory';
+import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 
 export interface RoundPlayer {
   id: string;
@@ -9,7 +11,7 @@ export interface RoundPlayer {
   isOwner: boolean;
   hp: number;
   maxHp: number;
-  weaponId: string | null;
+  items: InventoryItem[];
   status: 'active' | 'downed';
 }
 
@@ -19,9 +21,12 @@ export async function fetchRoundPlayers(
 ): Promise<RoundPlayer[]> {
   const { data: players, error } = await supabaseBrowserClient
     .from('players')
-    .select('id, display_name, turn_order, created_at, weapon_id, hp, max_hp, status')
+    .select('id, display_name, turn_order, created_at, hp, max_hp, status')
     .eq('campaign_id', campaignId);
   if (error) throw error;
+
+  // A database without the inventory table (migration not applied yet) plays with empty packs.
+  const inventories = await fetchCampaignInventories(campaignId).catch(() => ({}) as Inventories);
 
   let actedIds = new Set<string>();
   if (roundId) {
@@ -37,7 +42,7 @@ export async function fetchRoundPlayers(
     displayName: p.display_name as string,
     turnOrder: p.turn_order as number | null,
     joinedAt: p.created_at as string,
-    weaponId: (p.weapon_id ?? null) as string | null,
+    items: inventories[p.id] ?? [],
     hp: p.hp as number,
     maxHp: p.max_hp as number,
     status: p.status as 'active' | 'downed',
@@ -50,7 +55,7 @@ export async function fetchRoundPlayers(
     isOwner: p.id === ownerId,
     hp: p.hp,
     maxHp: p.maxHp,
-    weaponId: p.weaponId,
+    items: p.items,
     status: p.status,
   }));
 }

@@ -6,6 +6,7 @@ import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import { Inventory } from '@/components/Inventory';
 import { CampaignLobby } from '@/components/CampaignLobby';
 import { D20Icon } from '@/components/D20Icon';
 import { RoundTimer } from '@/components/RoundTimer';
@@ -25,6 +26,8 @@ import {
 } from '@/lib/supabase/players';
 import { fetchInitialMessages, subscribeToNewMessages } from '@/lib/supabase/messagesRealtime';
 import { submitAction } from '@/lib/supabase/submitAction';
+import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
+import { itemLabel } from '@/lib/inventory/rules';
 import {
   subscribeToRoundActionCount,
   subscribeToCurrentRound,
@@ -51,7 +54,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [processing, setProcessing] = useState(false);
   const [settings, setSettings] = useState<CampaignSettings>(DEFAULT_SETTINGS);
   const [openedAt, setOpenedAt] = useState<string | null>(null);
-  const [timeUp, setTimeUp] = useState(false);
+  // Which round's timer has run out. Tying it to the round id stops an expired round from
+  // auto-processing the next one in the render where the new round id arrives.
+  const [timeUpRoundId, setTimeUpRoundId] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
@@ -108,9 +113,16 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     await startCampaignForClient(campaignId);
   }
 
+  const refreshSeq = useRef(0);
   const refreshPlayers = useCallback(() => {
+    // Refreshes overlap (realtime events fire in bursts at the end of a round). Only the latest
+    // response may win, or a slow answer for the previous round could mark the player as
+    // "already acted" in the new one and lock their action box.
+    const seq = ++refreshSeq.current;
     fetchRoundPlayers(campaignId, roundId)
-      .then(setPlayers)
+      .then((next) => {
+        if (seq === refreshSeq.current) setPlayers(next);
+      })
       .catch(() => {});
   }, [campaignId, roundId]);
 
@@ -118,6 +130,30 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
     return subscribeToPlayers(campaignId, refreshPlayers);
   }, [campaignId, refreshPlayers, actionStatus?.acted]);
+
+  useEffect(() => subscribeToInventory(campaignId, refreshPlayers), [campaignId, refreshPlayers]);
+
+  const me = players.find((p) => p.id === playerId);
+
+  async function handleEquip(itemId: string, action: 'equip' | 'unequip') {
+    try {
+      await requestEquip(campaignId, itemId, action);
+    } catch {
+      /* the refresh below puts the real state back on screen */
+    }
+    refreshPlayers();
+  }
+
+  async function handleDrink(itemId: string) {
+    if (!roundId) return;
+    const item = me?.items.find((i) => i.itemId === itemId);
+    try {
+      await submitAction(roundId, playerId, `ดื่ม${item ? itemLabel(item) : 'ยา'}`, itemId);
+    } catch {
+      /* the refresh below shows whether the action landed */
+    }
+    refreshPlayers();
+  }
 
   async function applyOrder(reordered: RoundPlayer[]) {
     setPlayers(reordered);
@@ -148,7 +184,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   useEffect(() => {
     setOpenedAt(null);
-    setTimeUp(false);
+    setTimeUpRoundId(null);
     if (!roundId) return;
     supabaseBrowserClient
       .from('rounds')
@@ -160,12 +196,12 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   // Once time is up the DM goes ahead with whatever has been submitted (one client wins the claim).
   useEffect(() => {
-    if (!roundId || !timeUp || processing || settings.roundSeconds === 0) return;
+    if (!roundId || timeUpRoundId !== roundId || processing || settings.roundSeconds === 0) return;
     if ((actionStatus?.acted ?? 0) > 0 && autoProcessedRound.current !== roundId) {
       autoProcessedRound.current = roundId;
       triggerProcessing(roundId);
     }
-  }, [roundId, timeUp, processing, settings.roundSeconds, actionStatus?.acted, triggerProcessing]);
+  }, [roundId, timeUpRoundId, processing, settings.roundSeconds, actionStatus?.acted, triggerProcessing]);
 
   async function handleSaveSettings(patch: Partial<CampaignSettings>) {
     setSettings(await saveCampaignSettings(campaignId, patch));
@@ -243,6 +279,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
                   ? 'คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง'
                   : undefined
               }
+              alreadyActed={me?.acted ?? false}
             />
           )}
         </div>
@@ -258,12 +295,20 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               reorderPolicy={settings.reorderPolicy}
             />
           )}
+          {me && (
+            <Inventory
+              items={me.items}
+              canAct={me.status === 'active' && !me.acted}
+              onEquip={handleEquip}
+              onDrink={handleDrink}
+            />
+          )}
           {roundId && settings.roundSeconds > 0 && (
             <RoundTimer
               openedAt={openedAt}
               durationMs={settings.roundSeconds * 1000}
               paused={processing}
-              onExpire={() => setTimeUp(true)}
+              onExpire={() => setTimeUpRoundId(roundId)}
             />
           )}
           <CampaignSettingsPanel

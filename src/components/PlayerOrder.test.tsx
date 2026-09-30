@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PlayerOrder } from './PlayerOrder';
 
-const character = { hp: 20, maxHp: 20, weaponId: 'shortsword', status: 'active' as const };
+const gear = (itemId: string) => ({ itemId, customName: '', quantity: 1, slot: 'weapon' as const, equipped: true });
+const character = { hp: 20, maxHp: 20, items: [gear('shortsword')], status: 'active' as const };
 const players = [
   { id: 'p1', displayName: 'Prem', acted: true, isOwner: true, ...character },
   { id: 'p2', displayName: 'Mila', acted: false, isOwner: false, ...character },
@@ -73,7 +74,7 @@ describe('PlayerOrder', () => {
   it('shows each weapon, an HP bar, and a downed badge for a player who cannot act', () => {
     const party = [
       { ...players[0], hp: 12, maxHp: 18 },
-      { ...players[1], hp: 0, status: 'downed' as const, weaponId: 'staff' },
+      { ...players[1], hp: 0, status: 'downed' as const, items: [gear('staff')] },
       players[2],
     ];
     render(<PlayerOrder players={party} currentPlayerId="p1" locked={false} onMove={() => {}} />);
@@ -81,5 +82,17 @@ describe('PlayerOrder', () => {
     expect(screen.getByLabelText('HP 12 จาก 18')).toBeInTheDocument();
     expect(screen.getByText('ล้มลง')).toBeInTheDocument();
     expect(screen.getByText(/ไม้เท้า/)).toBeInTheDocument();
+  });
+
+  it('shows the equipped weapon and armor, and bare hands when nothing is equipped', () => {
+    const armored = { ...players[0], items: [
+      gear('shortbow'),
+      { itemId: 'armor_heavy', customName: '', quantity: 1, slot: 'armor' as const, equipped: true },
+    ] };
+    const bare = { ...players[1], items: [] };
+    render(<PlayerOrder players={[armored, bare, players[2]]} currentPlayerId="p1" locked={false} onMove={() => {}} />);
+    expect(screen.getByText(/ธนูสั้น/)).toBeInTheDocument();
+    expect(screen.getByText(/เกราะเหล็ก/)).toBeInTheDocument();
+    expect(screen.getByText(/มือเปล่า/)).toBeInTheDocument();
   });
 });

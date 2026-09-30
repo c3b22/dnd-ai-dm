@@ -4,6 +4,8 @@ import { useState } from 'react';
 import type { RoundPlayer } from '@/lib/supabase/players';
 import { weaponFor } from '@/lib/character/constants';
 import { HpBar } from './HpBar';
+import { catalogEntry } from '@/lib/inventory/catalog';
+import { equippedArmorId, equippedWeaponId } from '@/lib/inventory/rules';
 
 export interface PlayerOrderProps {
   players: RoundPlayer[];
@@ -78,7 +80,11 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                 ) : (
                   <span>{player.acted ? 'ส่งแล้ว' : 'กำลังคิด…'}</span>
                 )}
-                <span className="wpn"> · {weaponFor(player.weaponId).nameTh}</span>
+                <span className="wpn">
+                  {' '}
+                  · {weaponFor(equippedWeaponId(player.items)).nameTh}
+                  {equippedArmorId(player.items) ? ` · ${catalogEntry(equippedArmorId(player.items)!)?.nameTh}` : ''}
+                </span>
               </span>
               <HpBar hp={player.hp} maxHp={player.maxHp} />
             </span>

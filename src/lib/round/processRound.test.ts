@@ -14,11 +14,13 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       recentMessages: [],
       actions: [{ playerDisplayName: 'Prem', actionText: 'Look around' }],
       characters: [],
+      inventories: {},
       pendingWipe: false,
     }),
     insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
     insertRollSummary: vi.fn().mockResolvedValue(undefined),
     saveCharacterState: vi.fn().mockResolvedValue(undefined),
+    saveInventories: vi.fn().mockResolvedValue(undefined),
     insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
@@ -359,5 +361,78 @@ describe('processRound character status', () => {
 
     expect(repository.saveCharacterState).not.toHaveBeenCalled();
     expect(repository.insertStatsSummary).not.toHaveBeenCalled();
+  });
+});
+
+const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 10, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+const potion = { itemId: 'potion_minor', customName: '', quantity: 1, slot: null, equipped: false };
+const contextWith = (over: object) => ({
+  campaignId: 'camp-1', campaignSummary: '', recentMessages: [], pendingWipe: false,
+  characters: [prem], inventories: { p1: [potion] },
+  actions: [{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor' }],
+  ...over,
+});
+const claim = () => vi.fn().mockResolvedValue(true);
+
+describe('processRound inventory', () => {
+  it('resolves a potion before narration: prompt shows the healed HP and note, item is consumed, log line posted', async () => {
+    const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(contextWith({})) });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['เล่าเรื่อง']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollDie: () => 7, rollSides: () => 4 }, 'round-1');
+
+    const prompt = generateNarration.mock.calls[0][0] as string;
+    expect(prompt).toContain('HP 15/20');
+    expect(prompt).toContain('(server: drank ยาฟื้นฟูเล็ก and recovered 5 HP)');
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [] }]);
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 15 })], false);
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ดื่ม ยาฟื้นฟูเล็ก (+5 HP)']);
+  });
+
+  it('ignores a potion the player does not own and still runs the round', async () => {
+    const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(contextWith({ inventories: { p1: [] } })) });
+    const result = await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['ok'])), rollSides: () => 4 }, 'round-1');
+    expect(result.processed).toBe(true);
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+  });
+
+  it('applies give and take tags, strips them from the narration, and lists them after the HP lines', async () => {
+    const repository = createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({ actions: [{ playerDisplayName: 'Prem', actionText: 'สำรวจ', playerId: 'p1', useItemId: null }] })),
+    });
+    const narration = ['เจอของ', '[[hurt: Prem | light]]', '[[give: Prem | story: Rusty Key]]', '[[take: Prem | potion_minor]]'].join('\n');
+    await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 4 }, 'round-1');
+
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เจอของ');
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [
+      { playerId: 'p1', items: [{ itemId: 'story', customName: 'Rusty Key', quantity: 1, slot: null, equipped: false }] },
+    ]);
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem −4 HP', 'Prem ได้รับ Rusty Key', 'Prem เสียไป ยาฟื้นฟูเล็ก']);
+  });
+
+  it('applies armor to hurt tags using the character armorReduction', async () => {
+    const armored = { ...prem, hp: 20, armorReduction: 2 };
+    const repository = createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [armored], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }] })),
+    });
+    await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['[[hurt: Prem | medium]]'])), rollSides: () => 4 }, 'round-1');
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem −3 HP (เกราะกัน 2)']);
+  });
+
+  it('still closes the round when saving inventories fails', async () => {
+    const repository = createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({})),
+      saveInventories: vi.fn().mockRejectedValue(new Error('db down')),
+    });
+    const result = await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['ok'])), rollSides: () => 4 }, 'round-1');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
+
+  it('still posts the stats line when saving inventories fails', async () => {
+    const repository = createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({})),
+      saveInventories: vi.fn().mockRejectedValue(new Error('unique violation')),
+    });
+    await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['ok'])), rollSides: () => 4 }, 'round-1');
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ดื่ม ยาฟื้นฟูเล็ก (+5 HP)']);
   });
 });

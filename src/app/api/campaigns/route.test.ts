@@ -42,6 +42,7 @@ describe('createCampaign', () => {
     expect(calls.map((c) => `${c.action}:${c.table}`)).toEqual([
       'insert:campaigns',
       'insert:players',
+      'insert:inventory_items',
       'insert:rounds',
       'update:campaigns',
     ]);

@@ -109,6 +109,19 @@ describe('applyCharacterTags', () => {
     expect(result.changes[result.changes.length - 1]).toContain('ล้มทั้งกลุ่ม');
   });
 
+  it('lets armor absorb damage and says how much', () => {
+    const result = applyCharacterTags([char({ armorReduction: 2 })], [{ kind: 'hurt', name: 'Prem', tier: 'medium' }], four);
+    expect(byName(result, 'Prem').hp).toBe(17); // medium = 5, armor 2 -> 3
+    expect(result.changes).toEqual(['Prem −3 HP (เกราะกัน 2)']);
+  });
+
+  it('never lets armor cut a hit below 1', () => {
+    const one = () => 1;
+    const result = applyCharacterTags([char({ armorReduction: 3 })], [{ kind: 'hurt', name: 'Prem', tier: 'light' }], one);
+    expect(byName(result, 'Prem').hp).toBe(19);
+    expect(result.changes).toEqual(['Prem −1 HP']);
+  });
+
   it('never wipes an empty party', () => {
     expect(applyCharacterTags([], [], four)).toEqual({ characters: [], changes: [], wiped: false });
   });

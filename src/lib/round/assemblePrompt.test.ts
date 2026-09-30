@@ -113,3 +113,23 @@ describe('assemblePrompt with characters', () => {
     expect(prompt).not.toContain('Party status');
   });
 });
+
+describe('assemblePrompt inventory', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+
+  it('includes the inventory block and the server note on a potion action', () => {
+    const prompt = assemblePrompt(
+      '', [],
+      [{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', note: 'drank ยาฟื้นฟูเล็ก and recovered 5 HP' }],
+      null, null, undefined,
+      { characters: [prem], pendingWipe: false, inventories: { p1: [] } }
+    );
+    expect(prompt).toContain('Prem: nothing; weight 0/10');
+    expect(prompt).toContain('Prem: ดื่มยา (server: drank ยาฟื้นฟูเล็ก and recovered 5 HP)');
+  });
+
+  it('adds no inventory block when there is no character state', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }]);
+    expect(prompt).not.toContain('weight');
+  });
+});

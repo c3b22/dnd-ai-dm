@@ -6,6 +6,7 @@ import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
+import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
@@ -39,6 +40,7 @@ export async function processRound(
   let rolled: RoundAction[];
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
+  let potions: ReturnType<typeof applyPotionActions>;
   try {
     context = await deps.repository.getRoundContext(roundId);
     // The server rolls, not the model, so results are fair and can be shown to the table.
@@ -46,9 +48,13 @@ export async function processRound(
     const settings = normalizeSettings(context.settings);
     diceEnabled = settings.diceEnabled;
     const rollSides = deps.rollSides ?? randomDie;
+    // Potions resolve before narration so the DM sees the real HP; nothing is saved until the end,
+    // so a failed generation leaves the potion untouched for the retry.
+    potions = applyPotionActions(context.characters, context.inventories, context.actions, rollSides);
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
-    rolled = context.actions.map((a) => {
-      if (!diceEnabled) return { ...a };
+    rolled = context.actions.map((action) => {
+      const a = { ...action, note: action.playerId ? potions.notes[action.playerId] : undefined };
+      if (!diceEnabled) return a;
       const roll = rollDie();
       const character = characterByName.get(a.playerDisplayName.toLowerCase());
       if (!character) return { ...a, roll };
@@ -62,7 +68,7 @@ export async function processRound(
       context.adventureId,
       context.currentSceneId,
       settings,
-      { characters: context.characters, pendingWipe: context.pendingWipe }
+      { characters: potions.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories }
     );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
@@ -102,9 +108,28 @@ export async function processRound(
   // Best-effort like the scene change: a failure here must never leave the table stuck.
   if (context.characters.length > 0) {
     try {
-      const result = applyCharacterTags(context.characters, tags, deps.rollSides ?? randomDie);
+      const result = applyCharacterTags(potions.characters, tags, deps.rollSides ?? randomDie);
+      const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
+      // HP first on purpose: if only the inventory write fails, a potion heals without being
+      // consumed, which is better for the player than being consumed without healing.
       await deps.repository.saveCharacterState(context.campaignId, result.characters, result.wiped);
-      await deps.repository.insertStatsSummary(context.campaignId, roundId, result.changes);
+      const changedIds = [...new Set([...potions.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
+      // Its own try: if only the inventory write fails, the table must still see what happened.
+      if (changedIds.length > 0) {
+        try {
+          await deps.repository.saveInventories(
+            context.campaignId,
+            changedIds.map((playerId) => ({ playerId, items: inventoryResult.inventories[playerId] ?? [] }))
+          );
+        } catch {
+          /* best-effort, like the rest of the mechanics */
+        }
+      }
+      await deps.repository.insertStatsSummary(context.campaignId, roundId, [
+        ...potions.changes,
+        ...result.changes,
+        ...inventoryResult.changes,
+      ]);
     } catch {
       /* the narration is already posted; the next round reads whatever state was saved */
     }

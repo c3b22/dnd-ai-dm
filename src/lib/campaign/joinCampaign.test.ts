@@ -3,8 +3,11 @@ import { joinCampaign } from './joinCampaign';
 
 function fakeSupabase(options: { existing: unknown | null }) {
   const inserts: unknown[] = [];
+  const kitInserts: unknown[] = [];
   const client: any = {
-    from: () => ({
+    from: (table: string) => table === 'inventory_items'
+      ? { insert: (payload: unknown) => { kitInserts.push(payload); return Promise.resolve({ error: null }); } }
+      : ({
       select: () => ({
         eq: () => ({
           eq: () => ({
@@ -22,7 +25,7 @@ function fakeSupabase(options: { existing: unknown | null }) {
       },
     }),
   };
-  return { client, inserts };
+  return { client, inserts, kitInserts };
 }
 
 describe('joinCampaign', () => {
@@ -39,6 +42,21 @@ describe('joinCampaign', () => {
       { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword' },
     ]);
     expect(player.id).toBe('new-player');
+  });
+
+  it('gives a new player their starting kit, but not a player who already joined', async () => {
+    const fresh = fakeSupabase({ existing: null });
+    await joinCampaign(fresh.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', weaponId: 'staff' });
+    expect(fresh.kitInserts).toEqual([
+      [
+        { campaign_id: 'camp-1', player_id: 'new-player', item_id: 'staff', custom_name: '', quantity: 1, slot: 'weapon', equipped: true },
+        { campaign_id: 'camp-1', player_id: 'new-player', item_id: 'potion_minor', custom_name: '', quantity: 1, slot: null, equipped: false },
+      ],
+    ]);
+
+    const again = fakeSupabase({ existing: { id: 'player-9' } });
+    await joinCampaign(again.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem' });
+    expect(again.kitInserts).toEqual([]);
   });
 
   it('stores the chosen starting weapon and falls back to the default for anything else', async () => {

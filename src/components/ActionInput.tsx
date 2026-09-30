@@ -8,16 +8,18 @@ export interface ActionInputProps {
   onSubmit: (actionText: string) => Promise<void>;
   /** When set the player cannot act (for example a downed character): everything is locked and this is shown. */
   disabledReason?: string;
+  /** True when this player already has an action in this round (for example a potion drunk from the inventory). */
+  alreadyActed?: boolean;
 }
 
-export function ActionInput({ onSubmit, disabledReason }: ActionInputProps) {
+export function ActionInput({ onSubmit, disabledReason, alreadyActed }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(actionText: string) {
-    if (!actionText.trim() || submitted || submitting || disabledReason) return;
+    if (!actionText.trim() || submitted || submitting || disabledReason || alreadyActed) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -31,7 +33,7 @@ export function ActionInput({ onSubmit, disabledReason }: ActionInputProps) {
     }
   }
 
-  const locked = submitted || submitting || Boolean(disabledReason);
+  const locked = submitted || submitting || Boolean(disabledReason) || Boolean(alreadyActed);
 
   return (
     <div className="dock">
@@ -73,7 +75,7 @@ export function ActionInput({ onSubmit, disabledReason }: ActionInputProps) {
           {error}
         </p>
       )}
-      {submitted && <p className="status ok">ส่ง action แล้ว รอเพื่อนร่วมโต๊ะ…</p>}
+      {(submitted || alreadyActed) && <p className="status ok">ส่ง action แล้ว รอเพื่อนร่วมโต๊ะ…</p>}
     </div>
   );
 }

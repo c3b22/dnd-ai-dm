@@ -9,6 +9,8 @@ import {
 import { characterPrompt } from '@/lib/character/prompt';
 import { sanctuaryFor } from '@/lib/character/sanctuaries';
 import type { Character } from '@/lib/character/types';
+import { inventoryPrompt } from '@/lib/inventory/prompt';
+import type { Inventories } from '@/lib/inventory/types';
 
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
@@ -23,6 +25,12 @@ export interface RoundAction {
   /** Weapon the acting character wields and the damage the server rolled for it. */
   weaponLabel?: string;
   damage?: number;
+  /** Set by the server from the round's action row; identifies the acting player. */
+  playerId?: string;
+  /** Catalog id of a consumable the player drinks this round. */
+  useItemId?: string | null;
+  /** Server-side outcome of the action (for example a potion drunk) that the narration must match. */
+  note?: string;
 }
 
 export function assemblePrompt(
@@ -32,7 +40,7 @@ export function assemblePrompt(
   adventureId?: string | null,
   currentSceneId?: string | null,
   settings: CampaignSettings = DEFAULT_SETTINGS,
-  characterState?: { characters: Character[]; pendingWipe: boolean }
+  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories }
 ): string {
   const adventure = getAdventure(adventureId);
   const historyText = recentMessages
@@ -44,7 +52,8 @@ export function assemblePrompt(
     .map((a, i) => {
       const damage = a.damage === undefined ? '' : `, ${a.weaponLabel ?? 'weapon'} damage roll ${a.damage}`;
       const rolled = a.roll === undefined ? '' : ` (rolled ${a.roll} on a d20${damage})`;
-      return `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}${rolled}: ${a.actionText}`;
+      const note = a.note ? ` (server: ${a.note})` : '';
+      return `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}${rolled}: ${a.actionText}${note}`;
     })
     .join('\n');
 
@@ -68,7 +77,8 @@ export function assemblePrompt(
             characterState.pendingWipe,
             sanctuaryFor(adventureId)
           );
-          return block.length ? [...block, ''] : [];
+          const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
+          return [...(block.length ? [...block, ''] : []), ...(inventory.length ? [...inventory, ''] : [])];
         })()
       : []),
     "This round's player actions" + (inOrder ? ' (listed in the order the players chose):' : ':'),

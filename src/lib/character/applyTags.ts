@@ -7,6 +7,7 @@ import {
   WIPE_EXTRA_MAX_HP_PENALTY,
 } from './constants';
 import { rollDice } from './dice';
+import { findByDisplayName } from './names';
 import type { CharacterTag } from './tags';
 import type { Character } from './types';
 
@@ -26,11 +27,7 @@ export function applyCharacterTags(
   const changes: string[] = [];
 
   // Unknown or ambiguous names resolve to null so a bad tag can never hit the wrong player.
-  const find = (name: string): Character | null => {
-    const wanted = name.trim().toLowerCase();
-    const matches = next.filter((c) => c.displayName.trim().toLowerCase() === wanted);
-    return matches.length === 1 ? matches[0] : null;
-  };
+  const find = (name: string): Character | null => findByDisplayName(next, name);
 
   for (const tag of tags) {
     if (tag.kind === 'sanctuary') {
@@ -46,9 +43,11 @@ export function applyCharacterTags(
     if (!target) continue;
 
     if (tag.kind === 'hurt' && target.status === 'active') {
-      const damage = rollDice(TIERS[tag.tier], rollDie);
+      const rolled = rollDice(TIERS[tag.tier], rollDie);
+      const damage = Math.max(1, rolled - (target.armorReduction ?? 0));
+      const absorbed = rolled - damage;
       target.hp = Math.max(0, target.hp - damage);
-      changes.push(`${target.displayName} −${damage} HP`);
+      changes.push(`${target.displayName} −${damage} HP${absorbed > 0 ? ` (เกราะกัน ${absorbed})` : ''}`);
       if (target.hp === 0) {
         target.status = 'downed';
         changes.push(`${target.displayName} ล้มลง`);
