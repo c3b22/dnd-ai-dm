@@ -91,54 +91,105 @@ describe('MessageList', () => {
     expect(screen.getByText('1')).toBeInTheDocument();
   });
 
-  it('animates a roll that arrives live before settling on the real number, but shows history instantly', async () => {
-    vi.useFakeTimers();
-    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
-
-    try {
-      const fetchInitialMessages = vi.fn().mockResolvedValue([]);
-      let deliverMessage: (message: any) => void = () => {};
-      const subscribeToNewMessages = vi.fn((_campaignId, onMessage) => {
-        deliverMessage = onMessage;
-        return () => {};
-      });
-
-      render(
-        <MessageList
-          campaignId="camp-1"
-          fetchInitialMessages={fetchInitialMessages}
-          subscribeToNewMessages={subscribeToNewMessages}
-        />
-      );
-
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      act(() => {
-        deliverMessage({
-          id: 'm1',
-          role: 'system',
-          content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
-        });
-      });
-
-      // Mid-tumble: shows the ticking placeholder, not the real result yet.
-      expect(screen.getByText('1')).toBeInTheDocument();
-      expect(screen.queryByText('20')).not.toBeInTheDocument();
-
-      act(() => {
-        vi.advanceTimersByTime(2000);
-      });
-
-      expect(screen.getByText('20')).toBeInTheDocument();
-    } finally {
-      randomSpy.mockRestore();
-      vi.useRealTimers();
+  it('hides the numbers behind a placeholder while the roll overlay plays, then reveals them once it completes', async () => {
+    let triggerComplete: () => void = () => {};
+    function FakeOverlay({ onComplete }: { values: number[]; onComplete: () => void }) {
+      triggerComplete = onComplete;
+      return null;
     }
+
+    const fetchInitialMessages = vi.fn().mockResolvedValue([]);
+    let deliverMessage: (message: any) => void = () => {};
+    const subscribeToNewMessages = vi.fn((_campaignId, onMessage) => {
+      deliverMessage = onMessage;
+      return () => {};
+    });
+
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={subscribeToNewMessages}
+        RollOverlay={FakeOverlay}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      deliverMessage({
+        id: 'm1',
+        role: 'system',
+        content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
+      });
+    });
+
+    expect(screen.getByText('Prem')).toBeInTheDocument();
+    expect(screen.queryByText('20')).not.toBeInTheDocument();
+
+    act(() => {
+      triggerComplete();
+    });
+
+    expect(screen.getByText('20')).toBeInTheDocument();
   });
 
-  it('does not animate a roll message that was already in the history on load', async () => {
+  it('defers other messages that arrive while the roll overlay is playing, then reveals them together once it completes', async () => {
+    let triggerComplete: () => void = () => {};
+    function FakeOverlay({ onComplete }: { values: number[]; onComplete: () => void }) {
+      triggerComplete = onComplete;
+      return null;
+    }
+
+    const fetchInitialMessages = vi.fn().mockResolvedValue([]);
+    let deliverMessage: (message: any) => void = () => {};
+    const subscribeToNewMessages = vi.fn((_campaignId, onMessage) => {
+      deliverMessage = onMessage;
+      return () => {};
+    });
+
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={subscribeToNewMessages}
+        RollOverlay={FakeOverlay}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      deliverMessage({
+        id: 'm1',
+        role: 'system',
+        content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
+      });
+    });
+
+    // DM narration starts streaming in while the dice are still tumbling.
+    act(() => {
+      deliverMessage({ id: 'm2', role: 'dm', content: 'The door creaks open' });
+    });
+    act(() => {
+      deliverMessage({ id: 'm2', role: 'dm', content: 'The door creaks open slowly.' });
+    });
+
+    expect(screen.queryByText(/The door creaks/)).not.toBeInTheDocument();
+
+    act(() => {
+      triggerComplete();
+    });
+
+    expect(screen.getByText('The door creaks open slowly.')).toBeInTheDocument();
+  });
+
+  it('never shows the roll overlay for history that was already loaded on mount', async () => {
+    const fakeOverlay = vi.fn(() => null);
     const fetchInitialMessages = vi.fn().mockResolvedValue([
       {
         id: 'm1',
@@ -153,48 +204,12 @@ describe('MessageList', () => {
         campaignId="camp-1"
         fetchInitialMessages={fetchInitialMessages}
         subscribeToNewMessages={subscribeToNewMessages}
+        RollOverlay={fakeOverlay}
       />
     );
 
     await waitFor(() => expect(screen.getByText('20')).toBeInTheDocument());
-  });
-
-  it('skips the tumble animation when the player prefers reduced motion', async () => {
-    const originalMatchMedia = window.matchMedia;
-    (window as any).matchMedia = vi.fn().mockReturnValue({ matches: true });
-
-    try {
-      const fetchInitialMessages = vi.fn().mockResolvedValue([]);
-      let deliverMessage: (message: any) => void = () => {};
-      const subscribeToNewMessages = vi.fn((_campaignId, onMessage) => {
-        deliverMessage = onMessage;
-        return () => {};
-      });
-
-      render(
-        <MessageList
-          campaignId="camp-1"
-          fetchInitialMessages={fetchInitialMessages}
-          subscribeToNewMessages={subscribeToNewMessages}
-        />
-      );
-
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      act(() => {
-        deliverMessage({
-          id: 'm1',
-          role: 'system',
-          content: JSON.stringify({ type: 'rolls', rolls: [{ playerDisplayName: 'Prem', roll: 20 }] }),
-        });
-      });
-
-      expect(screen.getByText('20')).toBeInTheDocument();
-    } finally {
-      window.matchMedia = originalMatchMedia;
-    }
+    expect(fakeOverlay).not.toHaveBeenCalled();
   });
 
   it('falls back to plain text for a system message that is not structured roll data', async () => {
