@@ -117,3 +117,58 @@ describe('createSupabaseRoundRepository.getRoundContext', () => {
     expect(gtCall).toBeUndefined();
   });
 });
+
+describe('createSupabaseRoundRepository.insertRollSummary', () => {
+  it('stores the rolls as structured data the UI can render per-roll', async () => {
+    const inserted: unknown[] = [];
+    const client: any = {
+      from: (table: string) => {
+        if (table !== 'messages') throw new Error(`Unexpected table: ${table}`);
+        return {
+          insert: (payload: unknown) => {
+            inserted.push(payload);
+            return Promise.resolve({ error: null });
+          },
+        };
+      },
+    };
+
+    const repository = createSupabaseRoundRepository(client);
+    await repository.insertRollSummary('camp-1', 'round-1', [
+      { playerDisplayName: 'Prem', roll: 20 },
+      { playerDisplayName: 'Nueng', roll: 8 },
+    ]);
+
+    expect(inserted).toEqual([
+      {
+        campaign_id: 'camp-1',
+        round_id: 'round-1',
+        role: 'system',
+        content: JSON.stringify({
+          type: 'rolls',
+          rolls: [
+            { playerDisplayName: 'Prem', roll: 20 },
+            { playerDisplayName: 'Nueng', roll: 8 },
+          ],
+        }),
+      },
+    ]);
+  });
+
+  it('does not touch the database when there are no rolls', async () => {
+    let called = false;
+    const client: any = {
+      from: () => ({
+        insert: () => {
+          called = true;
+          return Promise.resolve({ error: null });
+        },
+      }),
+    };
+
+    const repository = createSupabaseRoundRepository(client);
+    await repository.insertRollSummary('camp-1', 'round-1', []);
+
+    expect(called).toBe(false);
+  });
+});

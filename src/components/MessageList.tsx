@@ -1,11 +1,48 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { D20Icon } from './D20Icon';
 
 export interface Message {
   id: string;
   role: 'dm' | 'player' | 'system';
   content: string;
+}
+
+interface RollEntry {
+  playerDisplayName: string;
+  roll: number;
+}
+
+function parseRollMessage(content: string): RollEntry[] | null {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed?.type === 'rolls' && Array.isArray(parsed.rolls)) {
+      return parsed.rolls;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function RollSummary({ rolls }: { rolls: RollEntry[] }) {
+  return (
+    <ul className="roll-list">
+      {rolls.map((r, i) => (
+        <li
+          key={i}
+          className={`roll-line${r.roll === 20 ? ' crit' : ''}${r.roll === 1 ? ' fumble' : ''}`}
+        >
+          <span className="d20-mini">
+            <D20Icon />
+          </span>
+          <span className="who">{r.playerDisplayName}</span>
+          <span className="num">{r.roll}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export interface MessageListProps {
@@ -61,12 +98,15 @@ export function MessageList({
 
   return (
     <ul className="log" aria-label="session log" ref={listRef}>
-      {messages.map((message) => (
-        <li key={message.id} className={ROLE_CLASS[message.role]} data-role={message.role}>
-          {message.role === 'dm' && <span className="who">DM</span>}
-          <span>{message.content}</span>
-        </li>
-      ))}
+      {messages.map((message) => {
+        const rolls = message.role === 'system' ? parseRollMessage(message.content) : null;
+        return (
+          <li key={message.id} className={ROLE_CLASS[message.role]} data-role={message.role}>
+            {message.role === 'dm' && <span className="who">DM</span>}
+            {rolls ? <RollSummary rolls={rolls} /> : <span>{message.content}</span>}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -133,7 +133,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         campaign_id: campaignId,
         round_id: roundId,
         role: 'system',
-        content: 'ผลทอยตามลำดับ: ' + rolls.map((r, i) => `${i + 1}. ${r.playerDisplayName} ทอย ${r.roll}`).join(' · '),
+        content: JSON.stringify({ type: 'rolls', rolls }),
       });
       if (error) throw error;
     },

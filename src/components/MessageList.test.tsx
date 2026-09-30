@@ -60,4 +60,51 @@ describe('MessageList', () => {
     await waitFor(() => expect(screen.getByText('You see a torch.')).toBeInTheDocument());
     expect(screen.queryByText('You see')).not.toBeInTheDocument();
   });
+
+  it('renders a structured roll message as one row per roll', async () => {
+    const fetchInitialMessages = vi.fn().mockResolvedValue([
+      {
+        id: 'm1',
+        role: 'system',
+        content: JSON.stringify({
+          type: 'rolls',
+          rolls: [
+            { playerDisplayName: 'Prem', roll: 20 },
+            { playerDisplayName: 'Nueng', roll: 1 },
+          ],
+        }),
+      },
+    ]);
+    const subscribeToNewMessages = vi.fn(() => () => {});
+
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={subscribeToNewMessages}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Prem')).toBeInTheDocument());
+    expect(screen.getByText('20')).toBeInTheDocument();
+    expect(screen.getByText('Nueng')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  it('falls back to plain text for a system message that is not structured roll data', async () => {
+    const fetchInitialMessages = vi
+      .fn()
+      .mockResolvedValue([{ id: 'm1', role: 'system', content: 'ห้องถูกสร้างแล้ว' }]);
+    const subscribeToNewMessages = vi.fn(() => () => {});
+
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={subscribeToNewMessages}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('ห้องถูกสร้างแล้ว')).toBeInTheDocument());
+  });
 });
