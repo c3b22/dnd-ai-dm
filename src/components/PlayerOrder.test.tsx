@@ -2,10 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PlayerOrder } from './PlayerOrder';
 
+const character = { hp: 20, maxHp: 20, weaponId: 'shortsword', status: 'active' as const };
 const players = [
-  { id: 'p1', displayName: 'Prem', acted: true, isOwner: true },
-  { id: 'p2', displayName: 'Mila', acted: false, isOwner: false },
-  { id: 'p3', displayName: 'Tan', acted: false, isOwner: false },
+  { id: 'p1', displayName: 'Prem', acted: true, isOwner: true, ...character },
+  { id: 'p2', displayName: 'Mila', acted: false, isOwner: false, ...character },
+  { id: 'p3', displayName: 'Tan', acted: false, isOwner: false, ...character },
 ];
 
 describe('PlayerOrder', () => {
@@ -67,5 +68,18 @@ describe('PlayerOrder', () => {
 
     expect(rows[1].getAttribute('draggable')).toBe('true');
     expect(rows[2].getAttribute('draggable')).toBe('false');
+  });
+
+  it('shows each weapon, an HP bar, and a downed badge for a player who cannot act', () => {
+    const party = [
+      { ...players[0], hp: 12, maxHp: 18 },
+      { ...players[1], hp: 0, status: 'downed' as const, weaponId: 'staff' },
+      players[2],
+    ];
+    render(<PlayerOrder players={party} currentPlayerId="p1" locked={false} onMove={() => {}} />);
+
+    expect(screen.getByLabelText('HP 12 จาก 18')).toBeInTheDocument();
+    expect(screen.getByText('ล้มลง')).toBeInTheDocument();
+    expect(screen.getByText(/ไม้เท้า/)).toBeInTheDocument();
   });
 });

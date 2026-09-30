@@ -7,6 +7,10 @@ export interface RoundPlayer {
   acted: boolean;
   /** The player who sat down first may arrange everyone. */
   isOwner: boolean;
+  hp: number;
+  maxHp: number;
+  weaponId: string | null;
+  status: 'active' | 'downed';
 }
 
 export async function fetchRoundPlayers(
@@ -15,7 +19,7 @@ export async function fetchRoundPlayers(
 ): Promise<RoundPlayer[]> {
   const { data: players, error } = await supabaseBrowserClient
     .from('players')
-    .select('id, display_name, turn_order, created_at')
+    .select('id, display_name, turn_order, created_at, weapon_id, hp, max_hp, status')
     .eq('campaign_id', campaignId);
   if (error) throw error;
 
@@ -33,6 +37,10 @@ export async function fetchRoundPlayers(
     displayName: p.display_name as string,
     turnOrder: p.turn_order as number | null,
     joinedAt: p.created_at as string,
+    weaponId: (p.weapon_id ?? null) as string | null,
+    hp: p.hp as number,
+    maxHp: p.max_hp as number,
+    status: p.status as 'active' | 'downed',
   }));
   const ownerId = findOwnerId(rows);
   return sortByTurnOrder(rows).map((p) => ({
@@ -40,6 +48,10 @@ export async function fetchRoundPlayers(
     displayName: p.displayName,
     acted: actedIds.has(p.id),
     isOwner: p.id === ownerId,
+    hp: p.hp,
+    maxHp: p.maxHp,
+    weaponId: p.weaponId,
+    status: p.status,
   }));
 }
 

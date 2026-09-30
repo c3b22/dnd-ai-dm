@@ -13,9 +13,13 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       campaignSummary: '',
       recentMessages: [],
       actions: [{ playerDisplayName: 'Prem', actionText: 'Look around' }],
+      characters: [],
+      pendingWipe: false,
     }),
     insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
     insertRollSummary: vi.fn().mockResolvedValue(undefined),
+    saveCharacterState: vi.fn().mockResolvedValue(undefined),
+    insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
     updateCampaignSummary: vi.fn().mockResolvedValue(undefined),
@@ -104,6 +108,8 @@ describe('processRound', () => {
         campaignSummary: 'Old summary.',
         recentMessages: [longMessage],
         actions: [{ playerDisplayName: 'Prem', actionText: 'Continue' }],
+        characters: [],
+        pendingWipe: false,
       }),
     });
     const generateNarration = vi
@@ -134,6 +140,8 @@ describe('processRound', () => {
           campaignSummary: 'Old summary.',
           recentMessages: [{ role: 'dm' as const, content: 'x'.repeat(9000) }],
           actions: [{ playerDisplayName: 'Prem', actionText: 'Continue' }],
+          characters: [],
+          pendingWipe: false,
         }),
       });
     }
@@ -245,5 +253,111 @@ describe('processRound', () => {
     expect(repository.insertRollSummary).toHaveBeenCalledWith('camp-1', 'round-1', [
       { playerDisplayName: 'Prem', roll: 14 },
     ]);
+  });
+});
+
+describe('processRound character status', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+
+  function repoWith(characters: unknown[], extra: Record<string, unknown> = {}) {
+    return createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1',
+        campaignSummary: '',
+        recentMessages: [],
+        actions: [{ playerDisplayName: 'Prem', actionText: 'Attack' }],
+        characters,
+        pendingWipe: false,
+        ...extra,
+      }),
+    });
+  }
+  const deps = (repository: RoundRepository, narration: string[], extra: Partial<ProcessRoundDeps> = {}): ProcessRoundDeps => ({
+    claimRound: vi.fn().mockResolvedValue(true),
+    repository,
+    generateNarration: vi.fn().mockResolvedValue(fakeStream(narration)),
+    rollDie: () => 14,
+    rollSides: () => 4,
+    ...extra,
+  });
+
+  it('rolls the acting weapon damage and tells the DM', async () => {
+    const repository = repoWith([prem]);
+    const d = deps(repository, ['Narration.']);
+
+    await processRound(d, 'round-1');
+
+    expect((d.generateNarration as any).mock.calls[0][0]).toContain(
+      'Prem (rolled 14 on a d20, shortsword damage roll 4): Attack'
+    );
+  });
+
+  it('strips the tags from the posted narration, applies them and posts the stats line', async () => {
+    const repository = repoWith([prem]);
+
+    await processRound(deps(repository, ['Goblin hits.\n[[hurt: Prem | heavy]]\n[[scene: crypt]]']), 'round-1');
+
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'Goblin hits.');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith(
+      'camp-1',
+      [expect.objectContaining({ id: 'p1', hp: 12 })],
+      false
+    );
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem −8 HP']);
+  });
+
+  it('records a party wipe so the next round narrates the aftermath', async () => {
+    const repository = repoWith([{ ...prem, hp: 5 }]);
+
+    await processRound(deps(repository, ['Down.\n[[hurt: Prem | heavy]]']), 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ status: 'active', maxHp: 16, hp: 8 })], true);
+  });
+
+  it('clears the wipe flag and posts no stats when nothing happened', async () => {
+    const repository = repoWith([prem], { pendingWipe: true });
+
+    await processRound(deps(repository, ['A quiet round.']), 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 20 })], false);
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', []);
+  });
+
+  it('puts the aftermath instruction in the prompt while a wipe is pending', async () => {
+    const repository = repoWith([prem], { pendingWipe: true });
+    const d = deps(repository, ['ok']);
+
+    await processRound(d, 'round-1');
+
+    expect((d.generateNarration as any).mock.calls[0][0]).toContain('defeated last round');
+  });
+
+  it('still applies tags when dice are disabled, but rolls no weapon damage', async () => {
+    const repository = repoWith([prem], { settings: { diceEnabled: false } });
+    const d = deps(repository, ['Hit.\n[[hurt: Prem | light]]']);
+
+    await processRound(d, 'round-1');
+
+    expect((d.generateNarration as any).mock.calls[0][0]).not.toContain('damage roll');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 16 })], false);
+  });
+
+  it('still closes the round when saving character state fails', async () => {
+    const repository = repoWith([prem]);
+    (repository.saveCharacterState as any).mockRejectedValue(new Error('db down'));
+
+    const result = await processRound(deps(repository, ['Hit.\n[[hurt: Prem | light]]']), 'round-1');
+
+    expect(result.processed).toBe(true);
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+  });
+
+  it('does nothing about characters when the campaign has none', async () => {
+    const repository = repoWith([]);
+
+    await processRound(deps(repository, ['Plain.']), 'round-1');
+
+    expect(repository.saveCharacterState).not.toHaveBeenCalled();
+    expect(repository.insertStatsSummary).not.toHaveBeenCalled();
   });
 });

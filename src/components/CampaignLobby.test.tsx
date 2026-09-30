@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { CampaignLobby } from './CampaignLobby';
 
 const PLAYERS = [
-  { id: 'p1', displayName: 'Prem', acted: false, isOwner: true },
-  { id: 'p2', displayName: 'Alex', acted: false, isOwner: false },
+  { id: 'p1', displayName: 'Prem', acted: false, isOwner: true, hp: 20, maxHp: 20, weaponId: 'shortsword', status: 'active' as const },
+  { id: 'p2', displayName: 'Alex', acted: false, isOwner: false, hp: 20, maxHp: 20, weaponId: 'shortsword', status: 'active' as const },
 ];
 
 describe('CampaignLobby', () => {

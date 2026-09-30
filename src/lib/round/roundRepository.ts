@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StoredMessage, RoundAction } from './assemblePrompt';
 import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
+import type { Character } from '@/lib/character/types';
 
 export interface RoundContext {
   campaignId: string;
@@ -11,6 +12,8 @@ export interface RoundContext {
   campaignSummary: string;
   recentMessages: StoredMessage[];
   actions: RoundAction[];
+  characters: Character[];
+  pendingWipe: boolean;
 }
 
 export interface RoundRepository {
@@ -25,6 +28,8 @@ export interface RoundRepository {
     roundId: string,
     rolls: { playerDisplayName: string; roll: number }[]
   ): Promise<void>;
+  saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
+  insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
   updateCampaignSummary(
@@ -58,6 +63,18 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       const { data: settingsRow } = await supabase
         .from('campaigns')
         .select('settings')
+        .eq('id', campaignId)
+        .maybeSingle();
+
+      // Separate queries so a database without the character columns still plays.
+      const { data: characterRows } = await supabase
+        .from('players')
+        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary')
+        .eq('campaign_id', campaignId);
+
+      const { data: wipeRow } = await supabase
+        .from('campaigns')
+        .select('pending_wipe')
         .eq('id', campaignId)
         .maybeSingle();
 
@@ -102,6 +119,16 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         settings: normalizeSettings(settingsRow?.settings),
         campaignSummary: summaryRow?.summary ?? '',
         recentMessages: (messageRows ?? []).reverse() as StoredMessage[],
+        characters: (characterRows ?? []).map((row: any) => ({
+          id: row.id as string,
+          displayName: row.display_name as string,
+          weaponId: (row.weapon_id ?? null) as string | null,
+          hp: row.hp as number,
+          maxHp: row.max_hp as number,
+          status: row.status as 'active' | 'downed',
+          revivesSinceSanctuary: row.revives_since_sanctuary as number,
+        })),
+        pendingWipe: Boolean(wipeRow?.pending_wipe),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
           (actionsRows ?? []).map((row: any) => ({
@@ -134,6 +161,37 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         round_id: roundId,
         role: 'system',
         content: JSON.stringify({ type: 'rolls', rolls }),
+      });
+      if (error) throw error;
+    },
+
+    async saveCharacterState(campaignId, characters, pendingWipe) {
+      for (const c of characters) {
+        const { error } = await supabase
+          .from('players')
+          .update({
+            hp: c.hp,
+            max_hp: c.maxHp,
+            status: c.status,
+            revives_since_sanctuary: c.revivesSinceSanctuary,
+          })
+          .eq('id', c.id);
+        if (error) throw error;
+      }
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ pending_wipe: pendingWipe })
+        .eq('id', campaignId);
+      if (error) throw error;
+    },
+
+    async insertStatsSummary(campaignId, roundId, changes) {
+      if (changes.length === 0) return;
+      const { error } = await supabase.from('messages').insert({
+        campaign_id: campaignId,
+        round_id: roundId,
+        role: 'system',
+        content: JSON.stringify({ type: 'stats', changes }),
       });
       if (error) throw error;
     },

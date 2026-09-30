@@ -238,6 +238,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             <ActionInput
               key={roundId}
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
+              disabledReason={
+                players.find((p) => p.id === playerId)?.status === 'downed'
+                  ? 'คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง'
+                  : undefined
+              }
             />
           )}
         </div>

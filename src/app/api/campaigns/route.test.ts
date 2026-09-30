@@ -77,6 +77,24 @@ describe('createCampaign', () => {
     expect((campaignInsert?.payload as { join_code: string }).join_code).toHaveLength(6);
   });
 
+  it('stores the chosen starting weapon on the creator, defaulting to the shortsword', async () => {
+    const responses = {
+      campaigns: { id: 'camp-1', name: 'Test' },
+      players: { id: 'player-1', campaign_id: 'camp-1' },
+      rounds: { id: 'round-1', campaign_id: 'camp-1', status: 'pending' },
+    };
+    const playerInsert = (calls: { table: string; action: string; payload?: unknown }[]) =>
+      calls.find((c) => c.action === 'insert' && c.table === 'players')?.payload as { weapon_id: string };
+
+    const chosen = createFakeSupabase(responses);
+    await createCampaign(chosen.client, { name: 'Test', userId: 'user-1', displayName: 'Prem', weaponId: 'shortbow' });
+    expect(playerInsert(chosen.calls).weapon_id).toBe('shortbow');
+
+    const fallback = createFakeSupabase(responses);
+    await createCampaign(fallback.client, { name: 'Test', userId: 'user-1', displayName: 'Prem' });
+    expect(playerInsert(fallback.calls).weapon_id).toBe('shortsword');
+  });
+
   it('throws when campaign update fails', async () => {
     const updateError = new Error('network error');
     const client = {

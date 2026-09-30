@@ -4,6 +4,11 @@ import { joinCampaign } from '@/lib/campaign/joinCampaign';
 function createFakeSupabase(playerResponse: any) {
   return {
     from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }),
+        }),
+      }),
       insert: () => ({
         select: () => ({
           single: () => Promise.resolve({ data: playerResponse, error: null }),

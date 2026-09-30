@@ -101,4 +101,26 @@ describe('DiceRollOverlay', () => {
 
     vi.useRealTimers();
   });
+
+  it('gives up and completes when the dice never settle (e.g. a stalled render loop)', async () => {
+    vi.useFakeTimers();
+    initMock.mockResolvedValue(undefined);
+    DiceBoxMock.mockImplementation(() => ({ init: initMock, roll: vi.fn() }));
+    const onComplete = vi.fn();
+
+    render(<DiceRollOverlay values={[15]} onComplete={onComplete} />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onComplete).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
 });

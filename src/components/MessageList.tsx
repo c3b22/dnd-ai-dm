@@ -27,6 +27,18 @@ function parseRollMessage(content: string): RollEntry[] | null {
   return null;
 }
 
+function parseStatsMessage(content: string): string[] | null {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed?.type === 'stats' && Array.isArray(parsed.changes)) {
+      return parsed.changes.filter((line: unknown): line is string => typeof line === 'string');
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function RollSummary({ rolls, pending }: { rolls: RollEntry[]; pending: boolean }) {
   return (
     <ul className="roll-list">
@@ -148,12 +160,21 @@ export function MessageList({
       <ul className="log" aria-label="session log" ref={listRef}>
         {messages.map((message) => {
           const rolls = message.role === 'system' ? parseRollMessage(message.content) : null;
+          const stats = message.role === 'system' ? parseStatsMessage(message.content) : null;
           const pending = pendingRoll?.messageId === message.id;
           return (
             <li key={message.id} className={ROLE_CLASS[message.role]} data-role={message.role}>
               {message.role === 'dm' && <span className="who">DM</span>}
               {rolls ? (
                 <RollSummary rolls={rolls} pending={pending} />
+              ) : stats ? (
+                <ul className="stat-list">
+                  {stats.map((line, i) => (
+                    <li key={i} className="stat-line">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 <span>{message.content}</span>
               )}

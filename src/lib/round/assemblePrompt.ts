@@ -6,6 +6,9 @@ import {
   styleInstructions,
   type CampaignSettings,
 } from '@/lib/campaign/settings';
+import { characterPrompt } from '@/lib/character/prompt';
+import { sanctuaryFor } from '@/lib/character/sanctuaries';
+import type { Character } from '@/lib/character/types';
 
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
@@ -17,6 +20,9 @@ export interface RoundAction {
   actionText: string;
   /** d20 the server rolled for this action; the DM must respect it. */
   roll?: number;
+  /** Weapon the acting character wields and the damage the server rolled for it. */
+  weaponLabel?: string;
+  damage?: number;
 }
 
 export function assemblePrompt(
@@ -25,7 +31,8 @@ export function assemblePrompt(
   actions: RoundAction[],
   adventureId?: string | null,
   currentSceneId?: string | null,
-  settings: CampaignSettings = DEFAULT_SETTINGS
+  settings: CampaignSettings = DEFAULT_SETTINGS,
+  characterState?: { characters: Character[]; pendingWipe: boolean }
 ): string {
   const adventure = getAdventure(adventureId);
   const historyText = recentMessages
@@ -35,7 +42,8 @@ export function assemblePrompt(
   const inOrder = actions.length > 1;
   const actionsText = actions
     .map((a, i) => {
-      const rolled = a.roll === undefined ? '' : ` (rolled ${a.roll} on a d20)`;
+      const damage = a.damage === undefined ? '' : `, ${a.weaponLabel ?? 'weapon'} damage roll ${a.damage}`;
+      const rolled = a.roll === undefined ? '' : ` (rolled ${a.roll} on a d20${damage})`;
       return `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}${rolled}: ${a.actionText}`;
     })
     .join('\n');
@@ -53,6 +61,16 @@ export function assemblePrompt(
     'Recent narration and dialogue:',
     historyText || '(no recent messages)',
     '',
+    ...(characterState
+      ? (() => {
+          const block = characterPrompt(
+            characterState.characters,
+            characterState.pendingWipe,
+            sanctuaryFor(adventureId)
+          );
+          return block.length ? [...block, ''] : [];
+        })()
+      : []),
     "This round's player actions" + (inOrder ? ' (listed in the order the players chose):' : ':'),
     actionsText,
     ...(inOrder

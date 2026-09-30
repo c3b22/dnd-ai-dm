@@ -3,10 +3,14 @@
 import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
+import { ensureAnonymousUser } from '@/lib/supabase/ensureAnonymousUser';
+import { WeaponPicker } from '@/components/WeaponPicker';
+import { DEFAULT_WEAPON_ID } from '@/lib/character/constants';
 
 export default function JoinPage({ params }: { params: Promise<{ campaignId: string }> }) {
   const { campaignId } = use(params);
   const [displayName, setDisplayName] = useState('');
+  const [weaponId, setWeaponId] = useState<string>(DEFAULT_WEAPON_ID);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -15,8 +19,8 @@ export default function JoinPage({ params }: { params: Promise<{ campaignId: str
     setError(null);
     setJoining(true);
     try {
-      const { data, error: authError } = await supabaseBrowserClient.auth.signInAnonymously();
-      if (authError || !data.user) {
+      const { user, error: authError } = await ensureAnonymousUser(supabaseBrowserClient);
+      if (authError || !user) {
         setError('เข้าสู่ระบบไม่สำเร็จ ลองอีกครั้ง');
         return;
       }
@@ -24,7 +28,7 @@ export default function JoinPage({ params }: { params: Promise<{ campaignId: str
       const response = await fetch(`/api/campaigns/${campaignId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: data.user.id, displayName }),
+        body: JSON.stringify({ userId: user.id, displayName, weaponId }),
       });
       if (!response.ok) {
         setError('เข้าร่วมแคมเปญไม่สำเร็จ ลองอีกครั้ง');
@@ -60,6 +64,7 @@ export default function JoinPage({ params }: { params: Promise<{ campaignId: str
             onChange={(e) => setDisplayName(e.target.value)}
           />
         </div>
+        <WeaponPicker value={weaponId} onChange={setWeaponId} />
         <button className="btn" type="submit" disabled={!displayName.trim() || joining}>
           {joining ? 'กำลังเข้าร่วม…' : 'เข้าร่วมแคมเปญ'}
         </button>

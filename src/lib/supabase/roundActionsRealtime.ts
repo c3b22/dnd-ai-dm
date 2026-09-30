@@ -69,7 +69,8 @@ export function subscribeToRoundActionCount(
       supabaseBrowserClient
         .from('players')
         .select('*', { count: 'exact', head: true })
-        .eq('campaign_id', campaignId),
+        .eq('campaign_id', campaignId)
+        .eq('status', 'active'),
     ]);
     onCountChange(actionCount ?? 0, playerCount ?? 0);
   }

@@ -212,6 +212,28 @@ describe('MessageList', () => {
     expect(fakeOverlay).not.toHaveBeenCalled();
   });
 
+  it('renders a stats message as one line per change', async () => {
+    const fetchInitialMessages = vi.fn().mockResolvedValue([
+      {
+        id: 'm1',
+        role: 'system',
+        content: JSON.stringify({ type: 'stats', changes: ['Prem −5 HP', 'Prem ล้มลง'] }),
+      },
+    ]);
+    const subscribeToNewMessages = vi.fn(() => () => {});
+
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={subscribeToNewMessages}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Prem −5 HP')).toBeInTheDocument());
+    expect(screen.getByText('Prem ล้มลง')).toBeInTheDocument();
+  });
+
   it('falls back to plain text for a system message that is not structured roll data', async () => {
     const fetchInitialMessages = vi
       .fn()

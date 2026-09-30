@@ -45,4 +45,14 @@ describe('ActionInput', () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it('locks everything and shows the reason when the player cannot act', () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<ActionInput onSubmit={onSubmit} disabledReason="คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง" />);
+
+    expect(screen.getByText('คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'โจมตี' })).toBeDisabled();
+    expect(screen.getByLabelText('free text action')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'ส่ง' })).toBeDisabled();
+  });
 });

@@ -1,7 +1,11 @@
-import { assemblePrompt, shouldRotateSummary } from './assemblePrompt';
+import { assemblePrompt, shouldRotateSummary, type RoundAction } from './assemblePrompt';
 import type { RoundRepository } from './roundRepository';
 import { allowedScenes, parseSceneTag } from '@/lib/scenes/scenes';
 import { normalizeSettings } from '@/lib/campaign/settings';
+import { parseCharacterTags } from '@/lib/character/tags';
+import { applyCharacterTags } from '@/lib/character/applyTags';
+import { weaponFor } from '@/lib/character/constants';
+import { randomDie, rollDice } from '@/lib/character/dice';
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
@@ -11,6 +15,8 @@ export interface ProcessRoundDeps {
   generateNarration: (prompt: string) => Promise<AsyncIterable<string>>;
   /** Rolls one d20 (1-20). Injectable so tests are deterministic. */
   rollDie?: () => number;
+  /** Rolls one die with the given number of sides (weapon and tier damage). Injectable for tests. */
+  rollSides?: (sides: number) => number;
 }
 
 export interface ProcessRoundResult {
@@ -30,7 +36,7 @@ export async function processRound(
 
   let context: Awaited<ReturnType<RoundRepository['getRoundContext']>>;
   let prompt: string;
-  let rolled: { playerDisplayName: string; actionText: string; roll?: number }[];
+  let rolled: RoundAction[];
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
   try {
@@ -39,14 +45,24 @@ export async function processRound(
     const rollDie = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
     const settings = normalizeSettings(context.settings);
     diceEnabled = settings.diceEnabled;
-    rolled = context.actions.map((a) => (diceEnabled ? { ...a, roll: rollDie() } : { ...a }));
+    const rollSides = deps.rollSides ?? randomDie;
+    const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
+    rolled = context.actions.map((a) => {
+      if (!diceEnabled) return { ...a };
+      const roll = rollDie();
+      const character = characterByName.get(a.playerDisplayName.toLowerCase());
+      if (!character) return { ...a, roll };
+      const weapon = weaponFor(character.weaponId);
+      return { ...a, roll, weaponLabel: weapon.id, damage: rollDice(weapon.dice, rollSides) };
+    });
     prompt = assemblePrompt(
       context.campaignSummary,
       context.recentMessages,
       rolled,
       context.adventureId,
       context.currentSceneId,
-      settings
+      settings,
+      { characters: context.characters, pendingWipe: context.pendingWipe }
     );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
@@ -75,11 +91,23 @@ export async function processRound(
   // The DM ends with a [[scene: id]] tag; parse it out so it never reaches the visible message.
   let narration = '';
   for await (const chunk of stream) narration += chunk;
-  const { sceneId, cleanText } = parseSceneTag(narration);
+  const { tags, cleanText: withoutCharacterTags } = parseCharacterTags(narration);
+  const { sceneId, cleanText } = parseSceneTag(withoutCharacterTags);
   if (cleanText.trim()) await deps.repository.appendToMessage(messageId, cleanText);
   if (sceneId && allowedScenes(context.adventureId).some((s) => s.id === sceneId)) {
     // A missing scene column or a bad tag must never fail the round.
     await deps.repository.setCurrentScene(context.campaignId, sceneId).catch(() => {});
+  }
+
+  // Best-effort like the scene change: a failure here must never leave the table stuck.
+  if (context.characters.length > 0) {
+    try {
+      const result = applyCharacterTags(context.characters, tags, deps.rollSides ?? randomDie);
+      await deps.repository.saveCharacterState(context.campaignId, result.characters, result.wiped);
+      await deps.repository.insertStatsSummary(context.campaignId, roundId, result.changes);
+    } catch {
+      /* the narration is already posted; the next round reads whatever state was saved */
+    }
   }
 
   const nextRoundId = await deps.repository.closeRoundAndOpenNext(context.campaignId, roundId);

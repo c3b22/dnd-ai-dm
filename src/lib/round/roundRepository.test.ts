@@ -9,6 +9,8 @@ interface FakeRoundRow {
 function createFakeSupabase(options: {
   roundsById: Record<string, FakeRoundRow>;
   campaignSummary: { summary: string; covers_up_to_round: string | null } | null;
+  players?: unknown[];
+  pendingWipe?: boolean;
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
 
@@ -31,7 +33,10 @@ function createFakeSupabase(options: {
           select: () => ({
             eq: () => ({
               maybeSingle: () =>
-                Promise.resolve({ data: { adventure_id: 'test-adventure' }, error: null }),
+                Promise.resolve({
+                  data: { adventure_id: 'test-adventure', pending_wipe: options.pendingWipe ?? false },
+                  error: null,
+                }),
             }),
           }),
         };
@@ -49,6 +54,13 @@ function createFakeSupabase(options: {
             eq: () => ({
               maybeSingle: () => Promise.resolve({ data: options.campaignSummary, error: null }),
             }),
+          }),
+        };
+      }
+      if (table === 'players') {
+        return {
+          select: () => ({
+            eq: () => Promise.resolve({ data: options.players ?? [], error: null }),
           }),
         };
       }
@@ -170,5 +182,76 @@ describe('createSupabaseRoundRepository.insertRollSummary', () => {
     await repository.insertRollSummary('camp-1', 'round-1', []);
 
     expect(called).toBe(false);
+  });
+});
+
+describe('createSupabaseRoundRepository character state', () => {
+  it('reads the characters and the pending wipe flag into the round context', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      pendingWipe: true,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: 'staff', hp: 12, max_hp: 18, status: 'downed', revives_since_sanctuary: 1 },
+      ],
+    });
+
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+
+    expect(context.pendingWipe).toBe(true);
+    expect(context.characters).toEqual([
+      { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1 },
+    ]);
+  });
+
+  it('saves every character row and the wipe flag', async () => {
+    const updates: { table: string; payload: unknown; id: string }[] = [];
+    const client: any = {
+      from: (table: string) => ({
+        update: (payload: unknown) => ({
+          eq: (_col: string, id: string) => {
+            updates.push({ table, payload, id });
+            return Promise.resolve({ error: null });
+          },
+        }),
+      }),
+    };
+
+    await createSupabaseRoundRepository(client).saveCharacterState(
+      'camp-1',
+      [{ id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 }],
+      true
+    );
+
+    expect(updates).toEqual([
+      { table: 'players', payload: { hp: 5, max_hp: 18, status: 'active', revives_since_sanctuary: 1 }, id: 'p1' },
+      { table: 'campaigns', payload: { pending_wipe: true }, id: 'camp-1' },
+    ]);
+  });
+
+  it('posts the changes as a stats system message, and nothing when there are none', async () => {
+    const inserted: unknown[] = [];
+    const client: any = {
+      from: () => ({
+        insert: (payload: unknown) => {
+          inserted.push(payload);
+          return Promise.resolve({ error: null });
+        },
+      }),
+    };
+    const repository = createSupabaseRoundRepository(client);
+
+    await repository.insertStatsSummary('camp-1', 'round-1', []);
+    expect(inserted).toEqual([]);
+
+    await repository.insertStatsSummary('camp-1', 'round-1', ['Prem −5 HP']);
+    expect(inserted).toEqual([
+      {
+        campaign_id: 'camp-1',
+        round_id: 'round-1',
+        role: 'system',
+        content: JSON.stringify({ type: 'stats', changes: ['Prem −5 HP'] }),
+      },
+    ]);
   });
 });

@@ -6,16 +6,18 @@ const QUICK_ACTIONS = ['โจมตี', 'เคลื่อนที่', 'พ
 
 export interface ActionInputProps {
   onSubmit: (actionText: string) => Promise<void>;
+  /** When set the player cannot act (for example a downed character): everything is locked and this is shown. */
+  disabledReason?: string;
 }
 
-export function ActionInput({ onSubmit }: ActionInputProps) {
+export function ActionInput({ onSubmit, disabledReason }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(actionText: string) {
-    if (!actionText.trim() || submitted || submitting) return;
+    if (!actionText.trim() || submitted || submitting || disabledReason) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -29,10 +31,11 @@ export function ActionInput({ onSubmit }: ActionInputProps) {
     }
   }
 
-  const locked = submitted || submitting;
+  const locked = submitted || submitting || Boolean(disabledReason);
 
   return (
     <div className="dock">
+      {disabledReason && <p className="down-note">{disabledReason}</p>}
       <div className="hint-row" role="group" aria-label="quick actions">
         <span className="lbl">เลือกเร็ว</span>
         {QUICK_ACTIONS.map((action) => (

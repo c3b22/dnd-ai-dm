@@ -81,3 +81,35 @@ describe('assemblePrompt dice', () => {
     expect(prompt).not.toContain('rolled');
   });
 });
+
+describe('assemblePrompt with characters', () => {
+  const characters = [
+    { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 },
+  ];
+
+  it('includes the party status block when characters are given', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Attack' }], 'sunken-bell-of-marrowmere', null, undefined, {
+      characters,
+      pendingWipe: false,
+    });
+    expect(prompt).toContain('Prem: HP 20/20, shortsword (1d8), standing');
+    expect(prompt).toContain("Brother Tolliver's empty chapel");
+  });
+
+  it('shows the weapon damage roll next to the d20 when one was rolled', () => {
+    const prompt = assemblePrompt('', [], [
+      { playerDisplayName: 'Prem', actionText: 'Attack', roll: 14, weaponLabel: 'shortsword', damage: 5 },
+    ]);
+    expect(prompt).toContain('Prem (rolled 14 on a d20, shortsword damage roll 5): Attack');
+  });
+
+  it('keeps the old action format when there is no weapon damage', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look', roll: 9 }]);
+    expect(prompt).toContain('Prem (rolled 9 on a d20): Look');
+  });
+
+  it('adds no party block when no character state is passed', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }]);
+    expect(prompt).not.toContain('Party status');
+  });
+});

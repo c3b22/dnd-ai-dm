@@ -11,6 +11,10 @@ export interface DiceRollOverlayProps {
 
 // Let the result sit on screen for a beat before the overlay clears.
 const SETTLE_PAUSE_MS = 900;
+// A normal roll takes a few seconds. If the render loop stalls (background tab, GPU stall,
+// lost WebGL context) the dice never report they settled, and the DM's reply is held back
+// until this overlay completes, so give up and reveal everything instead of hanging the table.
+const MAX_ROLL_MS = 10_000;
 
 export function DiceRollOverlay({ values, onComplete }: DiceRollOverlayProps) {
   const doneRef = useRef(false);
@@ -34,6 +38,8 @@ export function DiceRollOverlay({ values, onComplete }: DiceRollOverlayProps) {
         cancelled = true;
       };
     }
+
+    const failsafeId = setTimeout(finish, MAX_ROLL_MS);
 
     (async () => {
       try {
@@ -63,6 +69,7 @@ export function DiceRollOverlay({ values, onComplete }: DiceRollOverlayProps) {
 
     return () => {
       cancelled = true;
+      clearTimeout(failsafeId);
       try {
         diceBox?.clear?.();
       } catch {

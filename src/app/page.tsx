@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import { ADVENTURES } from '@/lib/adventures/adventures';
 import { openingSceneId } from '@/lib/scenes/scenes';
 import { D20Icon } from '@/components/D20Icon';
+import { MyCampaigns } from '@/components/MyCampaigns';
+import { WeaponPicker } from '@/components/WeaponPicker';
+import { DEFAULT_WEAPON_ID } from '@/lib/character/constants';
+import type { MyCampaignSummary } from '@/lib/campaign/myCampaigns';
 
 function sceneUrl(adventureId: string) {
   return `/scenes/${openingSceneId(adventureId)}.jpg`;
@@ -16,16 +20,41 @@ export default function Home() {
   const [adventureId, setAdventureId] = useState(ADVENTURES[0].id);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [weaponId, setWeaponId] = useState<string>(DEFAULT_WEAPON_ID);
   const [joinCode, setJoinCode] = useState('');
   const [joiningByCode, setJoiningByCode] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [rolling, setRolling] = useState(false);
   const [rollText, setRollText] = useState('');
+  const [myCampaigns, setMyCampaigns] = useState<MyCampaignSummary[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
   const adventure = ADVENTURES.find((a) => a.id === adventureId) ?? ADVENTURES[0];
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Loaded here, not at module scope: this page is statically prerendered at build
+        // time, and creating the Supabase client there would require its keys during `next build`.
+        const { supabaseBrowserClient } = await import('@/lib/supabase/client');
+        // Only reads an existing session: a first-time visitor is not signed in just to see this list.
+        const { data } = await supabaseBrowserClient.auth.getSession();
+        const userId = data.session?.user.id;
+        if (!userId) return;
+        const { fetchMyCampaigns } = await import('@/lib/campaign/myCampaigns');
+        const campaigns = await fetchMyCampaigns(supabaseBrowserClient, userId);
+        if (!cancelled) setMyCampaigns(campaigns);
+      } catch {
+        // The list is a convenience; failing to load it must never break creating or joining a game.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function rollForAdventure() {
     if (rolling) return;
@@ -53,8 +82,9 @@ export default function Home() {
       // Loaded on click, not at module scope: this page is statically prerendered at build
       // time, and creating the Supabase client there would require its keys during `next build`.
       const { supabaseBrowserClient } = await import('@/lib/supabase/client');
-      const { data, error: authError } = await supabaseBrowserClient.auth.signInAnonymously();
-      if (authError || !data.user) {
+      const { ensureAnonymousUser } = await import('@/lib/supabase/ensureAnonymousUser');
+      const { user, error: authError } = await ensureAnonymousUser(supabaseBrowserClient);
+      if (authError || !user) {
         setError('เข้าสู่ระบบไม่สำเร็จ ลองอีกครั้ง');
         return;
       }
@@ -62,7 +92,7 @@ export default function Home() {
       const response = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, userId: data.user.id, displayName, adventureId }),
+        body: JSON.stringify({ name, userId: user.id, displayName, adventureId, weaponId }),
       });
       if (!response.ok) {
         setError('สร้างแคมเปญไม่สำเร็จ ลองอีกครั้ง');
@@ -110,6 +140,7 @@ export default function Home() {
           </p>
         </div>
       </div>
+      <MyCampaigns campaigns={myCampaigns} />
       <div className="roll-row">
         <button type="button" className="btn ghost" onClick={rollForAdventure} disabled={rolling}>
           ทอยเต๋าสุ่มเรื่อง
@@ -177,6 +208,7 @@ export default function Home() {
               onChange={(e) => setDisplayName(e.target.value)}
             />
           </div>
+          <WeaponPicker value={weaponId} onChange={setWeaponId} />
           <button className="btn" type="submit" disabled={!name.trim() || !displayName.trim() || creating}>
             {creating ? 'กำลังสร้าง…' : 'เริ่มผจญภัย'}
           </button>

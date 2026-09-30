@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import type { RoundPlayer } from '@/lib/supabase/players';
+import { weaponFor } from '@/lib/character/constants';
+import { HpBar } from './HpBar';
 
 export interface PlayerOrderProps {
   players: RoundPlayer[];
@@ -34,7 +36,7 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
         {players.map((player, index) => (
           <li
             key={player.id}
-            className={`pl-row${player.acted ? ' done' : ''}${dragId === player.id ? ' dragging' : ''}${overId === player.id ? ' drag-over' : ''}`}
+            className={`pl-row${player.acted ? ' done' : ''}${player.status === 'downed' ? ' is-down' : ''}${dragId === player.id ? ' dragging' : ''}${overId === player.id ? ' drag-over' : ''}`}
             draggable={canMove(player.id) && !!onReorder}
             onDragStart={() => setDragId(player.id)}
             onDragEnd={() => {
@@ -59,11 +61,11 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
               {index + 1}
             </span>
             <span
-              className="av"
+              className={`av${player.status === 'downed' ? ' down' : ''}`}
               aria-hidden="true"
               style={{ background: `${AVATAR_COLORS[index % AVATAR_COLORS.length]}33` }}
             >
-              {player.displayName.charAt(0)}
+              {player.status === 'downed' ? '✕' : player.displayName.charAt(0)}
             </span>
             <span className="who">
               <span className="nm">
@@ -71,8 +73,14 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                 {player.id === currentPlayerId ? ' (คุณ)' : ''}
               </span>
               <span className="st" style={{ display: 'block' }}>
-                {player.acted ? 'ส่งแล้ว' : 'กำลังคิด…'}
+                {player.status === 'downed' ? (
+                  <b className="badge-down">ล้มลง</b>
+                ) : (
+                  <span>{player.acted ? 'ส่งแล้ว' : 'กำลังคิด…'}</span>
+                )}
+                <span className="wpn"> · {weaponFor(player.weaponId).nameTh}</span>
               </span>
+              <HpBar hp={player.hp} maxHp={player.maxHp} />
             </span>
             <span className="mv">
               <button
