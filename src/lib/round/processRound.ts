@@ -70,38 +70,35 @@ export async function processRound(
   }
   const messageId = await deps.repository.insertDmMessagePlaceholder(context.campaignId, roundId);
 
-  // The DM ends with a [[scene: id]] tag. Hold back anything from a possible tag onward so it
-  // never reaches the visible message, then use it to move the scene banner.
-  let pending = '';
-  for await (const chunk of stream) {
-    pending += chunk;
-    const tagStart = pending.indexOf('[[');
-    let safeLength =
-      tagStart >= 0 ? tagStart : pending.endsWith('[') ? pending.length - 1 : pending.length;
-    // The tag sits on its own line, so also hold back the line break before it.
-    const lineBreak = /\s*\n\s*$/.exec(pending.slice(0, safeLength));
-    if (lineBreak) safeLength = lineBreak.index;
-    if (safeLength > 0) {
-      await deps.repository.appendToMessage(messageId, pending.slice(0, safeLength));
-      pending = pending.slice(safeLength);
-    }
-  }
-  const { sceneId, cleanText } = parseSceneTag(pending);
+  // The stream is already fully buffered by the adapter, so save it in one write: appending per
+  // chunk cost a read + update round trip each and ate the function's time budget.
+  // The DM ends with a [[scene: id]] tag; parse it out so it never reaches the visible message.
+  let narration = '';
+  for await (const chunk of stream) narration += chunk;
+  const { sceneId, cleanText } = parseSceneTag(narration);
   if (cleanText.trim()) await deps.repository.appendToMessage(messageId, cleanText);
   if (sceneId && allowedScenes(context.adventureId).some((s) => s.id === sceneId)) {
     // A missing scene column or a bad tag must never fail the round.
     await deps.repository.setCurrentScene(context.campaignId, sceneId).catch(() => {});
   }
 
-  if (shouldRotateSummary(context.recentMessages)) {
-    const summaryPrompt = `Summarize the campaign so far in under 500 words:\n\n${prompt}`;
-    const summaryStream = await deps.generateNarration(summaryPrompt);
-    let summaryText = '';
-    for await (const chunk of summaryStream) summaryText += chunk;
-    await deps.repository.updateCampaignSummary(context.campaignId, summaryText, roundId);
-  }
-
   const nextRoundId = await deps.repository.closeRoundAndOpenNext(context.campaignId, roundId);
+
+  // Best-effort and after the round is closed: a slow or failed summary must never leave the
+  // table stuck on a round whose narration is already posted. It is retried next round.
+  if (shouldRotateSummary(context.recentMessages)) {
+    try {
+      const summaryPrompt = `Summarize the campaign so far in under 500 words:
+
+${prompt}`;
+      const summaryStream = await deps.generateNarration(summaryPrompt);
+      let summaryText = '';
+      for await (const chunk of summaryStream) summaryText += chunk;
+      await deps.repository.updateCampaignSummary(context.campaignId, summaryText, roundId);
+    } catch {
+      // Swallowed on purpose; see above.
+    }
+  }
 
   return { processed: true, messageId, nextRoundId };
 }

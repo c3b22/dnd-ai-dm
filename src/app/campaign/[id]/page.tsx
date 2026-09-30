@@ -59,6 +59,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roundId: currentRoundId }),
+      // Just past the route's 60s maxDuration, so a killed function can't leave the spinner up
+      // forever; the "ให้ DM ตัดสินตอนนี้" button then works as a retry.
+      signal: AbortSignal.timeout(65_000),
     })
       .catch(() => {})
       .finally(() => setProcessing(false));

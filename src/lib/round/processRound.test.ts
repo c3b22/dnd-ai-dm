@@ -54,8 +54,7 @@ describe('processRound', () => {
 
     expect(result).toEqual({ processed: true, messageId: 'msg-1', nextRoundId: 'round-2' });
     expect(repository.insertDmMessagePlaceholder).toHaveBeenCalledWith('camp-1', 'round-1');
-    expect(repository.appendToMessage).toHaveBeenNthCalledWith(1, 'msg-1', 'You see ');
-    expect(repository.appendToMessage).toHaveBeenNthCalledWith(2, 'msg-1', 'a torch.');
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'You see a torch.');
     expect(repository.closeRoundAndOpenNext).toHaveBeenCalledWith('camp-1', 'round-1');
     expect(repository.updateCampaignSummary).not.toHaveBeenCalled();
   });
@@ -125,6 +124,70 @@ describe('processRound', () => {
       'New summary.',
       'round-1'
     );
+  });
+
+  describe('when history is long enough to rotate the summary', () => {
+    function longHistoryRepository() {
+      return createFakeRepository({
+        getRoundContext: vi.fn().mockResolvedValue({
+          campaignId: 'camp-1',
+          campaignSummary: 'Old summary.',
+          recentMessages: [{ role: 'dm' as const, content: 'x'.repeat(9000) }],
+          actions: [{ playerDisplayName: 'Prem', actionText: 'Continue' }],
+        }),
+      });
+    }
+
+    it('still closes the round if the summary call fails', async () => {
+      const repository = longHistoryRepository();
+      const deps: ProcessRoundDeps = {
+        claimRound: vi.fn().mockResolvedValue(true),
+        repository,
+        generateNarration: vi
+          .fn()
+          .mockResolvedValueOnce(fakeStream(['Narration.']))
+          .mockRejectedValueOnce(new Error('Gemini timed out')),
+      };
+
+      const result = await processRound(deps, 'round-1');
+
+      expect(result).toEqual({ processed: true, messageId: 'msg-1', nextRoundId: 'round-2' });
+      expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+      expect(repository.updateCampaignSummary).not.toHaveBeenCalled();
+    });
+
+    it('closes the round before spending time on the summary call', async () => {
+      const repository = longHistoryRepository();
+      const deps: ProcessRoundDeps = {
+        claimRound: vi.fn().mockResolvedValue(true),
+        repository,
+        generateNarration: vi
+          .fn()
+          .mockResolvedValueOnce(fakeStream(['Narration.']))
+          .mockResolvedValueOnce(fakeStream(['New summary.'])),
+      };
+
+      await processRound(deps, 'round-1');
+
+      const order = (fn: unknown) => vi.mocked(fn as () => void).mock.invocationCallOrder[0];
+      expect(order(repository.closeRoundAndOpenNext)).toBeLessThan(
+        order(repository.updateCampaignSummary)
+      );
+    });
+  });
+
+  it('saves the narration with one write, not one read+update per streamed chunk', async () => {
+    const repository = createFakeRepository();
+    const deps: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi.fn().mockResolvedValue(fakeStream(['a', 'b', 'c', 'd', 'e'])),
+    };
+
+    await processRound(deps, 'round-1');
+
+    expect(repository.appendToMessage).toHaveBeenCalledTimes(1);
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'abcde');
   });
 
   it('strips the scene tag from the message and moves the scene banner', async () => {

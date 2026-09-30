@@ -17,6 +17,26 @@ export function isRateLimitError(error: unknown): boolean {
   return status === 429;
 }
 
+/** A call that outlived its abort signal (AbortSignal.timeout throws TimeoutError). */
+export function isTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const name = (error as { name?: string }).name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+/** The model answered 200 but produced nothing, or the stream ended early after an abort. */
+export class EmptyResponseError extends Error {
+  constructor() {
+    super('Gemini returned an empty response with no error part');
+    this.name = 'EmptyResponseError';
+  }
+}
+
+/** Failures worth retrying once on the fallback model; anything else (bad key) would fail again. */
+export function isFallbackWorthy(error: unknown): boolean {
+  return isRateLimitError(error) || isTimeoutError(error) || error instanceof EmptyResponseError;
+}
+
 /**
  * An API failure with the HTTP status lifted to the top level, so `isRateLimitError`
  * can classify it no matter how deeply the SDK wrapped the original error.
@@ -86,7 +106,7 @@ export async function bufferTextOrThrow(
     }
   }
   if (chunks.length === 0) {
-    throw new Error('Gemini returned an empty response with no error part');
+    throw new EmptyResponseError();
   }
 
   async function* replay() {
@@ -103,7 +123,7 @@ export async function generateNarration(
     const result = await deps.streamText({ model: deps.primaryModel, prompt });
     return result.textStream;
   } catch (error) {
-    if (!isRateLimitError(error)) throw error;
+    if (!isFallbackWorthy(error)) throw error;
     const fallbackResult = await deps.streamText({ model: deps.fallbackModel, prompt });
     return fallbackResult.textStream;
   }

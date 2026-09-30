@@ -157,3 +157,41 @@ describe('generateNarration', () => {
     expect(streamText).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('generateNarration fallback', () => {
+  const deps = (streamText: ReturnType<typeof vi.fn>) => ({
+    streamText,
+    primaryModel: 'primary',
+    fallbackModel: 'fallback',
+  });
+
+  it('falls back when the primary model times out', async () => {
+    const timeout = Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+    const streamText = vi
+      .fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ textStream: fakeStream(['ok']) });
+
+    await generateNarration('p', deps(streamText));
+
+    expect(streamText).toHaveBeenLastCalledWith({ model: 'fallback', prompt: 'p' });
+  });
+
+  it('falls back when the primary model returns an empty response', async () => {
+    const empty = await bufferTextOrThrow(fakeFullStream([])).catch((e) => e);
+    const streamText = vi
+      .fn()
+      .mockRejectedValueOnce(empty)
+      .mockResolvedValueOnce({ textStream: fakeStream(['ok']) });
+
+    await generateNarration('p', deps(streamText));
+
+    expect(streamText).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fall back on a non-transient error', async () => {
+    const streamText = vi.fn().mockRejectedValue(new Error('bad api key'));
+    await expect(generateNarration('p', deps(streamText))).rejects.toThrow('bad api key');
+    expect(streamText).toHaveBeenCalledTimes(1);
+  });
+});
