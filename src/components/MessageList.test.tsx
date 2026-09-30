@@ -128,7 +128,7 @@ describe('MessageList', () => {
       expect(screen.queryByText('20')).not.toBeInTheDocument();
 
       act(() => {
-        vi.advanceTimersByTime(1000);
+        vi.advanceTimersByTime(2000);
       });
 
       expect(screen.getByText('20')).toBeInTheDocument();

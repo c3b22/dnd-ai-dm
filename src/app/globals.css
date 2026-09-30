@@ -149,7 +149,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .roll-line.fumble { border-color: var(--danger); }
 .roll-line.fumble .d20-mini, .roll-line.fumble .num, .roll-line.fumble .who { color: var(--danger); }
 .roll-line.rolling { opacity: 0.75; }
-.roll-line.rolling .d20-mini svg { animation: tumble-3d 0.6s linear infinite; }
+.roll-line.rolling .d20-mini svg { animation: tumble-3d 0.9s linear infinite; }
 .roll-line.rolling .num { color: var(--muted); }
 @keyframes tumble-3d {
   0%   { transform: rotateX(0deg)   rotateY(0deg)   rotateZ(0deg); }

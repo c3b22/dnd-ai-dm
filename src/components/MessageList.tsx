@@ -35,11 +35,11 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-// Settles roughly a second after the round resolves, staggered so simultaneous
+// Settles a couple seconds after the round resolves, staggered so simultaneous
 // rolls clatter to a stop one after another instead of snapping at once.
-const TUMBLE_BASE_MS = 550;
-const TUMBLE_STAGGER_MS = 150;
-const TUMBLE_TICK_MS = 80;
+const TUMBLE_BASE_MS = 1500;
+const TUMBLE_STAGGER_MS = 300;
+const TUMBLE_TICK_MS = 120;
 
 function RollDie({ entry, delayMs, animate }: { entry: RollEntry; delayMs: number; animate: boolean }) {
   const [display, setDisplay] = useState(animate ? 1 : entry.roll);
