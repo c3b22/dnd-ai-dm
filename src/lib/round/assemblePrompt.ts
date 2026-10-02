@@ -12,6 +12,8 @@ import { sanctuaryFor } from '@/lib/character/sanctuaries';
 import type { Character } from '@/lib/character/types';
 import { inventoryPrompt } from '@/lib/inventory/prompt';
 import type { Inventories } from '@/lib/inventory/types';
+import { economyPrompt } from '@/lib/economy/prompt';
+import type { ShopState } from '@/lib/economy/apply';
 
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
@@ -41,7 +43,7 @@ export function assemblePrompt(
   adventureId?: string | null,
   currentSceneId?: string | null,
   settings: CampaignSettings = DEFAULT_SETTINGS,
-  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories }
+  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null }
 ): string {
   const adventure = getAdventure(adventureId);
   const historyText = recentMessages
@@ -80,7 +82,12 @@ export function assemblePrompt(
             sanctuaryFor(adventureId)
           );
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
-          return [...(block.length ? [...block, ''] : []), ...(inventory.length ? [...inventory, ''] : [])];
+          const economy = economyPrompt(characterState.characters, characterState.shop ?? null);
+          return [
+            ...(block.length ? [...block, ''] : []),
+            ...(inventory.length ? [...inventory, ''] : []),
+            ...(economy.length ? [...economy, ''] : []),
+          ];
         })()
       : []),
     "This round's player actions" + (inOrder ? ' (listed in the order the players chose):' : ':'),

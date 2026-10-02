@@ -14,6 +14,7 @@ function createFakeSupabase(options: {
   inventoryRows?: unknown[];
   inventoryError?: Error;
   actionRows?: unknown[];
+  currentShop?: unknown;
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
 
@@ -37,7 +38,11 @@ function createFakeSupabase(options: {
             eq: () => ({
               maybeSingle: () =>
                 Promise.resolve({
-                  data: { adventure_id: 'test-adventure', pending_wipe: options.pendingWipe ?? false },
+                  data: {
+                    adventure_id: 'test-adventure',
+                    pending_wipe: options.pendingWipe ?? false,
+                    current_shop: options.currentShop ?? null,
+                  },
                   error: null,
                 }),
             }),
@@ -208,7 +213,7 @@ describe('createSupabaseRoundRepository character state', () => {
 
     expect(context.pendingWipe).toBe(true);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1 },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0 },
     ]);
   });
 
@@ -311,77 +316,91 @@ describe('createSupabaseRoundRepository inventory read failure', () => {
 });
 
 describe('createSupabaseRoundRepository.saveInventories', () => {
-  it('deletes rows no longer present, then upserts the rest keyed by player, item and title', async () => {
-    const calls: string[] = [];
+  const item = (itemId: string, over: Partial<{ customName: string; quantity: number; slot: 'weapon' | 'armor' | null; equipped: boolean }> = {}) => ({
+    itemId, customName: '', quantity: 1, slot: null, equipped: false, ...over,
+  });
+
+  it('writes each player through apply_changes with no gold change and the pre-round state as the concurrency base', async () => {
+    const calls: unknown[] = [];
+    const client: any = { rpc: (name: string, args: unknown) => { calls.push([name, args]); return Promise.resolve({ error: null }); } };
+    await createSupabaseRoundRepository(client).saveInventories('c1', [
+      { playerId: 'p1', items: [item('potion_minor', { quantity: 2 })], baseItems: [item('potion_minor')] },
+    ]);
+    expect(calls).toEqual([['apply_changes', { changes: [{
+      playerId: 'p1', goldDelta: 0,
+      items: [item('potion_minor', { quantity: 2 })],
+      baseItems: [item('potion_minor')],
+    }] }]]);
+  });
+
+  it("skips a player whose pack changed concurrently (apply_changes' own conflict error) instead of throwing, and still saves the rest", async () => {
+    const seen: string[] = [];
     const client: any = {
-      from: (table: string) => {
-        expect(table).toBe('inventory_items');
-        return {
-          select: () => ({ eq: () => Promise.resolve({ data: [
-            { id: 'a', item_id: 'potion_minor', custom_name: '', slot: null, equipped: false },
-            { id: 'b', item_id: 'story', custom_name: 'Rusty Key', slot: null, equipped: false },
-          ], error: null }) }),
-          delete: () => ({ in: (col: string, ids: string[]) => { calls.push(`delete ${col} ${ids.join(',')}`); return Promise.resolve({ error: null }); } }),
-          upsert: (rows: unknown[], opts: unknown) => { calls.push(`upsert ${JSON.stringify(rows)} ${JSON.stringify(opts)}`); return Promise.resolve({ error: null }); },
-        };
+      rpc: (_name: string, args: { changes: { playerId: string }[] }) => {
+        const playerId = args.changes[0].playerId;
+        seen.push(playerId);
+        return Promise.resolve({ error: playerId === 'p1' ? { code: 'EC001', message: 'inventory changed concurrently for player p1' } : null });
       },
     };
     await createSupabaseRoundRepository(client).saveInventories('c1', [
-      { playerId: 'p1', items: [{ itemId: 'potion_minor', customName: '', quantity: 2, slot: null, equipped: false }] },
+      { playerId: 'p1', items: [item('potion_minor')], baseItems: [] },
+      { playerId: 'p2', items: [item('staff')], baseItems: [] },
     ]);
-    expect(calls[0]).toBe('delete id b');
-    expect(calls[1]).toContain('"item_id":"potion_minor"');
-    expect(calls[1]).toContain('"quantity":2');
-    expect(calls[1]).toContain('"onConflict":"player_id,item_id,custom_name"');
+    expect(seen).toEqual(['p1', 'p2']);
   });
 
-  it('skips the upsert for a player left with nothing and surfaces a write error', async () => {
-    const client: any = {
-      from: () => ({
-        select: () => ({ eq: () => Promise.resolve({ data: [{ id: 'a', item_id: 'potion_minor', custom_name: '' }], error: null }) }),
-        delete: () => ({ in: () => Promise.resolve({ error: new Error('nope') }) }),
-        upsert: () => { throw new Error('should not upsert an empty pack'); },
-      }),
-    };
-    await expect(createSupabaseRoundRepository(client).saveInventories('c1', [{ playerId: 'p1', items: [] }])).rejects.toThrow('nope');
+  it('still throws on a genuine database error', async () => {
+    const client: any = { rpc: () => Promise.resolve({ error: new Error('nope') }) };
+    await expect(
+      createSupabaseRoundRepository(client).saveInventories('c1', [{ playerId: 'p1', items: [], baseItems: [] }])
+    ).rejects.toThrow('nope');
   });
 });
 
-describe('createSupabaseRoundRepository.saveInventories equip races', () => {
-  function recordingClient(existing: unknown[]) {
-    const upserts: any[][] = [];
-    const client: any = {
-      from: () => ({
-        select: () => ({ eq: () => Promise.resolve({ data: existing, error: null }) }),
-        delete: () => ({ in: () => Promise.resolve({ error: null }) }),
-        upsert: (rows: any[]) => { upserts.push(rows); return Promise.resolve({ error: null }); },
-      }),
-    };
-    return { client, upserts };
-  }
-  const item = (itemId: string, equipped: boolean, slot: 'weapon' | 'armor' | null = 'weapon') => ({ itemId, customName: '', quantity: 1, slot, equipped });
-
-  it('keeps the equipped flags the database has now, not the ones from the start of the round', async () => {
-    // The player swapped sword -> staff while the DM was writing; the round only changed the potion.
-    const { client, upserts } = recordingClient([
-      { id: '1', item_id: 'shortsword', custom_name: '', slot: 'weapon', equipped: false },
-      { id: '2', item_id: 'staff', custom_name: '', slot: 'weapon', equipped: true },
-    ]);
-    await createSupabaseRoundRepository(client).saveInventories('c1', [
-      { playerId: 'p1', items: [item('shortsword', true), item('staff', false)] },
-    ]);
-    const byId = Object.fromEntries(upserts[0].map((r) => [r.item_id, r.equipped]));
-    expect(byId).toEqual({ shortsword: false, staff: true });
+describe('createSupabaseRoundRepository economy', () => {
+  it('reads gold on each character and the open shop into the round context', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      currentShop: { name: 'Old Mara', itemIds: ['staff', 'story'] },
+      players: [{ id: 'p1', display_name: 'Prem', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0, gold: 14 }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.characters[0].gold).toBe(14);
+    expect(context.currentShop).toEqual({ name: 'Old Mara', itemIds: ['staff'] });
   });
 
-  it('does not equip a newly given item into a slot the player filled meanwhile', async () => {
-    const { client, upserts } = recordingClient([
-      { id: '2', item_id: 'staff', custom_name: '', slot: 'weapon', equipped: true },
+  it('has no shop when none is stored', async () => {
+    const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null });
+    expect((await createSupabaseRoundRepository(client).getRoundContext('r1')).currentShop).toBeNull();
+  });
+
+  it('applies gold through the atomic apply_changes function, clamped at 0 so one overspent pay cannot roll back everyone else\'s gold', async () => {
+    const calls: unknown[] = [];
+    const client: any = { rpc: (name: string, args: unknown) => { calls.push([name, args]); return Promise.resolve({ error: null }); } };
+    await createSupabaseRoundRepository(client).applyGold([{ playerId: 'p1', delta: 8 }, { playerId: 'p2', delta: -3 }]);
+    expect(calls).toEqual([['apply_changes', { changes: [
+      { playerId: 'p1', goldDelta: 8, items: null, clamp: true },
+      { playerId: 'p2', goldDelta: -3, items: null, clamp: true },
+    ] }]]);
+  });
+
+  it('throws when the gold call fails, and does nothing for an empty list', async () => {
+    const failing: any = { rpc: () => Promise.resolve({ error: new Error('nope') }) };
+    await expect(createSupabaseRoundRepository(failing).applyGold([{ playerId: 'p1', delta: 1 }])).rejects.toThrow('nope');
+    const never: any = { rpc: () => { throw new Error('should not call'); } };
+    await createSupabaseRoundRepository(never).applyGold([]);
+  });
+
+  it('sets and clears the shop on the campaign', async () => {
+    const updates: unknown[] = [];
+    const client: any = { from: (table: string) => ({ update: (payload: unknown) => ({ eq: (_c: string, id: string) => { updates.push({ table, payload, id }); return Promise.resolve({ error: null }); } }) }) };
+    const repository = createSupabaseRoundRepository(client);
+    await repository.setShop('c1', { name: 'Mara', itemIds: ['staff'] });
+    await repository.setShop('c1', null);
+    expect(updates).toEqual([
+      { table: 'campaigns', payload: { current_shop: { name: 'Mara', itemIds: ['staff'] } }, id: 'c1' },
+      { table: 'campaigns', payload: { current_shop: null }, id: 'c1' },
     ]);
-    await createSupabaseRoundRepository(client).saveInventories('c1', [
-      { playerId: 'p1', items: [item('staff', false), item('shortbow', true)] },
-    ]);
-    const byId = Object.fromEntries(upserts[0].map((r) => [r.item_id, r.equipped]));
-    expect(byId).toEqual({ staff: true, shortbow: false });
   });
 });

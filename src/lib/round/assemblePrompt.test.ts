@@ -140,3 +140,13 @@ describe('assemblePrompt scope guard', () => {
     expect(prompt.toLowerCase()).toContain('stay strictly inside');
   });
 });
+
+describe('assemblePrompt economy', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 14 };
+  it('includes the economy block with the open shop', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], null, null, undefined,
+      { characters: [prem], pendingWipe: false, inventories: {}, shop: { name: 'Old Mara', itemIds: ['staff'] } });
+    expect(prompt).toContain('Prem: 14 gold');
+    expect(prompt).toContain('Old Mara');
+  });
+});

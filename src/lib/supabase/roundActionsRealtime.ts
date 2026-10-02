@@ -1,4 +1,23 @@
 import { supabaseBrowserClient } from './client';
+import { normalizeShop } from '@/lib/economy/shop';
+import type { ShopState } from '@/lib/economy/apply';
+
+export function subscribeToCurrentShop(
+  campaignId: string,
+  onShop: (shop: ShopState | null) => void
+): () => void {
+  const channel = supabaseBrowserClient
+    .channel(`campaign_shop:${campaignId}`)
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
+      (payload) => onShop(normalizeShop((payload.new as { current_shop?: unknown }).current_shop))
+    )
+    .subscribe();
+  return () => {
+    supabaseBrowserClient.removeChannel(channel);
+  };
+}
 
 export function subscribeToCurrentRound(
   campaignId: string,

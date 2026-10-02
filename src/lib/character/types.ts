@@ -10,4 +10,6 @@ export interface Character {
   revivesSinceSanctuary: number;
   /** Flat damage the equipped armor absorbs from each hit; absent means none. */
   armorReduction?: number;
+  /** Personal gold; absent means 0. */
+  gold?: number;
 }

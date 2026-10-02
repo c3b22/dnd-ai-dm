@@ -259,3 +259,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .inv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .inv-name { min-width: 0; overflow-wrap: anywhere; }
 .badge-worn { margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 0.7rem; background: rgba(95, 179, 165, 0.2); color: #5fb3a5; }
+
+/* Economy */
+.inv-gold { margin: 0 0 8px; color: #e0a94a; font-weight: 600; }
+.shop-name { margin: 0 0 8px; font-weight: 600; }
+.shop-sub { margin: 12px 0 6px; font-size: 0.85rem; opacity: 0.8; }
+.trade-form { display: grid; gap: 8px; margin-bottom: 12px; }
+.trade-side { display: grid; gap: 4px; }
+.trade-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }

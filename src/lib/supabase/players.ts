@@ -13,6 +13,7 @@ export interface RoundPlayer {
   maxHp: number;
   items: InventoryItem[];
   status: 'active' | 'downed';
+  gold: number;
 }
 
 export async function fetchRoundPlayers(
@@ -21,7 +22,7 @@ export async function fetchRoundPlayers(
 ): Promise<RoundPlayer[]> {
   const { data: players, error } = await supabaseBrowserClient
     .from('players')
-    .select('id, display_name, turn_order, created_at, hp, max_hp, status')
+    .select('id, display_name, turn_order, created_at, hp, max_hp, status, gold')
     .eq('campaign_id', campaignId);
   if (error) throw error;
 
@@ -46,6 +47,7 @@ export async function fetchRoundPlayers(
     hp: p.hp as number,
     maxHp: p.max_hp as number,
     status: p.status as 'active' | 'downed',
+    gold: Number(p.gold ?? 0),
   }));
   const ownerId = findOwnerId(rows);
   return sortByTurnOrder(rows).map((p) => ({
@@ -57,6 +59,7 @@ export async function fetchRoundPlayers(
     maxHp: p.maxHp,
     items: p.items,
     status: p.status,
+    gold: p.gold,
   }));
 }
 

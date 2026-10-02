@@ -7,6 +7,8 @@ import { ActionInput } from '@/components/ActionInput';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
 import { Inventory } from '@/components/Inventory';
+import { Shop } from '@/components/Shop';
+import { Trades } from '@/components/Trades';
 import { CampaignLobby } from '@/components/CampaignLobby';
 import { D20Icon } from '@/components/D20Icon';
 import { RoundTimer } from '@/components/RoundTimer';
@@ -28,10 +30,15 @@ import { fetchInitialMessages, subscribeToNewMessages } from '@/lib/supabase/mes
 import { submitAction } from '@/lib/supabase/submitAction';
 import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
 import { itemLabel } from '@/lib/inventory/rules';
+import { fetchPendingTrades, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
+import type { TradeTerms } from '@/lib/economy/trade';
+import { normalizeShop } from '@/lib/economy/shop';
+import type { ShopState } from '@/lib/economy/apply';
 import {
   subscribeToRoundActionCount,
   subscribeToCurrentRound,
   subscribeToCurrentScene,
+  subscribeToCurrentShop,
   subscribeToCampaignStarted,
 } from '@/lib/supabase/roundActionsRealtime';
 import { startCampaignForClient } from '@/lib/supabase/startCampaign';
@@ -57,6 +64,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   // Which round's timer has run out. Tying it to the round id stops an expired round from
   // auto-processing the next one in the render where the new round id arrives.
   const [timeUpRoundId, setTimeUpRoundId] = useState<string | null>(null);
+  const [shop, setShop] = useState<ShopState | null>(null);
+  const [trades, setTrades] = useState<TradeRow[]>([]);
+  const [economyError, setEconomyError] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
@@ -91,6 +101,15 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         setSceneId(data?.current_scene_id ?? null);
       });
 
+    // Separate, tolerant query so a database without the economy columns still loads the campaign.
+    supabaseBrowserClient
+      .from('campaigns')
+      .select('current_shop')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => setShop(normalizeShop(data?.current_shop)));
+    const unsubscribeShop = subscribeToCurrentShop(campaignId, setShop);
+
     fetchCampaignSettings(campaignId).then(setSettings);
     const unsubscribeSettings = subscribeToCampaignSettings(campaignId, setSettings);
 
@@ -104,6 +123,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     return () => {
       unsubscribeRound();
       unsubscribeScene();
+      unsubscribeShop();
       unsubscribeSettings();
       unsubscribeStarted();
     };
@@ -133,7 +153,76 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
   useEffect(() => subscribeToInventory(campaignId, refreshPlayers), [campaignId, refreshPlayers]);
 
+  const refreshTrades = useCallback(() => {
+    fetchPendingTrades(campaignId)
+      .then(setTrades)
+      .catch(() => {});
+  }, [campaignId]);
+  useEffect(() => {
+    refreshTrades();
+    return subscribeToTrades(campaignId, refreshTrades);
+  }, [campaignId, refreshTrades]);
+
   const me = players.find((p) => p.id === playerId);
+
+  function describeEconomyError(code: string): string {
+    const known: Record<string, string> = {
+      no_gold: 'เงินไม่พอ',
+      full: 'กระเป๋าเต็ม',
+      closed: 'ร้านปิดแล้ว',
+      not_sold: 'ร้านนี้ไม่ขายของชิ้นนั้น',
+      not_sellable: 'ของชิ้นนี้ขายให้ร้านไม่ได้',
+      not_owned: 'คุณไม่มีของชิ้นนี้',
+      missing_items: 'ของไม่ครบแล้ว',
+      not_pending: 'ข้อเสนอนี้ไม่อยู่แล้ว',
+      expired: 'ข้อเสนอหมดอายุ',
+      too_many: 'มีข้อเสนอค้างเยอะเกินไป',
+      conflict: 'มีคนแก้ไขกระเป๋าพร้อมกัน ลองใหม่อีกครั้ง',
+    };
+    return known[code] ?? 'ทำรายการไม่สำเร็จ';
+  }
+
+  async function handleBuy(itemId: string) {
+    setEconomyError(null);
+    try {
+      await requestShop(campaignId, 'buy', itemId);
+    } catch (error) {
+      setEconomyError(describeEconomyError((error as Error).message));
+    }
+    refreshPlayers();
+  }
+
+  async function handleSell(itemId: string, customName: string) {
+    setEconomyError(null);
+    try {
+      await requestShop(campaignId, 'sell', itemId, customName);
+    } catch (error) {
+      setEconomyError(describeEconomyError((error as Error).message));
+    }
+    refreshPlayers();
+  }
+
+  async function handlePropose(terms: { toPlayerId: string } & TradeTerms) {
+    setEconomyError(null);
+    const { toPlayerId, ...rest } = terms;
+    try {
+      await requestTrade(campaignId, { action: 'propose', toPlayerId, terms: rest });
+    } catch (error) {
+      setEconomyError(describeEconomyError((error as Error).message));
+    }
+    refreshTrades();
+  }
+
+  async function handleRespond(tradeId: string, action: 'accept' | 'decline' | 'cancel') {
+    setEconomyError(null);
+    try {
+      await requestTrade(campaignId, { action, tradeId });
+    } catch (error) {
+      setEconomyError(describeEconomyError((error as Error).message));
+    }
+    refreshPlayers();
+    refreshTrades();
+  }
 
   async function handleEquip(itemId: string, action: 'equip' | 'unequip') {
     try {
@@ -298,9 +387,21 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
           {me && (
             <Inventory
               items={me.items}
+              gold={me.gold}
               canAct={me.status === 'active' && !me.acted}
               onEquip={handleEquip}
               onDrink={handleDrink}
+            />
+          )}
+          {shop && me && <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} />}
+          {me && (
+            <Trades
+              me={me}
+              players={players}
+              trades={trades}
+              onPropose={handlePropose}
+              onRespond={handleRespond}
+              error={economyError}
             />
           )}
           {roundId && settings.roundSeconds > 0 && (

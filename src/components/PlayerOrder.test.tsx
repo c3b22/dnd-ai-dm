@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { PlayerOrder } from './PlayerOrder';
 
 const gear = (itemId: string) => ({ itemId, customName: '', quantity: 1, slot: 'weapon' as const, equipped: true });
-const character = { hp: 20, maxHp: 20, items: [gear('shortsword')], status: 'active' as const };
+const character = { hp: 20, maxHp: 20, items: [gear('shortsword')], status: 'active' as const, gold: 15 };
 const players = [
   { id: 'p1', displayName: 'Prem', acted: true, isOwner: true, ...character },
   { id: 'p2', displayName: 'Mila', acted: false, isOwner: false, ...character },
@@ -94,5 +94,10 @@ describe('PlayerOrder', () => {
     expect(screen.getByText(/ธนูสั้น/)).toBeInTheDocument();
     expect(screen.getByText(/เกราะเหล็ก/)).toBeInTheDocument();
     expect(screen.getByText(/มือเปล่า/)).toBeInTheDocument();
+  });
+
+  it("shows each player's gold", () => {
+    render(<PlayerOrder players={players} currentPlayerId="p1" locked={false} onMove={() => {}} />);
+    expect(screen.getAllByText(/15 ทอง/)).toHaveLength(3);
   });
 });

@@ -16,11 +16,14 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       characters: [],
       inventories: {},
       pendingWipe: false,
+      currentShop: null,
     }),
     insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
     insertRollSummary: vi.fn().mockResolvedValue(undefined),
     saveCharacterState: vi.fn().mockResolvedValue(undefined),
     saveInventories: vi.fn().mockResolvedValue(undefined),
+    applyGold: vi.fn().mockResolvedValue(undefined),
+    setShop: vi.fn().mockResolvedValue(undefined),
     insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
@@ -368,7 +371,7 @@ const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 10, ma
 const potion = { itemId: 'potion_minor', customName: '', quantity: 1, slot: null, equipped: false };
 const contextWith = (over: object) => ({
   campaignId: 'camp-1', campaignSummary: '', recentMessages: [], pendingWipe: false,
-  characters: [prem], inventories: { p1: [potion] },
+  characters: [prem], inventories: { p1: [potion] }, currentShop: null,
   actions: [{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor' }],
   ...over,
 });
@@ -383,7 +386,7 @@ describe('processRound inventory', () => {
     const prompt = generateNarration.mock.calls[0][0] as string;
     expect(prompt).toContain('HP 15/20');
     expect(prompt).toContain('(server: drank ยาฟื้นฟูเล็ก and recovered 5 HP)');
-    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [] }]);
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [], baseItems: [potion] }]);
     expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 15 })], false);
     expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ดื่ม ยาฟื้นฟูเล็ก (+5 HP)']);
   });
@@ -404,7 +407,11 @@ describe('processRound inventory', () => {
 
     expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เจอของ');
     expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [
-      { playerId: 'p1', items: [{ itemId: 'story', customName: 'Rusty Key', quantity: 1, slot: null, equipped: false }] },
+      {
+        playerId: 'p1',
+        items: [{ itemId: 'story', customName: 'Rusty Key', quantity: 1, slot: null, equipped: false }],
+        baseItems: [potion],
+      },
     ]);
     expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem −4 HP', 'Prem ได้รับ Rusty Key', 'Prem เสียไป ยาฟื้นฟูเล็ก']);
   });
@@ -434,5 +441,59 @@ describe('processRound inventory', () => {
     });
     await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['ok'])), rollSides: () => 4 }, 'round-1');
     expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ดื่ม ยาฟื้นฟูเล็ก (+5 HP)']);
+  });
+});
+
+describe('processRound economy', () => {
+  const gold = { ...prem, gold: 10 };
+  const one = (over: object = {}) => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [gold], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'ค้นศพ', playerId: 'p1', useItemId: null }], ...over })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('awards and deducts gold with the server roll, applies it atomically, strips the tags and logs after the other lines', async () => {
+    const repository = one();
+    await run(repository, ['เจอเหรียญ', '[[gold: Prem | small]]', '[[pay: Prem | medium]]'].join('\n'));
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เจอเหรียญ');
+    expect(repository.applyGold).toHaveBeenCalledWith([{ playerId: 'p1', delta: -4 }]); // +4 then -8, net -4
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ได้รับ 4 ทอง', 'Prem เสียไป 8 ทอง']);
+  });
+
+  it('opens a shop, and closes it on a shop_close tag', async () => {
+    const open = one();
+    await run(open, '[[shop: Old Mara | potion_minor, lightsaber]]');
+    expect(open.setShop).toHaveBeenCalledWith('camp-1', { name: 'Old Mara', itemIds: ['potion_minor'] });
+
+    const close = one({ currentShop: { name: 'Old Mara', itemIds: ['staff'] } });
+    await run(close, '[[shop_close]]');
+    expect(close.setShop).toHaveBeenCalledWith('camp-1', null);
+  });
+
+  it('closes the open shop when the scene actually changes, but not when the same scene is repeated', async () => {
+    const shop = { name: 'Old Mara', itemIds: ['staff'] };
+    const moved = one({ currentShop: shop, currentSceneId: 'crypt' });
+    await run(moved, ['ออกมาแล้ว', '[[scene: tavern-interior]]'].join('\n'));
+    expect(moved.setShop).toHaveBeenCalledWith('camp-1', null);
+
+    const same = one({ currentShop: shop, currentSceneId: 'tavern-interior' });
+    await run(same, ['ยังอยู่ที่เดิม', '[[scene: tavern-interior]]'].join('\n'));
+    expect(same.setShop).not.toHaveBeenCalled();
+  });
+
+  it('shows the open shop in the prompt', async () => {
+    const repository = one({ currentShop: { name: 'Old Mara', itemIds: ['staff'] } });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(generateNarration.mock.calls[0][0]).toContain('Old Mara');
+  });
+
+  it('still posts the stats line and closes the round when gold or shop persistence fails', async () => {
+    const repository = one({});
+    vi.mocked(repository.applyGold).mockRejectedValue(new Error('db down'));
+    vi.mocked(repository.setShop).mockRejectedValue(new Error('db down'));
+    const result = await run(repository, ['[[gold: Prem | small]]', '[[shop: Mara | staff]]'].join('\n'));
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ได้รับ 4 ทอง']);
   });
 });

@@ -39,6 +39,7 @@ export function applyCharacterTags(
       continue;
     }
 
+    if (tag.kind !== 'hurt' && tag.kind !== 'heal' && tag.kind !== 'revive') continue;
     const target = find(tag.name);
     if (!target) continue;
 

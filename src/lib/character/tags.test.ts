@@ -55,3 +55,28 @@ describe('give and take tags', () => {
     expect(cleanText).not.toContain('[[');
   });
 });
+
+describe('gold, pay and shop tags', () => {
+  it('parses gold and pay tiers case-insensitively and strips them', () => {
+    const { tags, cleanText } = parseCharacterTags('พบของ\n[[gold: Prem | Medium]]\n[[pay: Suki | small]]');
+    expect(tags).toEqual([
+      { kind: 'gold', name: 'Prem', tier: 'medium' },
+      { kind: 'pay', name: 'Suki', tier: 'small' },
+    ]);
+    expect(cleanText).toBe('พบของ');
+  });
+
+  it('parses shop with a merchant name and a comma-separated id list, and shop_close', () => {
+    const { tags } = parseCharacterTags('[[shop: Old Mara | potion_minor, shortsword ,armor_light]] text [[shop_close]]');
+    expect(tags).toEqual([
+      { kind: 'shop', merchant: 'Old Mara', itemIds: ['potion_minor', 'shortsword', 'armor_light'] },
+      { kind: 'shop_close' },
+    ]);
+  });
+
+  it('hides malformed economy tags and applies none of them', () => {
+    const { tags, cleanText } = parseCharacterTags('a [[gold: Prem | huge]] b [[shop: Mara]] c [[shop_close now]] d [[pay: Prem]]');
+    expect(tags).toEqual([]);
+    expect(cleanText).not.toContain('[[');
+  });
+});

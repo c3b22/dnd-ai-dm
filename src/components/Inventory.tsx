@@ -4,6 +4,7 @@ import type { InventoryItem } from '@/lib/inventory/types';
 
 export interface InventoryProps {
   items: InventoryItem[];
+  gold: number;
   /** False when downed or already acted this round: drinking takes the action. Equipping is always free. */
   canAct: boolean;
   onEquip: (itemId: string, action: 'equip' | 'unequip') => void;
@@ -13,7 +14,7 @@ export interface InventoryProps {
 const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, consumable: 2 };
 const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 3;
 
-export function Inventory({ items: unsorted, canAct, onEquip, onDrink }: InventoryProps) {
+export function Inventory({ items: unsorted, gold, canAct, onEquip, onDrink }: InventoryProps) {
   // The database returns rows in no particular order, so the list would jump around after every change.
   const items = [...unsorted].sort(
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
@@ -28,6 +29,7 @@ export function Inventory({ items: unsorted, canAct, onEquip, onDrink }: Invento
         </div>
         <span className="hp-num">น้ำหนัก {weight}/{CARRY_CAPACITY}</span>
       </div>
+      <p className="inv-gold">ทอง {gold}</p>
       {items.length === 0 ? (
         <p className="status">กระเป๋าว่าง</p>
       ) : (

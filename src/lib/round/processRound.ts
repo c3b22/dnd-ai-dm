@@ -7,6 +7,7 @@ import { applyCharacterTags } from '@/lib/character/applyTags';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
+import { applyEconomyTags } from '@/lib/economy/apply';
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
@@ -68,7 +69,7 @@ export async function processRound(
       context.adventureId,
       context.currentSceneId,
       settings,
-      { characters: potions.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories }
+      { characters: potions.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop }
     );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
@@ -103,6 +104,10 @@ export async function processRound(
   if (sceneId && allowedScenes(context.adventureId).some((s) => s.id === sceneId)) {
     // A missing scene column or a bad tag must never fail the round.
     await deps.repository.setCurrentScene(context.campaignId, sceneId).catch(() => {});
+    // The merchant stays put until the story actually moves on.
+    if (context.currentShop && sceneId !== context.currentSceneId) {
+      await deps.repository.setShop(context.campaignId, null).catch(() => {});
+    }
   }
 
   // Best-effort like the scene change: a failure here must never leave the table stuck.
@@ -110,6 +115,7 @@ export async function processRound(
     try {
       const result = applyCharacterTags(potions.characters, tags, deps.rollSides ?? randomDie);
       const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
+      const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       await deps.repository.saveCharacterState(context.campaignId, result.characters, result.wiped);
@@ -119,16 +125,40 @@ export async function processRound(
         try {
           await deps.repository.saveInventories(
             context.campaignId,
-            changedIds.map((playerId) => ({ playerId, items: inventoryResult.inventories[playerId] ?? [] }))
+            changedIds.map((playerId) => ({
+              playerId,
+              items: inventoryResult.inventories[playerId] ?? [],
+              // What this round assumed the pack looked like when it started; lets the repository
+              // detect a shop purchase or trade that landed mid-round instead of overwriting it.
+              baseItems: context.inventories[playerId] ?? [],
+            }))
           );
         } catch {
           /* best-effort, like the rest of the mechanics */
+        }
+      }
+      const goldChanges = Object.entries(economy.goldDeltas)
+        .filter(([, delta]) => delta !== 0)
+        .map(([playerId, delta]) => ({ playerId, delta }));
+      if (goldChanges.length > 0) {
+        try {
+          await deps.repository.applyGold(goldChanges);
+        } catch {
+          /* best-effort */
+        }
+      }
+      if (economy.shop) {
+        try {
+          await deps.repository.setShop(context.campaignId, economy.shop.action === 'open' ? economy.shop.shop : null);
+        } catch {
+          /* best-effort */
         }
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
         ...potions.changes,
         ...result.changes,
         ...inventoryResult.changes,
+        ...economy.changes,
       ]);
     } catch {
       /* the narration is already posted; the next round reads whatever state was saved */

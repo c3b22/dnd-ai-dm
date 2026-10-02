@@ -3,9 +3,12 @@ import type { StoredMessage, RoundAction } from './assemblePrompt';
 import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
 import type { Character } from '@/lib/character/types';
-import { rowsToInventories, itemsToRows, type InventoryRow } from '@/lib/inventory/rows';
+import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
 import { equippedWeaponId, armorReduction } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
+import { normalizeShop } from '@/lib/economy/shop';
+import type { ShopState } from '@/lib/economy/apply';
+import { isInventoryConflict } from '@/lib/economy/errors';
 
 export interface RoundContext {
   campaignId: string;
@@ -18,6 +21,7 @@ export interface RoundContext {
   characters: Character[];
   inventories: Inventories;
   pendingWipe: boolean;
+  currentShop: ShopState | null;
 }
 
 export interface RoundRepository {
@@ -33,7 +37,12 @@ export interface RoundRepository {
     rolls: { playerDisplayName: string; roll: number }[]
   ): Promise<void>;
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
-  saveInventories(campaignId: string, changes: { playerId: string; items: InventoryItem[] }[]): Promise<void>;
+  saveInventories(
+    campaignId: string,
+    changes: { playerId: string; items: InventoryItem[]; baseItems: InventoryItem[] }[]
+  ): Promise<void>;
+  applyGold(changes: { playerId: string; delta: number }[]): Promise<void>;
+  setShop(campaignId: string, shop: ShopState | null): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -74,7 +83,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // Separate queries so a database without the character columns still plays.
       const { data: characterRows } = await supabase
         .from('players')
-        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary')
+        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold')
         .eq('campaign_id', campaignId);
 
       // Must not be tolerated like the columns above: an unreadable inventory read as "empty"
@@ -88,7 +97,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       const { data: wipeRow } = await supabase
         .from('campaigns')
-        .select('pending_wipe')
+        .select('pending_wipe, current_shop')
         .eq('id', campaignId)
         .maybeSingle();
 
@@ -142,9 +151,11 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           maxHp: row.max_hp as number,
           status: row.status as 'active' | 'downed',
           revivesSinceSanctuary: row.revives_since_sanctuary as number,
+          gold: Number(row.gold ?? 0),
         })),
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
+        currentShop: normalizeShop(wipeRow?.current_shop),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
           (actionsRows ?? []).map((row: any) => ({
@@ -204,37 +215,38 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     },
 
     async saveInventories(campaignId, changes) {
-      for (const { playerId, items } of changes) {
-        const keep = new Set(items.map((i) => `${i.itemId}|${i.customName}`));
-        const { data: existing, error: readError } = await supabase
-          .from('inventory_items')
-          .select('id, item_id, custom_name, slot, equipped')
-          .eq('player_id', playerId);
-        if (readError) throw readError;
-        // Remove first: the one-equipped-per-slot index would reject a new equipped row while the old one exists.
-        const staleRows = (existing ?? []).filter((r: any) => !keep.has(`${r.item_id}|${r.custom_name}`));
-        if (staleRows.length) {
-          const { error } = await supabase.from('inventory_items').delete().in('id', staleRows.map((r: any) => r.id as string));
-          if (error) throw error;
-        }
-        if (items.length) {
-          // The round's snapshot is from before the DM wrote, and the player may have swapped gear
-          // since. A round never changes an existing row's equipped flag, so keep what the database
-          // has now, and only equip a new item into a slot that is still empty.
-          const staleIds = new Set(staleRows.map((r: any) => r.id));
-          const live = (existing ?? []).filter((r: any) => !staleIds.has(r.id));
-          const dbEquipped = new Map(live.map((r: any) => [`${r.item_id}|${r.custom_name}`, Boolean(r.equipped)]));
-          const occupied = new Set(live.filter((r: any) => r.equipped).map((r: any) => r.slot));
-          const merged = items.map((i) => {
-            const key = `${i.itemId}|${i.customName}`;
-            return { ...i, equipped: dbEquipped.has(key) ? dbEquipped.get(key)! : i.equipped && !occupied.has(i.slot) };
-          });
-          const { error } = await supabase
-            .from('inventory_items')
-            .upsert(itemsToRows(campaignId, playerId, merged), { onConflict: 'player_id,item_id,custom_name' });
-          if (error) throw error;
+      // One apply_changes call per player (not one call for all): the equip-slot logic and the
+      // concurrency check below live in that function now, and one player's pack having moved
+      // since the round started must not stop the rest of the table's changes from saving.
+      for (const { playerId, items, baseItems } of changes) {
+        const { error } = await supabase.rpc('apply_changes', {
+          changes: [{ playerId, goldDelta: 0, items, baseItems }],
+        });
+        if (error) {
+          // Someone else's write (a shop purchase, a trade, another round retry) landed between
+          // this round reading its snapshot and saving it. Keep their write; drop this round's
+          // inventory change for this player rather than overwriting or corrupting either.
+          if (isInventoryConflict(error)) continue;
+          throw error;
         }
       }
+    },
+
+    async applyGold(changes) {
+      if (changes.length === 0) return;
+      const { error } = await supabase.rpc('apply_changes', {
+        // clamp: a `pay` tag's amount was computed against the gold this round read at the
+        // start; if that is now stale (a shop purchase mid-round), floor at 0 instead of
+        // raising the gold >= 0 check, so one player's stale pay never rolls back every other
+        // player's gold change in the same call.
+        changes: changes.map((c) => ({ playerId: c.playerId, goldDelta: c.delta, items: null, clamp: true })),
+      });
+      if (error) throw error;
+    },
+
+    async setShop(campaignId, shop) {
+      const { error } = await supabase.from('campaigns').update({ current_shop: shop }).eq('id', campaignId);
+      if (error) throw error;
     },
 
     async insertStatsSummary(campaignId, roundId, changes) {

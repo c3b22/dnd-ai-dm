@@ -84,6 +84,7 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                   {' '}
                   · {weaponFor(equippedWeaponId(player.items)).nameTh}
                   {equippedArmorId(player.items) ? ` · ${catalogEntry(equippedArmorId(player.items)!)?.nameTh}` : ''}
+                  {' '}· {player.gold} ทอง
                 </span>
               </span>
               <HpBar hp={player.hp} maxHp={player.maxHp} />
