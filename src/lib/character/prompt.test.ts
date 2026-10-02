@@ -42,6 +42,12 @@ describe('characterPrompt harm-risk guidance', () => {
     const text = characterPrompt(party, false, undefined).join('\n').toLowerCase();
     expect(text).toContain('only use [[hurt');
     expect(text).toContain('never cause harm');
-    expect(text).toContain('mundane');
+    expect(text).toContain('routine activity');
+    expect(text).toContain('putting away belongings');
+  });
+
+  it('offers a roll-free full heal for a paid treatment', () => {
+    const text = characterPrompt(party, false, undefined).join('\n').toLowerCase();
+    expect(text).toContain('full to restore them completely with no roll');
   });
 });

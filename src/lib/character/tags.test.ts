@@ -19,6 +19,15 @@ describe('parseCharacterTags', () => {
     expect(tags).toEqual([{ kind: 'heal', name: 'เปรม', tier: 'light' }]);
   });
 
+  it('accepts a full heal tier but not a full hurt tier', () => {
+    const { tags: healTags } = parseCharacterTags('[[heal: Prem | full]]');
+    expect(healTags).toEqual([{ kind: 'heal', name: 'Prem', tier: 'full' }]);
+
+    const { tags: hurtTags, cleanText } = parseCharacterTags('Ouch.\n[[hurt: Prem | full]]');
+    expect(hurtTags).toEqual([]);
+    expect(cleanText).toBe('Ouch.');
+  });
+
   it('removes a tag with an invalid tier from the text without applying it', () => {
     const { tags, cleanText } = parseCharacterTags('Ouch.\n[[hurt: Prem | huge]]');
     expect(tags).toEqual([]);

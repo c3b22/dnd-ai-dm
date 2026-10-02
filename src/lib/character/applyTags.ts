@@ -54,10 +54,13 @@ export function applyCharacterTags(
         changes.push(`${target.displayName} ล้มลง`);
       }
     } else if (tag.kind === 'heal' && target.status === 'active') {
-      const gained = Math.min(target.maxHp - target.hp, rollDice(TIERS[tag.tier], rollDie));
+      const gained =
+        tag.tier === 'full'
+          ? target.maxHp - target.hp
+          : Math.min(target.maxHp - target.hp, rollDice(TIERS[tag.tier], rollDie));
       if (gained > 0) {
         target.hp += gained;
-        changes.push(`${target.displayName} +${gained} HP`);
+        changes.push(`${target.displayName} +${gained} HP${tag.tier === 'full' ? ' (รักษาจนเต็ม)' : ''}`);
       }
     } else if (tag.kind === 'revive' && target.status === 'downed') {
       target.revivesSinceSanctuary += 1;

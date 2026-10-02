@@ -49,6 +49,20 @@ describe('applyCharacterTags', () => {
     expect(result.changes).toEqual(['Prem +2 HP']);
   });
 
+  it('a full heal restores straight to max HP with no roll involved', () => {
+    const result = applyCharacterTags([char({ hp: 7 })], [{ kind: 'heal', name: 'Prem', tier: 'full' }], () => {
+      throw new Error('full heal must not roll dice');
+    });
+    expect(byName(result, 'Prem').hp).toBe(20);
+    expect(result.changes).toEqual(['Prem +13 HP (รักษาจนเต็ม)']);
+  });
+
+  it('a full heal at full HP does nothing', () => {
+    const result = applyCharacterTags([char({ hp: 20 })], [{ kind: 'heal', name: 'Prem', tier: 'full' }], four);
+    expect(byName(result, 'Prem').hp).toBe(20);
+    expect(result.changes).toEqual([]);
+  });
+
   it('revives a downed player at 5 HP and escalates the max HP cost: −2, −4, −6', () => {
     const party = [char({ hp: 0, status: 'downed' }), char({ id: 'p2', displayName: 'Suki' })];
     const first = applyCharacterTags(party, [{ kind: 'revive', name: 'Prem' }], four);

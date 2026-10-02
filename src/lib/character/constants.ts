@@ -19,6 +19,8 @@ export const TIERS = {
   heavy: { count: 2, sides: 6, bonus: 0 },
 } as const satisfies Record<string, DiceSpec>;
 export type Tier = keyof typeof TIERS;
+/** Heals only: 'full' restores straight to max HP with no roll, for a paid rest/treatment. */
+export type HealTier = Tier | 'full';
 
 export const WEAPONS = {
   shortsword: { nameTh: 'ดาบสั้น', dice: { count: 1, sides: 8, bonus: 0 } },

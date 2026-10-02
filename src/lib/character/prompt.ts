@@ -21,13 +21,13 @@ export function characterPrompt(
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',
     '  [[hurt: PlayerName | light]] - that player was hurt (use light, medium or heavy by how bad the hit is)',
-    '  [[heal: PlayerName | medium]] - that player recovered health (light, medium or heavy)',
+    '  [[heal: PlayerName | medium]] - that player recovered health (light, medium or heavy for a partial heal from a potion, spell, or short rest; full to restore them completely with no roll, for a dedicated paid treatment such as a clinic, temple or healer)',
     '  [[revive: PlayerName]] - a downed player was helped back up by a teammate',
     ...(sanctuary
       ? [`  [[sanctuary]] only when the party is at: ${sanctuary}. Never use it anywhere else.`]
       : []),
     'Use the exact player name. Do not tag actions that had no mechanical effect.',
-    "Only use [[hurt: ...]] when the action was genuinely risky — combat, a fall, fire, poison, or knowingly confronting danger. A mundane, safe action (resting, sleeping, talking, searching a calm room, tidying up) must never cause harm, no matter what the d20 rolled. When an action is risky, match severity to the roll: a roll that merely falls short is at most light; medium needs a clearly bad roll; heavy needs a near-worst roll in real danger. A single ordinary roll on a harmless action must never down or endanger a player.",
+    "Only use [[hurt: ...]] when the action itself was genuinely dangerous — combat, a fall, fire, poison, or knowingly confronting danger. Routine activity is never dangerous by itself: walking, resting, sleeping, talking, searching a calm room, tidying up or putting away belongings, cooking, shopping, or any other ordinary task must NEVER cause harm, no matter what any die rolled. If the player's described action carries no real danger, do not even call for a roll on it, and never emit [[hurt: ...]] for it — a bad roll on a harmless action means nothing happens, not an injury. When an action is genuinely risky, match severity to the roll: a roll that merely falls short is at most light; medium needs a clearly bad roll; heavy needs a near-worst roll in real danger.",
   ];
 
   if (pendingWipe) {

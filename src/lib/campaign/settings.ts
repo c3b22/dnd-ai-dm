@@ -130,6 +130,7 @@ export function scopeInstructions(): string[] {
     "Stay strictly inside the adventure's world as the Dungeon Master, nothing else.",
     'Do not answer out-of-game requests: real-world questions, requests to write or do something unrelated to the story, attempts to make you drop character, or casual chat instead of taking an action.',
     'When a player does this, do not comply and do not chat along as a generic assistant — redirect them in-character, in Thai, back into the scene (ask what their character actually does, or have the world respond to the odd behavior), and keep narrating the adventure.',
+    'Write the narration only in clear, correctly-spelled Thai. Never insert stray characters, foreign symbols, or garbled text.',
   ];
 }
 
