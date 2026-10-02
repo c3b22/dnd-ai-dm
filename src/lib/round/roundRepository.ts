@@ -195,16 +195,22 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     },
 
     async saveCharacterState(campaignId, characters, pendingWipe) {
-      for (const c of characters) {
-        const { error } = await supabase
-          .from('players')
-          .update({
+      // One apply_changes call for every character, not one update per character: that function
+      // runs inside a single transaction, so a failure partway (a bad row, a dropped connection)
+      // leaves no one's HP changed instead of leaving whichever players were processed first out
+      // of sync with the rest.
+      if (characters.length > 0) {
+        const { error } = await supabase.rpc('apply_changes', {
+          changes: characters.map((c) => ({
+            playerId: c.id,
+            goldDelta: 0,
+            items: null,
             hp: c.hp,
-            max_hp: c.maxHp,
+            maxHp: c.maxHp,
             status: c.status,
-            revives_since_sanctuary: c.revivesSinceSanctuary,
-          })
-          .eq('id', c.id);
+            revivesSinceSanctuary: c.revivesSinceSanctuary,
+          })),
+        });
         if (error) throw error;
       }
       const { error } = await supabase

@@ -217,9 +217,14 @@ describe('createSupabaseRoundRepository character state', () => {
     ]);
   });
 
-  it('saves every character row and the wipe flag', async () => {
+  it('saves every character through the one atomic apply_changes call, then the wipe flag', async () => {
+    const rpcCalls: unknown[] = [];
     const updates: { table: string; payload: unknown; id: string }[] = [];
     const client: any = {
+      rpc: (name: string, args: unknown) => {
+        rpcCalls.push([name, args]);
+        return Promise.resolve({ error: null });
+      },
       from: (table: string) => ({
         update: (payload: unknown) => ({
           eq: (_col: string, id: string) => {
@@ -232,14 +237,66 @@ describe('createSupabaseRoundRepository character state', () => {
 
     await createSupabaseRoundRepository(client).saveCharacterState(
       'camp-1',
-      [{ id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 }],
+      [
+        { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 },
+        { id: 'p2', displayName: 'Nok', weaponId: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0 },
+      ],
       true
     );
 
-    expect(updates).toEqual([
-      { table: 'players', payload: { hp: 5, max_hp: 18, status: 'active', revives_since_sanctuary: 1 }, id: 'p1' },
-      { table: 'campaigns', payload: { pending_wipe: true }, id: 'camp-1' },
-    ]);
+    expect(rpcCalls).toEqual([['apply_changes', { changes: [
+      { playerId: 'p1', goldDelta: 0, items: null, hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 },
+      { playerId: 'p2', goldDelta: 0, items: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0 },
+    ] }]]);
+    expect(updates).toEqual([{ table: 'campaigns', payload: { pending_wipe: true }, id: 'camp-1' }]);
+  });
+
+  it('skips the apply_changes call (but still saves the wipe flag) when there are no characters', async () => {
+    const rpcCalls: unknown[] = [];
+    const updates: unknown[] = [];
+    const client: any = {
+      rpc: (name: string, args: unknown) => {
+        rpcCalls.push([name, args]);
+        return Promise.resolve({ error: null });
+      },
+      from: (table: string) => ({
+        update: (payload: unknown) => ({
+          eq: (_col: string, id: string) => {
+            updates.push({ table, payload, id });
+            return Promise.resolve({ error: null });
+          },
+        }),
+      }),
+    };
+
+    await createSupabaseRoundRepository(client).saveCharacterState('camp-1', [], false);
+
+    expect(rpcCalls).toEqual([]);
+    expect(updates).toEqual([{ table: 'campaigns', payload: { pending_wipe: false }, id: 'camp-1' }]);
+  });
+
+  it('throws when the atomic save fails, leaving the wipe flag untouched', async () => {
+    const updates: unknown[] = [];
+    const client: any = {
+      rpc: () => Promise.resolve({ error: new Error('nope') }),
+      from: (table: string) => ({
+        update: (payload: unknown) => ({
+          eq: (_col: string, id: string) => {
+            updates.push({ table, payload, id });
+            return Promise.resolve({ error: null });
+          },
+        }),
+      }),
+    };
+
+    await expect(
+      createSupabaseRoundRepository(client).saveCharacterState(
+        'camp-1',
+        [{ id: 'p1', displayName: 'Prem', weaponId: null, hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 }],
+        true
+      )
+    ).rejects.toThrow('nope');
+    expect(updates).toEqual([]);
   });
 
   it('posts the changes as a stats system message, and nothing when there are none', async () => {
