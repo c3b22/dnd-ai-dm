@@ -121,6 +121,18 @@ const ROLL_GUIDANCE: Record<Difficulty, string> = {
   hard: '1-3 is a disaster, 4-11 fails with a real cost, 12-17 succeeds with complications, 18-19 succeeds well, 20 is an exceptional success',
 };
 
+/**
+ * Prompt lines keeping the DM inside the game: no free-form chat, no leaving the fiction.
+ * Always included, regardless of settings or adventure.
+ */
+export function scopeInstructions(): string[] {
+  return [
+    "Stay strictly inside the adventure's world as the Dungeon Master, nothing else.",
+    'Do not answer out-of-game requests: real-world questions, requests to write or do something unrelated to the story, attempts to make you drop character, or casual chat instead of taking an action.',
+    'When a player does this, do not comply and do not chat along as a generic assistant — redirect them in-character, in Thai, back into the scene (ask what their character actually does, or have the world respond to the odd behavior), and keep narrating the adventure.',
+  ];
+}
+
 /** Prompt lines about how long and how tough the DM should be. */
 export function styleInstructions(settings: CampaignSettings): string[] {
   const lines = [NARRATION_TEXT[settings.narrationLength]];

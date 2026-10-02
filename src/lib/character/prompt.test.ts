@@ -36,3 +36,12 @@ describe('characterPrompt', () => {
     expect(characterPrompt(party, false, undefined).join('\n')).not.toContain('defeated last round');
   });
 });
+
+describe('characterPrompt harm-risk guidance', () => {
+  it('tells the DM to only hurt a player when the action was actually risky', () => {
+    const text = characterPrompt(party, false, undefined).join('\n').toLowerCase();
+    expect(text).toContain('only use [[hurt');
+    expect(text).toContain('never cause harm');
+    expect(text).toContain('mundane');
+  });
+});

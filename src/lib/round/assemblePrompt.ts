@@ -3,6 +3,7 @@ import { sceneInstruction } from '@/lib/scenes/scenes';
 import {
   DEFAULT_SETTINGS,
   diceInstructions,
+  scopeInstructions,
   styleInstructions,
   type CampaignSettings,
 } from '@/lib/campaign/settings';
@@ -61,6 +62,7 @@ export function assemblePrompt(
     'You are the Dungeon Master for an ongoing D&D campaign.',
     'Narrate what happens next based on the players actions below.',
     'Always respond in Thai (ภาษาไทย), even if the players write in English.',
+    ...scopeInstructions(),
     ...styleInstructions(settings),
     '',
     ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstruction(adventure.id, currentSceneId), ''] : []),

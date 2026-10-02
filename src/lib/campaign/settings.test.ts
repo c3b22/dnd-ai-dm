@@ -64,3 +64,13 @@ describe('roundSecondsLabel', () => {
     expect(roundSecondsLabel(90)).toBe('90 วินาที');
   });
 });
+
+describe('scopeInstructions', () => {
+  it('tells the DM to stay in the fiction and redirect out-of-game requests instead of chatting along', async () => {
+    const { scopeInstructions } = await import('./settings');
+    const text = scopeInstructions().join('\n').toLowerCase();
+    expect(text).toContain('stay strictly inside');
+    expect(text).toContain('do not answer out-of-game requests');
+    expect(text).toContain('redirect');
+  });
+});

@@ -133,3 +133,10 @@ describe('assemblePrompt inventory', () => {
     expect(prompt).not.toContain('weight');
   });
 });
+
+describe('assemblePrompt scope guard', () => {
+  it('always tells the DM to stay in the fiction, even with no adventure and no characters', () => {
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }]);
+    expect(prompt.toLowerCase()).toContain('stay strictly inside');
+  });
+});

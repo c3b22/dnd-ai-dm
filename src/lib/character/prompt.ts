@@ -27,6 +27,7 @@ export function characterPrompt(
       ? [`  [[sanctuary]] only when the party is at: ${sanctuary}. Never use it anywhere else.`]
       : []),
     'Use the exact player name. Do not tag actions that had no mechanical effect.',
+    "Only use [[hurt: ...]] when the action was genuinely risky — combat, a fall, fire, poison, or knowingly confronting danger. A mundane, safe action (resting, sleeping, talking, searching a calm room, tidying up) must never cause harm, no matter what the d20 rolled. When an action is risky, match severity to the roll: a roll that merely falls short is at most light; medium needs a clearly bad roll; heavy needs a near-worst roll in real danger. A single ordinary roll on a harmless action must never down or endanger a player.",
   ];
 
   if (pendingWipe) {
