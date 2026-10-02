@@ -36,4 +36,9 @@ describe('Shop', () => {
     expect(screen.getByText(/5 ทอง/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'ขาย Rusty Key' })).toBeNull();
   });
+
+  it('shows its own error message next to the shop, not somewhere else', () => {
+    render(<Shop shop={shop} items={[]} gold={50} onBuy={() => {}} onSell={() => {}} error="เงินไม่พอ" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('เงินไม่พอ');
+  });
 });

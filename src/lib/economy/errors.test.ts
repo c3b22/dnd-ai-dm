@@ -2,9 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { isGoldViolation, isInventoryConflict } from './errors';
 
 describe('isGoldViolation', () => {
-  it('matches only the Postgres check_violation code', () => {
-    expect(isGoldViolation({ code: '23514' })).toBe(true);
-    expect(isGoldViolation({ code: 'EC001' })).toBe(false);
+  it('matches the players.gold check constraint specifically', () => {
+    expect(isGoldViolation({ code: '23514', message: 'new row for relation "players" violates check constraint "players_gold_check"' })).toBe(true);
+  });
+
+  it('does not match a different check constraint, even with the same code', () => {
+    expect(isGoldViolation({ code: '23514', message: 'new row for relation "inventory_items" violates check constraint "inventory_items_quantity_check"' })).toBe(false);
+  });
+
+  it('does not match a different error code or no error', () => {
+    expect(isGoldViolation({ code: 'EC001', message: 'players_gold_check' })).toBe(false);
     expect(isGoldViolation(null)).toBe(false);
   });
 });

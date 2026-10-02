@@ -66,7 +66,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [timeUpRoundId, setTimeUpRoundId] = useState<string | null>(null);
   const [shop, setShop] = useState<ShopState | null>(null);
   const [trades, setTrades] = useState<TradeRow[]>([]);
-  const [economyError, setEconomyError] = useState<string | null>(null);
+  const [shopError, setShopError] = useState<string | null>(null);
+  const [tradeError, setTradeError] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
@@ -183,42 +184,42 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   }
 
   async function handleBuy(itemId: string) {
-    setEconomyError(null);
+    setShopError(null);
     try {
       await requestShop(campaignId, 'buy', itemId);
     } catch (error) {
-      setEconomyError(describeEconomyError((error as Error).message));
+      setShopError(describeEconomyError((error as Error).message));
     }
     refreshPlayers();
   }
 
   async function handleSell(itemId: string, customName: string) {
-    setEconomyError(null);
+    setShopError(null);
     try {
       await requestShop(campaignId, 'sell', itemId, customName);
     } catch (error) {
-      setEconomyError(describeEconomyError((error as Error).message));
+      setShopError(describeEconomyError((error as Error).message));
     }
     refreshPlayers();
   }
 
   async function handlePropose(terms: { toPlayerId: string } & TradeTerms) {
-    setEconomyError(null);
+    setTradeError(null);
     const { toPlayerId, ...rest } = terms;
     try {
       await requestTrade(campaignId, { action: 'propose', toPlayerId, terms: rest });
     } catch (error) {
-      setEconomyError(describeEconomyError((error as Error).message));
+      setTradeError(describeEconomyError((error as Error).message));
     }
     refreshTrades();
   }
 
   async function handleRespond(tradeId: string, action: 'accept' | 'decline' | 'cancel') {
-    setEconomyError(null);
+    setTradeError(null);
     try {
       await requestTrade(campaignId, { action, tradeId });
     } catch (error) {
-      setEconomyError(describeEconomyError((error as Error).message));
+      setTradeError(describeEconomyError((error as Error).message));
     }
     refreshPlayers();
     refreshTrades();
@@ -389,11 +390,14 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               items={me.items}
               gold={me.gold}
               canAct={me.status === 'active' && !me.acted}
+              fullHp={me.hp >= me.maxHp}
               onEquip={handleEquip}
               onDrink={handleDrink}
             />
           )}
-          {shop && me && <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} />}
+          {shop && me && (
+            <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
+          )}
           {me && (
             <Trades
               me={me}
@@ -401,7 +405,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               trades={trades}
               onPropose={handlePropose}
               onRespond={handleRespond}
-              error={economyError}
+              error={tradeError}
             />
           )}
           {roundId && settings.roundSeconds > 0 && (

@@ -15,7 +15,7 @@ const suki: RoundPlayer = {
 };
 const trade = (over: Partial<TradeRow> = {}): TradeRow => ({
   id: 't1', fromPlayerId: 'p2', toPlayerId: 'p1', giveItems: [{ itemId: 'potion_minor', customName: '', quantity: 1 }],
-  giveGold: 0, wantItems: [], wantGold: 7, createdAt: '2026-10-01T00:00:00Z', ...over,
+  giveGold: 0, wantItems: [], wantGold: 7, createdAt: new Date().toISOString(), ...over,
 });
 const renderTrades = (props: Partial<React.ComponentProps<typeof Trades>> = {}) =>
   render(<Trades me={me} players={[me, suki]} trades={[]} onPropose={() => {}} onRespond={() => {}} {...props} />);
@@ -60,6 +60,16 @@ describe('Trades', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ยกเลิก' }));
     expect(onRespond).toHaveBeenCalledWith('t1', 'cancel');
     expect(screen.queryByRole('button', { name: 'ตกลง' })).toBeNull();
+  });
+
+  it('offers no accept button on an expired incoming proposal, but still lets it be declined', () => {
+    const onRespond = vi.fn();
+    const old = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+    renderTrades({ trades: [trade({ createdAt: old })], onRespond });
+    expect(screen.getByText(/หมดอายุ/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ตกลง' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'ปฏิเสธ' }));
+    expect(onRespond).toHaveBeenCalledWith('t1', 'decline');
   });
 
   it('shows an error message', () => {

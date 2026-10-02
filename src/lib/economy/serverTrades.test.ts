@@ -5,6 +5,9 @@ interface State {
   players: Record<string, { id: string; campaign_id: string; user_id: string; display_name: string; gold: number }>;
   rows: Record<string, unknown[]>;
   trades: any[];
+  /** Simulates another request (e.g. an accept) changing the trade's status right after this
+   * handler's own read of it, so the later conditional write affects zero rows. */
+  raceStatus?: string;
 }
 
 function fakeSupabase(state: State) {
@@ -32,18 +35,34 @@ function fakeSupabase(state: State) {
       }
       if (table === 'trades') {
         const filters: Record<string, string> = {};
+        const gtFilters: [string, string][] = [];
         let mode: 'select' | 'count' | 'update' = 'select';
         let patch: any;
-        const matching = () => state.trades.filter((t) => Object.entries(filters).every(([c, v]) => t[c] === v));
+        const matching = () =>
+          state.trades
+            .filter((t) => Object.entries(filters).every(([c, v]) => t[c] === v))
+            .filter((t) => gtFilters.every(([c, v]) => t[c] > v));
         const b: any = {
           select: (_cols?: string, opts?: { head?: boolean }) => { if (opts?.head) mode = 'count'; return b; },
           eq: (c: string, v: string) => { filters[c] = v; return b; },
-          maybeSingle: () => Promise.resolve({ data: matching()[0] ?? null, error: null }),
+          gt: (c: string, v: string) => { gtFilters.push([c, v]); return b; },
+          maybeSingle: () => {
+            const live = matching()[0] ?? null;
+            const snapshot = live ? { ...live } : null;
+            // The race happens after this read resolves: the caller's row stays as read, but the
+            // live row the later write checks against has already moved on.
+            if (live && state.raceStatus) live.status = state.raceStatus;
+            return Promise.resolve({ data: snapshot, error: null });
+          },
           update: (p: any) => { mode = 'update'; patch = p; return b; },
           insert: (p: any) => { inserted.push(p); return { select: () => ({ single: () => Promise.resolve({ data: { id: 't-new' }, error: null }) }) }; },
           then: (resolve: any) => {
             if (mode === 'count') return Promise.resolve({ count: matching().length, error: null }).then(resolve);
-            if (mode === 'update') { updates.push({ patch, filters: { ...filters } }); return Promise.resolve({ error: null }).then(resolve); }
+            if (mode === 'update') {
+              const affected = matching();
+              updates.push({ patch, filters: { ...filters } });
+              return Promise.resolve({ data: affected, error: null }).then(resolve);
+            }
             return Promise.resolve({ data: matching(), error: null }).then(resolve);
           },
         };
@@ -104,12 +123,25 @@ describe('tradeForUser propose', () => {
     await expect(propose(client, 'pB', { giveGold: 99 })).rejects.toMatchObject({ code: 'no_gold' });
     await expect(propose(client, 'pB', { giveGold: -1 })).rejects.toMatchObject({ code: 'invalid' });
     await expect(propose(client, 'pB', { giveItems: [t('shortsword', 0)] })).rejects.toMatchObject({ code: 'invalid' });
+    await expect(propose(client, 'pB', { giveGold: 1_000_001 })).rejects.toMatchObject({ code: 'invalid' });
+  });
+
+  it("rejects an oversized wantGold even when nothing is given (giveGold's own bound check does not run)", async () => {
+    const { client } = fakeSupabase(baseState());
+    await expect(propose(client, 'pB', { wantGold: 2_000_000_000 })).rejects.toMatchObject({ code: 'invalid' });
   });
 
   it('rejects a fourth pending proposal from the same player', async () => {
     const mine = [0, 1, 2].map((i) => pending({ id: `x${i}` }));
     const { client } = fakeSupabase(baseState({ trades: mine }));
     await expect(propose(client, 'pB', { giveGold: 1 })).rejects.toMatchObject({ code: 'too_many', status: 409 });
+  });
+
+  it('does not count an expired proposal toward the pending limit', async () => {
+    const old = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+    const mine = [0, 1, 2].map((i) => pending({ id: `x${i}`, created_at: old }));
+    const { client } = fakeSupabase(baseState({ trades: mine }));
+    await expect(propose(client, 'pB', { giveGold: 1 })).resolves.toEqual({ tradeId: 't-new' });
   });
 
   it('rejects a caller who is not a player in this campaign', async () => {
@@ -203,5 +235,13 @@ describe('tradeForUser decline and cancel', () => {
   it('refuses to change a trade that is no longer pending', async () => {
     const { client } = fakeSupabase(baseState({ trades: [pending({ status: 'declined' })] }));
     await expect(respond(client, 'cancel', 'u1')).rejects.toMatchObject({ code: 'not_pending' });
+  });
+
+  it('reports not_pending instead of success when a decline or cancel loses a race with a concurrent accept', async () => {
+    const decline = fakeSupabase(baseState({ trades: [pending()], raceStatus: 'accepted' }));
+    await expect(respond(decline.client, 'decline', 'u2')).rejects.toMatchObject({ code: 'not_pending', status: 409 });
+
+    const cancel = fakeSupabase(baseState({ trades: [pending()], raceStatus: 'accepted' }));
+    await expect(respond(cancel.client, 'cancel', 'u1')).rejects.toMatchObject({ code: 'not_pending', status: 409 });
   });
 });

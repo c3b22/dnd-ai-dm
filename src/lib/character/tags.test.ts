@@ -34,6 +34,18 @@ describe('parseCharacterTags', () => {
   it('returns the text unchanged when there are no tags', () => {
     expect(parseCharacterTags('Just narration.')).toEqual({ tags: [], cleanText: 'Just narration.' });
   });
+
+  it('never lets an unterminated tag swallow a real tag that follows it on the next line', () => {
+    const text = '[[give: Prem | story: an endless title that forgot its closing\n[[hurt: Suki | light]]';
+    const { tags } = parseCharacterTags(text);
+    expect(tags).toEqual([{ kind: 'hurt', name: 'Suki', tier: 'light' }]);
+  });
+
+  it('never lets an unterminated tag swallow a real tag of a different kind that follows it', () => {
+    const text = '[[revive: Prem\n[[gold: Suki | small]]';
+    const { tags } = parseCharacterTags(text);
+    expect(tags).toEqual([{ kind: 'gold', name: 'Suki', tier: 'small' }]);
+  });
 });
 
 describe('give and take tags', () => {

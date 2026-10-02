@@ -73,6 +73,12 @@ describe('takeItem', () => {
     expect(other.items).toBe(items);
   });
 
+  it('matches a story title even when the take tag repeats it beyond the 40-character limit it was stored at', () => {
+    const longTitle = 'A'.repeat(60);
+    const stored = [item({ itemId: 'story', customName: longTitle.slice(0, 40) })];
+    expect(takeItem(stored, 'story', longTitle).taken).toBe(true);
+  });
+
   it('ignores an item the player does not have', () => {
     expect(takeItem([sword], 'potion_minor').taken).toBe(false);
   });

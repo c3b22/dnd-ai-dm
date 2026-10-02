@@ -4,10 +4,10 @@ import { itemLabel } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
 import { EconomyError, isGoldViolation, isInventoryConflict } from './errors';
 import { postLogLine } from './serverShop';
-import { executeTrade, normalizeTradeItems, type TradeItem, type TradeTerms } from './trade';
+import { MAX_TRADE_GOLD, TRADE_TTL_MS, executeTrade, normalizeTradeItems, type TradeItem, type TradeTerms } from './trade';
 
 export const MAX_PENDING_PER_PLAYER = 3;
-export const TRADE_TTL_MS = 30 * 60 * 1000;
+export { TRADE_TTL_MS };
 
 type Params = { campaignId: string; userId: string } & (
   | { action: 'propose'; toPlayerId: string; terms: TradeTerms }
@@ -69,7 +69,9 @@ export async function tradeForUser(
     if (!giveItems || !wantItems) throw new EconomyError('invalid', 400);
     const terms: TradeTerms = { giveItems, wantItems, giveGold: params.terms.giveGold, wantGold: params.terms.wantGold };
 
-    if (![terms.giveGold, terms.wantGold].every((n) => Number.isInteger(n) && n >= 0)) {
+    // Checked unconditionally, before any branch that only validates giveGold: an oversized
+    // wantGold with nothing given would otherwise reach the insert and overflow the int column.
+    if (![terms.giveGold, terms.wantGold].every((n) => Number.isInteger(n) && n >= 0 && n <= MAX_TRADE_GOLD)) {
       throw new EconomyError('invalid', 400);
     }
     if (terms.giveItems.length > 0 || terms.giveGold > 0) {
@@ -88,7 +90,9 @@ export async function tradeForUser(
       .from('trades')
       .select('*', { count: 'exact', head: true })
       .eq('from_player_id', caller.id)
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      // An expired proposal can no longer be accepted; it should not sit in the way of new ones.
+      .gt('created_at', new Date(Date.now() - TRADE_TTL_MS).toISOString());
     if ((count ?? 0) >= MAX_PENDING_PER_PLAYER) throw new EconomyError('too_many', 409);
 
     const { data: created, error } = await supabase
@@ -120,12 +124,16 @@ export async function tradeForUser(
   if (params.action === 'cancel' || params.action === 'decline') {
     const allowed = params.action === 'cancel' ? row.from_player_id : row.to_player_id;
     if (caller.id !== allowed) throw new EconomyError('forbidden', 403);
-    const { error } = await supabase
+    const { data: affected, error } = await supabase
       .from('trades')
       .update({ status: params.action === 'cancel' ? 'cancelled' : 'declined', resolved_at: new Date().toISOString() })
       .eq('id', row.id)
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      .select('id');
     if (error) throw error;
+    // The status=pending condition above means zero rows matched: someone else (an accept)
+    // changed it between our read and this write. Report that instead of a false success.
+    if ((affected ?? []).length === 0) throw new EconomyError('not_pending', 409);
     return {};
   }
 

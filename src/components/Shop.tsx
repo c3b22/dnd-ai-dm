@@ -10,14 +10,20 @@ export interface ShopProps {
   gold: number;
   onBuy: (itemId: string) => void;
   onSell: (itemId: string, customName: string) => void;
+  error?: string | null;
 }
 
-export function Shop({ shop, items, gold, onBuy, onSell }: ShopProps) {
+export function Shop({ shop, items, gold, onBuy, onSell, error }: ShopProps) {
   const sellable = items.filter((i) => sellPrice(i.itemId) !== null);
   return (
     <section className="card" aria-label="ร้านค้า">
       <h3>ร้านค้า</h3>
       <p className="shop-name">{shop.name}</p>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
       <ul className="inv-list">
         {shop.itemIds.map((id) => {
           const price = buyPrice(id);

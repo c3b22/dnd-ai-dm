@@ -22,8 +22,15 @@ export type TradeResult =
   | { ok: true; from: { items: InventoryItem[]; goldDelta: number }; to: { items: InventoryItem[]; goldDelta: number } }
   | { ok: false; reason: TradeFailure };
 
+/** How long a proposal stays acceptable before it is treated as expired. Shared with the client
+ * so it can stop offering Accept on a proposal that the server would refuse anyway. */
+export const TRADE_TTL_MS = 30 * 60 * 1000;
+
 const MAX_TRADE_ITEM_ROWS = 10;
-const validGold = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0;
+// Comfortably below Postgres' int range; the game's economy never approaches this, so it only
+// exists to keep a malformed or malicious amount from overflowing the trades.give_gold column.
+export const MAX_TRADE_GOLD = 1_000_000;
+const validGold = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= MAX_TRADE_GOLD;
 
 export function normalizeTradeItems(raw: unknown): TradeItem[] | null {
   if (!Array.isArray(raw) || raw.length > MAX_TRADE_ITEM_ROWS) return null;

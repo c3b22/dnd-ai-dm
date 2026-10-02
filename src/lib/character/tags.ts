@@ -13,10 +13,13 @@ export type CharacterTag =
 // One pattern for every valid tag so matches come back in reading order.
 // Groups: 1 hurt|heal, 2 name, 3 tier, 4 revive name, 5 sanctuary,
 //         6 give|take, 7 name, 8 story title, 9 catalog item id.
+// Every open-ended capture excludes ] (so it stops at the tag's own close), and also \n and [
+// (so an unterminated or malformed tag can never stretch forward and swallow a real tag that
+// follows it on a later line, instead of just leaving itself unstripped in the narration).
 const VALID_TAG =
-  /\[\[\s*(?:(hurt|heal)\s*:\s*([^|\]]+?)\s*\|\s*(light|medium|heavy)|revive\s*:\s*([^\]]+?)|(sanctuary)|(give|take)\s*:\s*([^|\]]+?)\s*\|\s*(?:story\s*:\s*([^\]]+?)|([a-z_]+))|(gold|pay)\s*:\s*([^|\]]+?)\s*\|\s*(small|medium|large)|shop\s*:\s*([^|\]]+?)\s*\|\s*([^\]]+?)|(shop_close))\s*\]\]/gi;
+  /\[\[\s*(?:(hurt|heal)\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy)|revive\s*:\s*([^\]\n[]+?)|(sanctuary)|(give|take)\s*:\s*([^|\]\n[]+?)\s*\|\s*(?:story\s*:\s*([^\]\n[]+?)|([a-z_]+))|(gold|pay)\s*:\s*([^|\]\n[]+?)\s*\|\s*(small|medium|large)|shop\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|(shop_close))\s*\]\]/gi;
 // A tag-shaped leftover (bad tier, missing part): hidden from players, never applied.
-const LEFTOVER_TAG = /\[\[\s*(?:hurt|heal|revive|sanctuary|give|take|gold|pay|shop_close|shop)\b[^\]]*\]\]/gi;
+const LEFTOVER_TAG = /\[\[\s*(?:hurt|heal|revive|sanctuary|give|take|gold|pay|shop_close|shop)\b[^\]\n[]*\]\]/gi;
 
 export function parseCharacterTags(text: string): { tags: CharacterTag[]; cleanText: string } {
   const tags: CharacterTag[] = [];

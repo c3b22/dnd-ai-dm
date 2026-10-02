@@ -70,9 +70,10 @@ export function takeItem(
   itemId: string,
   customName = ''
 ): { items: InventoryItem[]; taken: boolean; label: string } {
-  const row = items.find(
-    (i) => i.itemId === itemId && (itemId !== STORY_ITEM_ID || sameTitle(i.customName, customName))
-  );
+  // A story title is always stored truncated to MAX_STORY_TITLE; truncate the same way here so a
+  // `take` that repeats the AI's original (untruncated) title still matches the stored row.
+  const wanted = customName.trim().slice(0, MAX_STORY_TITLE);
+  const row = items.find((i) => i.itemId === itemId && (itemId !== STORY_ITEM_ID || sameTitle(i.customName, wanted)));
   if (!row) return { items, taken: false, label: '' };
   const next =
     row.quantity > 1 ? items.map((i) => (i === row ? { ...i, quantity: i.quantity - 1 } : i)) : items.filter((i) => i !== row);

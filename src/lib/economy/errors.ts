@@ -7,8 +7,13 @@ export class EconomyError extends Error {
   }
 }
 
-/** Postgres check_violation: the players.gold >= 0 constraint refused an overspend. */
-export const isGoldViolation = (error: { code?: string } | null): boolean => error?.code === '23514';
+/**
+ * Postgres check_violation on the players.gold >= 0 constraint specifically (Postgres' default
+ * name for an inline column check is `<table>_<column>_check`), not any other check constraint
+ * that happens to raise the same 23514 code (for example inventory_items.quantity > 0).
+ */
+export const isGoldViolation = (error: { code?: string; message?: string } | null): boolean =>
+  error?.code === '23514' && /players_gold_check/.test(error?.message ?? '');
 
 /**
  * apply_changes' own raised error when a player's items no longer match what the caller

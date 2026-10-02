@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { TradeRow } from '@/lib/supabase/economy';
 import type { RoundPlayer } from '@/lib/supabase/players';
-import type { TradeItem, TradeTerms } from '@/lib/economy/trade';
+import { TRADE_TTL_MS, type TradeItem, type TradeTerms } from '@/lib/economy/trade';
 import { itemLabel } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
 
@@ -112,17 +112,24 @@ export function Trades({ me, players, trades, onPropose, onRespond, error }: Tra
           {error}
         </p>
       )}
-      {incoming.map((t) => (
-        <div key={t.id} className="trade-row">
-          <span>
-            {nameOf(t.fromPlayerId)} เสนอ: ให้ {describeSide(t.giveItems, t.giveGold)} ขอ {describeSide(t.wantItems, t.wantGold)}
-          </span>
-          <span>
-            <button type="button" className="qa" onClick={() => onRespond(t.id, 'accept')}>ตกลง</button>{' '}
-            <button type="button" className="qa" onClick={() => onRespond(t.id, 'decline')}>ปฏิเสธ</button>
-          </span>
-        </div>
-      ))}
+      {incoming.map((t) => {
+        const expired = Date.now() - new Date(t.createdAt).getTime() > TRADE_TTL_MS;
+        return (
+          <div key={t.id} className="trade-row">
+            <span>
+              {nameOf(t.fromPlayerId)} เสนอ: ให้ {describeSide(t.giveItems, t.giveGold)} ขอ {describeSide(t.wantItems, t.wantGold)}
+              {expired && <em> (หมดอายุ)</em>}
+            </span>
+            <span>
+              {/* The server would refuse accept once expired anyway; don't offer a button that only fails. */}
+              {!expired && (
+                <button type="button" className="qa" onClick={() => onRespond(t.id, 'accept')}>ตกลง</button>
+              )}{' '}
+              <button type="button" className="qa" onClick={() => onRespond(t.id, 'decline')}>ปฏิเสธ</button>
+            </span>
+          </div>
+        );
+      })}
       {outgoing.map((t) => (
         <div key={t.id} className="trade-row">
           <span>

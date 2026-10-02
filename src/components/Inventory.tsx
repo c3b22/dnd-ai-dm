@@ -7,6 +7,8 @@ export interface InventoryProps {
   gold: number;
   /** False when downed or already acted this round: drinking takes the action. Equipping is always free. */
   canAct: boolean;
+  /** True at max HP: drinking would heal nothing, so the potion is not offered to waste. */
+  fullHp?: boolean;
   onEquip: (itemId: string, action: 'equip' | 'unequip') => void;
   onDrink: (itemId: string) => void;
 }
@@ -14,7 +16,7 @@ export interface InventoryProps {
 const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, consumable: 2 };
 const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 3;
 
-export function Inventory({ items: unsorted, gold, canAct, onEquip, onDrink }: InventoryProps) {
+export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDrink }: InventoryProps) {
   // The database returns rows in no particular order, so the list would jump around after every change.
   const items = [...unsorted].sort(
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
@@ -59,7 +61,8 @@ export function Inventory({ items: unsorted, gold, canAct, onEquip, onDrink }: I
                     type="button"
                     className="qa"
                     aria-label={`ดื่ม ${label}`}
-                    disabled={!canAct}
+                    disabled={!canAct || fullHp}
+                    title={fullHp ? 'เลือดเต็มแล้ว' : undefined}
                     onClick={() => onDrink(item.itemId)}
                   >
                     ดื่ม

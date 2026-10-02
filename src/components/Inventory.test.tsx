@@ -46,6 +46,14 @@ describe('Inventory', () => {
     expect(screen.getByRole('button', { name: 'สวม ธนูสั้น' })).toBeEnabled();
   });
 
+  it('locks drinking at full HP so the potion is not wasted, but still allows equipping', () => {
+    render(<Inventory items={[potion, bow]} gold={12} canAct fullHp onEquip={() => {}} onDrink={() => {}} />);
+    const drinkButton = screen.getByRole('button', { name: 'ดื่ม ยาฟื้นฟูเล็ก' });
+    expect(drinkButton).toBeDisabled();
+    expect(drinkButton.title).toBe('เลือดเต็มแล้ว');
+    expect(screen.getByRole('button', { name: 'สวม ธนูสั้น' })).toBeEnabled();
+  });
+
   it('gives story items no buttons', () => {
     render(<Inventory items={[key]} gold={12} canAct onEquip={() => {}} onDrink={() => {}} />);
     expect(screen.getByText('Rusty Key')).toBeInTheDocument();

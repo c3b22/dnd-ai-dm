@@ -38,6 +38,10 @@ describe('executeTrade', () => {
     expect(executeTrade(terms({ giveItems: [t('lightsaber')] }), { items: [], gold: 0 }, { items: [], gold: 0 })).toEqual({ ok: false, reason: 'invalid' });
   });
 
+  it('refuses a gold amount too large for the database column, even if the player has it', () => {
+    expect(executeTrade(terms({ giveGold: 1_000_001 }), { items: [], gold: 2_000_000 }, { items: [], gold: 0 })).toEqual({ ok: false, reason: 'invalid' });
+  });
+
   it('refuses when either side lacks the items or the gold', () => {
     expect(executeTrade(terms({ giveItems: [t('potion_minor', 2)] }), { items: [potion(1)], gold: 0 }, { items: [], gold: 0 })).toEqual({ ok: false, reason: 'missing_items' });
     expect(executeTrade(terms({ wantItems: [t('shortsword')] }), { items: [], gold: 0 }, { items: [potion()], gold: 0 })).toEqual({ ok: false, reason: 'missing_items' });
