@@ -581,6 +581,18 @@ describe('processRound leveling', () => {
     expect(saved[1].xp).toBe(50);
   });
 
+  it('pays no xp in a round where the whole party was wiped', async () => {
+    const repository = repoWith([{ ...hero, hp: 5 }]);
+
+    await processRound(deps(repository, ['Down.\n[[hurt: Prem | heavy]]\n[[xp: large]]']), 'round-1');
+
+    const saved = (repository.saveCharacterState as any).mock.calls[0][1][0];
+    expect(saved.status).toBe('active');
+    expect(saved.xp ?? 0).toBe(0);
+    const lines = (repository.insertStatsSummary as any).mock.calls[0][2] as string[];
+    expect(lines.some((line) => line.includes('XP'))).toBe(false);
+  });
+
   it('does not add xp again when a retry finds the round\'s tags already applied', async () => {
     const repository = repoWith([hero], { tagsApplied: true });
 

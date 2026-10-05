@@ -128,7 +128,8 @@ export async function processRound(
       const result = applyCharacterTags(potions.characters, tags, deps.rollSides ?? randomDie);
       const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
-      const xpResult = applyXpTags(result.characters, tags);
+      // A wiped party was just revived to active; paying XP for that would reward losing.
+      const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       await deps.repository.saveCharacterState(context.campaignId, xpResult.characters, result.wiped);

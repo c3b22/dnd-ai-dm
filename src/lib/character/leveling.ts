@@ -50,7 +50,9 @@ export function applyXpTags(
   const gain = (xpTag?.kind === 'xp' ? XP_TIERS[xpTag.tier] : 0) + (hasMilestone ? MILESTONE_XP : 0);
   if (gain === 0) return { characters, changes: [] };
 
-  const changes = [`ทุกคนได้ +${gain} XP`];
+  const skipped = characters.filter((c) => c.status !== 'active').map((c) => c.displayName);
+  if (skipped.length === characters.length) return { characters, changes: [] };
+  const changes = [`ทุกคนได้ +${gain} XP${skipped.length > 0 ? ` ยกเว้น ${skipped.join(', ')}` : ''}`];
   const next = characters.map((c) => {
     if (c.status !== 'active') return c;
     const before = c.xp ?? 0;

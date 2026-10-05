@@ -101,6 +101,23 @@ describe('applyXpTags', () => {
     expect(next.characters[0].maxHp).toBe(30);
   });
 
+  it('names the downed players it skipped in the log line', () => {
+    const party = [
+      char({ status: 'downed', hp: 0 }),
+      char({ id: 'p2', displayName: 'Suki' }),
+      char({ id: 'p3', displayName: 'Mila', status: 'downed', hp: 0 }),
+    ];
+    const result = applyXpTags(party, [{ kind: 'xp', tier: 'medium' }]);
+    expect(result.changes).toEqual(['ทุกคนได้ +25 XP ยกเว้น Prem, Mila']);
+  });
+
+  it('gives nothing and logs nothing when nobody is active', () => {
+    const party = [char({ status: 'downed', hp: 0 })];
+    const result = applyXpTags(party, [{ kind: 'milestone' }]);
+    expect(result.characters).toEqual(party);
+    expect(result.changes).toEqual([]);
+  });
+
   it('gives a downed player nothing but still pays the active ones', () => {
     const result = applyXpTags(
       [char({ status: 'downed', hp: 0 }), char({ id: 'p2', displayName: 'Suki' })],
