@@ -96,6 +96,28 @@ describe('deleteCustomAdventure', () => {
     const { client } = fakeSupabase({ id: 'custom-1', owner_id: 'owner-2' });
     await expect(deleteCustomAdventure(client, 'custom-1', 'owner-1')).rejects.toMatchObject({ status: 403 });
   });
+
+  it('removes every storage object under the adventure folder before deleting the row', async () => {
+    const removeCalls: unknown[] = [];
+    const deleteCalls: unknown[] = [];
+    const client: any = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'custom-1', owner_id: 'owner-1' }, error: null }) }) }),
+        delete: () => ({ eq: (...args: unknown[]) => { deleteCalls.push(args); return Promise.resolve({ error: null }); } }),
+      }),
+      storage: {
+        from: () => ({
+          list: () => Promise.resolve({ data: [{ name: 'opening.jpg' }, { name: 'act-1.jpg' }], error: null }),
+          remove: (paths: string[]) => { removeCalls.push(paths); return Promise.resolve({ error: null }); },
+        }),
+      },
+    };
+
+    await deleteCustomAdventure(client, 'custom-1', 'owner-1');
+
+    expect(removeCalls).toEqual([['custom-1/opening.jpg', 'custom-1/act-1.jpg']]);
+    expect(deleteCalls).toHaveLength(1);
+  });
 });
 
 describe('listMyCustomAdventures', () => {

@@ -172,9 +172,13 @@ export async function deleteCustomAdventure(
 ): Promise<void> {
   await getOwnedRowOrThrow(supabase, id, ownerId);
 
-  const { data: entries } = await supabase.storage.from('adventure-scenes').list(id);
+  const { data: entries, error: listError } = await supabase.storage.from('adventure-scenes').list(id);
+  if (listError) throw listError;
   if (entries && entries.length > 0) {
-    await supabase.storage.from('adventure-scenes').remove(entries.map((e: { name: string }) => `${id}/${e.name}`));
+    const { error: removeError } = await supabase
+      .storage.from('adventure-scenes')
+      .remove(entries.map((e: { name: string }) => `${id}/${e.name}`));
+    if (removeError) throw removeError;
   }
 
   const { error } = await supabase.from('custom_adventures').delete().eq('id', id);
