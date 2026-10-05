@@ -4,6 +4,7 @@ import { allowedScenes, parseSceneTag } from '@/lib/scenes/scenes';
 import { normalizeSettings } from '@/lib/campaign/settings';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
+import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/leveling';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
@@ -68,7 +69,7 @@ export async function processRound(
       const character = characterByName.get(a.playerDisplayName.toLowerCase());
       if (!character) return { ...a, roll };
       const weapon = weaponFor(character.weaponId);
-      return { ...a, roll, weaponLabel: weapon.id, damage: rollDice(weapon.dice, rollSides) };
+      return { ...a, roll, weaponLabel: weapon.id, damage: rollDice(weapon.dice, rollSides) + levelDamageBonus(levelForXp(character.xp ?? 0)) };
     });
     prompt = assemblePrompt(
       context.campaignSummary,
@@ -127,9 +128,10 @@ export async function processRound(
       const result = applyCharacterTags(potions.characters, tags, deps.rollSides ?? randomDie);
       const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
+      const xpResult = applyXpTags(result.characters, tags);
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
-      await deps.repository.saveCharacterState(context.campaignId, result.characters, result.wiped);
+      await deps.repository.saveCharacterState(context.campaignId, xpResult.characters, result.wiped);
       const changedIds = [...new Set([...potions.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
       if (changedIds.length > 0) {
@@ -168,6 +170,7 @@ export async function processRound(
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
         ...potions.changes,
         ...result.changes,
+        ...xpResult.changes,
         ...inventoryResult.changes,
         ...economy.changes,
       ]);

@@ -523,3 +523,70 @@ describe('processRound economy', () => {
     expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ได้รับ 4 ทอง']);
   });
 });
+
+describe('processRound leveling', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+
+  function repoWith(characters: unknown[], extra: Record<string, unknown> = {}) {
+    return createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1',
+        campaignSummary: '',
+        recentMessages: [],
+        actions: [{ playerDisplayName: 'Prem', actionText: 'Attack' }],
+        characters,
+        pendingWipe: false,
+        ...extra,
+      }),
+    });
+  }
+  const deps = (repository: RoundRepository, narration: string[], extra: Partial<ProcessRoundDeps> = {}): ProcessRoundDeps => ({
+    claimRound: vi.fn().mockResolvedValue(true),
+    repository,
+    generateNarration: vi.fn().mockResolvedValue(fakeStream(narration)),
+    rollDie: () => 14,
+    rollSides: () => 4,
+    ...extra,
+  });
+
+  it('pays xp to active players, saves it with their state and posts the xp line', async () => {
+    const repository = repoWith([hero]);
+
+    await processRound(deps(repository, ['Well done.\n[[xp: medium]]']), 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', xp: 25 })], false);
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['ทุกคนได้ +25 XP']);
+  });
+
+  it('adds the level damage bonus to the weapon roll the DM sees', async () => {
+    const repository = repoWith([{ ...hero, xp: 150, maxHp: 30 }]);
+    const d = deps(repository, ['Narration.']);
+
+    await processRound(d, 'round-1');
+
+    // level 3 = +1 damage on top of the rolled 4
+    expect((d.generateNarration as any).mock.calls[0][0]).toContain('shortsword damage roll 5');
+  });
+
+  it('gives a downed player no xp while an active teammate still gets it', async () => {
+    const downed = { ...hero, hp: 0, status: 'downed' as const };
+    const suki = { ...hero, id: 'p2', displayName: 'Suki' };
+    const repository = repoWith([downed, suki]);
+
+    await processRound(deps(repository, ['Well done.
+[[xp: large]]']), 'round-1');
+
+    const saved = (repository.saveCharacterState as any).mock.calls[0][1];
+    expect(saved[0]).toMatchObject({ id: 'p1', status: 'downed' });
+    expect(saved[0].xp ?? 0).toBe(0);
+    expect(saved[1].xp).toBe(50);
+  });
+
+  it('does not add xp again when a retry finds the round\'s tags already applied', async () => {
+    const repository = repoWith([hero], { tagsApplied: true });
+
+    await processRound(deps(repository, ['Well done.\n[[xp: large]]']), 'round-1');
+
+    expect(repository.saveCharacterState).not.toHaveBeenCalled();
+  });
+});
