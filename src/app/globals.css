@@ -244,6 +244,10 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .hp-lost { display: block; height: 100%; margin-left: auto; background: repeating-linear-gradient(135deg, var(--line) 0 3px, transparent 3px 6px); }
 .hp-num { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .hp-num em { font-style: normal; color: var(--danger); }
+.hp .lv { margin-left: 8px; font-size: 11px; font-weight: 700; color: var(--accent, var(--muted)); }
+.xp-track { height: 3px; margin-top: 3px; border-radius: 9px; overflow: hidden; background: var(--surface-2); }
+.xp-fill { display: block; height: 100%; background: var(--accent, var(--muted)); }
+.xp-max { display: block; margin-top: 2px; font-size: 10px; letter-spacing: .06em; color: var(--muted); }
 .av.down { border-color: var(--danger); color: var(--danger); }
 .pl-row.is-down .nm { color: var(--muted); text-decoration: line-through; }
 .badge-down { font-size: 11px; color: var(--danger); border: 1px solid var(--danger); border-radius: 999px; padding: 0 8px; font-weight: 600; }

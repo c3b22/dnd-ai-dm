@@ -573,8 +573,7 @@ describe('processRound leveling', () => {
     const suki = { ...hero, id: 'p2', displayName: 'Suki' };
     const repository = repoWith([downed, suki]);
 
-    await processRound(deps(repository, ['Well done.
-[[xp: large]]']), 'round-1');
+    await processRound(deps(repository, ['Well done.\n[[xp: large]]']), 'round-1');
 
     const saved = (repository.saveCharacterState as any).mock.calls[0][1];
     expect(saved[0]).toMatchObject({ id: 'p1', status: 'downed' });
