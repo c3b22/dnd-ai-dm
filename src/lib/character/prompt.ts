@@ -1,4 +1,5 @@
 import { diceLabel, weaponFor } from './constants';
+import { levelForXp } from './leveling';
 import type { Character } from './types';
 
 export function characterPrompt(
@@ -16,13 +17,15 @@ export function characterPrompt(
         c.status === 'downed'
           ? "DOWNED (cannot act; only a teammate's action can get them back up)"
           : 'standing';
-      return `- ${c.displayName}: HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
+      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}): HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
     }),
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',
     '  [[hurt: PlayerName | light]] - that player was hurt (use light, medium or heavy by how bad the hit is)',
     '  [[heal: PlayerName | medium]] - that player recovered health (light, medium or heavy for a partial heal from a potion, spell, or short rest; full to restore them completely with no roll, for a dedicated paid treatment such as a clinic, temple or healer)',
     '  [[revive: PlayerName]] - a downed player was helped back up by a teammate',
+    '  [[xp: small]] (or medium, large) - the whole party earned experience. Award it only when the party overcame an obstacle, solved a problem, or genuinely advanced the story, not every round: small for a minor step, medium for a notable one, large for a major one. At most one per round.',
+    '  [[milestone]] - the party closed a major event or scene of the story. Rare; at most one per round. Never state XP or level numbers in your narration.',
     ...(sanctuary
       ? [`  [[sanctuary]] only when the party is at: ${sanctuary}. Never use it anywhere else.`]
       : []),

@@ -100,4 +100,9 @@ describe('PlayerOrder', () => {
     render(<PlayerOrder players={players} currentPlayerId="p1" locked={false} onMove={() => {}} />);
     expect(screen.getAllByText(/15 ทอง/)).toHaveLength(3);
   });
+
+  it('shows each player\'s level', () => {
+    render(<PlayerOrder players={[{ ...players[0], xp: 60, maxHp: 25 }]} currentPlayerId="p1" locked={false} onMove={() => {}} />);
+    expect(screen.getByText('Lv 2')).toBeTruthy();
+  });
 });

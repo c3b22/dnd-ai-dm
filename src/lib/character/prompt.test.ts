@@ -14,8 +14,8 @@ describe('characterPrompt', () => {
 
   it('lists each character with HP, weapon and standing/downed', () => {
     const text = characterPrompt(party, false, undefined).join('\n');
-    expect(text).toContain('Prem: HP 15/18, shortsword (1d8), standing');
-    expect(text).toContain('Suki: HP 0/20, fists (1d2), DOWNED');
+    expect(text).toContain('Prem (Lv 1): HP 15/18, shortsword (1d8), standing');
+    expect(text).toContain('Suki (Lv 1): HP 0/20, fists (1d2), DOWNED');
   });
 
   it('teaches the tags and forbids inventing HP numbers', () => {
@@ -24,6 +24,20 @@ describe('characterPrompt', () => {
     expect(text).toContain('[[heal: PlayerName | medium]]');
     expect(text).toContain('[[revive: PlayerName]]');
     expect(text).toContain('never state or invent HP numbers');
+  });
+
+  it("shows each character's level, derived from xp", () => {
+    const text = characterPrompt([{ ...party[0], xp: 150 }], false, undefined).join('\n');
+    expect(text).toContain('Prem (Lv 3):');
+  });
+
+  it('teaches the xp and milestone tags without leaking XP numbers', () => {
+    const text = characterPrompt([{ ...party[0], xp: 150 }], false, undefined).join('\n');
+    expect(text).toContain('[[xp: small]]');
+    expect(text).toContain('[[milestone]]');
+    expect(text).not.toMatch(/\b150\b/);
+    const statusLines = text.split('\n').filter((line) => line.startsWith('- '));
+    expect(statusLines.join('\n')).not.toMatch(/XP/);
   });
 
   it('names the sanctuary only when the adventure has one', () => {

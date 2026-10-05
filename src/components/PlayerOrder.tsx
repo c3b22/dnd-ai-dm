@@ -87,7 +87,7 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                   {' '}· {player.gold} ทอง
                 </span>
               </span>
-              <HpBar hp={player.hp} maxHp={player.maxHp} />
+              <HpBar hp={player.hp} maxHp={player.maxHp} xp={player.xp} />
             </span>
             <span className="mv">
               <button

@@ -7,6 +7,7 @@ import {
   WIPE_EXTRA_MAX_HP_PENALTY,
 } from './constants';
 import { rollDice } from './dice';
+import { levelForXp, levelHpBonus } from './leveling';
 import { findByDisplayName } from './names';
 import type { CharacterTag } from './tags';
 import type { Character } from './types';
@@ -17,6 +18,9 @@ export interface ApplyResult {
   changes: string[];
   wiped: boolean;
 }
+
+/** max HP the character gets from level alone; players.max_hp stays the revive-adjusted base. */
+const bonusOf = (c: Character): number => levelHpBonus(levelForXp(c.xp ?? 0));
 
 export function applyCharacterTags(
   characters: Character[],
@@ -32,7 +36,7 @@ export function applyCharacterTags(
   for (const tag of tags) {
     if (tag.kind === 'sanctuary') {
       for (const c of next) {
-        c.maxHp = BASE_MAX_HP;
+        c.maxHp = BASE_MAX_HP + bonusOf(c);
         c.revivesSinceSanctuary = 0;
       }
       changes.push('ถึงสถานที่ปลอดภัย: max HP ของทุกคนกลับมาเต็ม');
@@ -65,7 +69,7 @@ export function applyCharacterTags(
     } else if (tag.kind === 'revive' && target.status === 'downed') {
       target.revivesSinceSanctuary += 1;
       const before = target.maxHp;
-      target.maxHp = Math.max(MIN_MAX_HP, target.maxHp - REVIVE_MAX_HP_STEP * target.revivesSinceSanctuary);
+      target.maxHp = Math.max(MIN_MAX_HP + bonusOf(target), target.maxHp - REVIVE_MAX_HP_STEP * target.revivesSinceSanctuary);
       target.hp = Math.min(REVIVE_HP, target.maxHp);
       target.status = 'active';
       const lost = before - target.maxHp;
@@ -78,7 +82,7 @@ export function applyCharacterTags(
     for (const c of next) {
       c.revivesSinceSanctuary += 1;
       const cost = REVIVE_MAX_HP_STEP * c.revivesSinceSanctuary + WIPE_EXTRA_MAX_HP_PENALTY;
-      c.maxHp = Math.max(MIN_MAX_HP, c.maxHp - cost);
+      c.maxHp = Math.max(MIN_MAX_HP + bonusOf(c), c.maxHp - cost);
       c.hp = Math.ceil(c.maxHp / 2);
       c.status = 'active';
     }
