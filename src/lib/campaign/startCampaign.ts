@@ -1,4 +1,4 @@
-import { getAdventure } from '@/lib/adventures/adventures';
+import { getAdventureById } from '@/lib/adventures/adventures';
 import { findOwnerId } from './turnOrder';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 
@@ -46,7 +46,7 @@ export async function startCampaign(
     .eq('id', params.campaignId);
   if (updateError) throw updateError;
 
-  const adventure = getAdventure(campaign.adventure_id);
+  const adventure = await getAdventureById(supabase, campaign.adventure_id);
   if (adventure) {
     const { error: openingError } = await supabase.from('messages').insert({
       campaign_id: params.campaignId,
