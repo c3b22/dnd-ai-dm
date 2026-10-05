@@ -9,27 +9,46 @@ export default function EditAdventurePage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [scenes, setScenes] = useState<CustomScene[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    getAdventureById(supabaseBrowserClient, id).then((data) => {
-      if (!cancelled) setAdventure(data);
-    });
+    getAdventureById(supabaseBrowserClient, id)
+      .then((data) => {
+        if (cancelled) return;
+        if (!data) setLoadError('ไม่พบเนื้อเรื่องนี้');
+        else setAdventure(data);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('โหลดเนื้อเรื่องไม่สำเร็จ ลองใหม่อีกครั้ง');
+      });
 
     supabaseBrowserClient
       .from('custom_adventures')
       .select('scenes')
       .eq('id', id)
       .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setScenes(data?.scenes ?? []);
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) setLoadError('โหลดเนื้อเรื่องไม่สำเร็จ ลองใหม่อีกครั้ง');
+        else setScenes(data?.scenes ?? []);
       });
 
     return () => {
       cancelled = true;
     };
   }, [id]);
+
+  if (loadError) {
+    return (
+      <main className="screen">
+        <p role="alert" className="error">
+          {loadError}
+        </p>
+      </main>
+    );
+  }
 
   if (!adventure || scenes === null) {
     return (
