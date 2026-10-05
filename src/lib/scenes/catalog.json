@@ -5,7 +5,12 @@
     "sunken-bell-of-marrowmere": "Palette: cold teal, slate blue and fog grey with a single warm amber lantern glow. Mood: eerie, quiet, mournful, gothic mystery. Night, heavy mist.",
     "the-wolf-king-of-ashenfell": "Palette: icy blue, pale white snow, deep charcoal, with small warm orange firelight accents. Mood: harsh, heroic, wintry saga. Nordic-inspired architecture.",
     "the-thousand-doors-market": "Palette: deep indigo and violet dusk with jewel-toned glowing lanterns in gold, teal and magenta. Mood: enchanting, mischievous, slightly dangerous.",
-    "crown-of-the-sunken-king": "Palette: dusty ochre, warm torchlight orange against cool stone grey and shadow. Mood: adventurous, classic dungeon crawl, ancient and crumbling."
+    "crown-of-the-sunken-king": "Palette: dusty ochre, warm torchlight orange against cool stone grey and shadow. Mood: adventurous, classic dungeon crawl, ancient and crumbling.",
+    "the-clockwork-orphan": "Palette: brass gold, soot black, verdigris green, warm gaslight amber. Mood: steampunk mystery, bittersweet, inventive.",
+    "the-starving-god-of-red-dunes": "Palette: burnt orange, deep red sand, sun-bleached bone white, deep violet shadow. Mood: harsh survival, mythic, tense heat.",
+    "the-mask-collector-of-gallowsreach": "Palette: deep burgundy, black lacquer, pale porcelain white, candlelight gold. Mood: gothic intrigue, elegant and unsettling.",
+    "the-toad-kings-hoard": "Palette: murky green, algae gold, damp grey stone, pale moonlight. Mood: classic dungeon adventure, light grotesque whimsy.",
+    "the-three-vaults-of-the-starfall-crown": "Palette: molten orange, deep cerulean blue, brass gold, void-black starlight. Mood: classic funhouse dungeon crawl, adventurous and puzzle-like."
   },
   "scenes": [
     { "id": "tavern-interior", "scope": "generic", "nameTh": "โรงเตี๊ยม (ภายใน)", "prompt": "The interior of a busy medieval fantasy tavern, warm firelight from a large stone hearth, heavy timber beams, long wooden tables with tankards and candles, a bar counter with barrels, cosy and lived-in, empty of people or with only distant silhouettes." },
@@ -36,12 +41,37 @@
     { "id": "market-lanterns", "scope": "the-thousand-doors-market", "nameTh": "ร้านโคมไฟ", "prompt": "A narrow alley in a magical night market packed with hundreds of hanging lanterns in every colour, a cosy lantern seller's cart, layered depth, soft glowing bokeh." },
 
     { "id": "crown-stairs", "scope": "crown-of-the-sunken-king", "nameTh": "บันไดลับ", "prompt": "A steep ancient stone staircase descending into darkness beneath a ruined keep, carved crescent moon and star symbols on the walls, torchlight glowing far below, dust in the air." },
-    { "id": "crown-vault", "scope": "crown-of-the-sunken-king", "nameTh": "ห้องของการ์กอยล์", "prompt": "A vaulted underground treasure chamber with a great stone arch, a stone gargoyle statue with glowing green eyes guarding a deep doorway, torches on the walls, scattered coins and rubble." }
+    { "id": "crown-vault", "scope": "crown-of-the-sunken-king", "nameTh": "ห้องของการ์กอยล์", "prompt": "A vaulted underground treasure chamber with a great stone arch, a stone gargoyle statue with glowing green eyes guarding a deep doorway, torches on the walls, scattered coins and rubble." },
+
+    { "id": "clockwork-workshop", "scope": "the-clockwork-orphan", "nameTh": "โรงงานจักรกลร้าง", "prompt": "A ruined steampunk inventor's workshop filled with dormant brass automatons, scattered gears and rolled-up schematics, dusty skylight shafts of light, cobwebs draped over levers and pulleys." },
+    { "id": "guild-archive", "scope": "the-clockwork-orphan", "nameTh": "หอจดหมายเหตุกิลด์", "prompt": "A tall vaulted archive room lined with brass filing cabinets and rolled blueprints, suspended gas lamps, a spiral staircase of wrought iron, dust motes drifting in amber light." },
+    { "id": "magistrate-hall", "scope": "the-clockwork-orphan", "nameTh": "ห้องทำงานผู้พิพากษา", "prompt": "An opulent steampunk magistrate's office with brass fittings, a large gear-shaped stained glass window, a heavy oak desk, polished dark wood panelling, warm lamp light." },
+
+    { "id": "desert-town", "scope": "the-starving-god-of-red-dunes", "nameTh": "เมืองกลางทะเลทราย", "prompt": "A small desert waystation town of mudbrick buildings at dusk, palm trees, a well in the centre, warm lantern light against a darkening orange sky, wind-blown sand drifting through the streets." },
+    { "id": "dune-crossing", "scope": "the-starving-god-of-red-dunes", "nameTh": "ข้ามเนินทราย", "prompt": "Towering red sand dunes under a harsh sun, a faint line of robed travellers' footprints vanishing into heat haze, a distant sandstorm wall looming on the horizon." },
+    { "id": "buried-temple", "scope": "the-starving-god-of-red-dunes", "nameTh": "วิหารใต้ทราย", "prompt": "A half-buried ancient desert temple interior, cracked sandstone columns engraved with forgotten gods, shafts of sunlight through a collapsed ceiling, drifted sand spilling across the floor." },
+
+    { "id": "masquerade-ballroom", "scope": "the-mask-collector-of-gallowsreach", "nameTh": "งานเต้นรำสวมหน้ากาก", "prompt": "A grand gothic ballroom full of masked nobility dancing under candlelit chandeliers, tall arched windows, dramatic shadows, every face hidden behind an ornate mask." },
+    { "id": "mask-makers-undercity", "scope": "the-mask-collector-of-gallowsreach", "nameTh": "ตลาดช่างทำหน้ากากใต้เมือง", "prompt": "A cramped underground market of mask-makers, stalls hung with hundreds of ornate masks lit by candlelight, narrow brick tunnels, flickering gas lamps overhead." },
+    { "id": "collectors-lair", "scope": "the-mask-collector-of-gallowsreach", "nameTh": "ห้องลับนักสะสม", "prompt": "A hidden gothic workshop lined wall to wall with blank porcelain masks hanging on hooks, a single cracked mirror, dim candlelight, unsettling and still." },
+
+    { "id": "lake-mirrow-shore", "scope": "the-toad-kings-hoard", "nameTh": "ชายฝั่งทะเลสาบมิรโรว์", "prompt": "A misty lake shore at dusk, still dark water, the faint outline of a sunken castle's towers visible just beneath the surface, reeds swaying and a small abandoned rowboat." },
+    { "id": "drowned-castle-airpocket", "scope": "the-toad-kings-hoard", "nameTh": "โพรงอากาศในปราสาทจม", "prompt": "The flooded entrance hall of a sunken castle inside a shimmering dry air-pocket, water held back by a faint magical membrane overhead, dripping stone archways, pale green bioluminescent algae light." },
+    { "id": "toad-throne-hall", "scope": "the-toad-kings-hoard", "nameTh": "ท้องพระโรงจมน้ำ", "prompt": "A grand drowned throne hall with a cracked golden throne, murky green light, lily pads and moss overtaking the stonework, a massive toad-shaped shadow looming near a pile of gold." },
+
+    { "id": "flame-vault", "scope": "the-three-vaults-of-the-starfall-crown", "nameTh": "กรุแห่งเปลวเพลิง", "prompt": "A volcanic underground vault chamber with rivers of glowing lava, swinging pendulum blade traps, obsidian stone arches, fierce orange and red light." },
+    { "id": "tide-vault", "scope": "the-three-vaults-of-the-starfall-crown", "nameTh": "กรุแห่งคลื่น", "prompt": "A flooded cistern vault with ancient stone aqueducts, waist-deep water reflecting pale blue light from glowing runes, dripping ceiling, an eerie drowned statue half-submerged." },
+    { "id": "gear-vault", "scope": "the-three-vaults-of-the-starfall-crown", "nameTh": "กรุแห่งกลไก", "prompt": "A vast clockwork vault chamber filled with enormous turning brass gears and mechanical trap arms, dim lantern light, polished metal catwalks crossing the gears." }
   ],
   "adventureScenes": {
     "sunken-bell-of-marrowmere": ["bell-village", "harbor-docks", "bell-ferry", "bell-hand"],
     "the-wolf-king-of-ashenfell": ["wolf-hall", "wolf-snow", "campfire-night", "wolf-pass"],
     "the-thousand-doors-market": ["market-square", "city-market-day", "market-redroom", "market-lanterns"],
-    "crown-of-the-sunken-king": ["castle-ruins", "castle-ruins", "crown-stairs", "crown-vault"]
+    "crown-of-the-sunken-king": ["castle-ruins", "castle-ruins", "crown-stairs", "crown-vault"],
+    "the-clockwork-orphan": ["town-street-night", "clockwork-workshop", "guild-archive", "magistrate-hall"],
+    "the-starving-god-of-red-dunes": ["desert-town", "dune-crossing", "buried-temple", "buried-temple"],
+    "the-mask-collector-of-gallowsreach": ["masquerade-ballroom", "town-street-night", "mask-makers-undercity", "collectors-lair"],
+    "the-toad-kings-hoard": ["lake-mirrow-shore", "drowned-castle-airpocket", "crypt", "toad-throne-hall"],
+    "the-three-vaults-of-the-starfall-crown": ["flame-vault", "tide-vault", "gear-vault", "gear-vault"]
   }
 }

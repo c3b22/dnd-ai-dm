@@ -31,6 +31,11 @@ const MOOD_TINT: Record<string, string> = {
   'the-wolf-king-of-ashenfell': 'rgba(70, 110, 170, 0.30)',
   'the-thousand-doors-market': 'rgba(110, 60, 160, 0.28)',
   'crown-of-the-sunken-king': 'rgba(170, 110, 40, 0.28)',
+  'the-clockwork-orphan': 'rgba(150, 120, 40, 0.28)',
+  'the-starving-god-of-red-dunes': 'rgba(180, 90, 40, 0.30)',
+  'the-mask-collector-of-gallowsreach': 'rgba(90, 20, 30, 0.30)',
+  'the-toad-kings-hoard': 'rgba(40, 90, 60, 0.32)',
+  'the-three-vaults-of-the-starfall-crown': 'rgba(120, 70, 150, 0.28)',
 };
 
 export function moodTint(adventureId: string | null | undefined): string | null {
