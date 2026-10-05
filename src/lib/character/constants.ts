@@ -49,3 +49,13 @@ export function weaponFor(id: string | null | undefined): { id: WeaponId; nameTh
 export function diceLabel(spec: DiceSpec): string {
   return `${spec.count}d${spec.sides}${spec.bonus ? `+${spec.bonus}` : ''}`;
 }
+
+export const MAX_LEVEL = 10;
+/** Cumulative XP needed for each level; index i is the XP for level i + 1. */
+export const LEVEL_XP_THRESHOLDS: readonly number[] = [0, 60, 150, 270, 420, 600, 810, 1050, 1320, 1620];
+export const HP_PER_LEVEL = 5;
+
+export const XP_TIERS = { small: 10, medium: 25, large: 50 } as const;
+export type XpTier = keyof typeof XP_TIERS;
+/** What a [[milestone]] tag awards. */
+export const MILESTONE_XP = 100;

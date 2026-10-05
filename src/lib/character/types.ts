@@ -12,4 +12,6 @@ export interface Character {
   armorReduction?: number;
   /** Personal gold; absent means 0. */
   gold?: number;
+  /** Experience points; absent means 0. Level is always derived from this. */
+  xp?: number;
 }
