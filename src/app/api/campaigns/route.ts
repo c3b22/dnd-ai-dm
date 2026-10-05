@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { getAdventure } from '@/lib/adventures/adventures';
+import { getAdventureById } from '@/lib/adventures/adventures';
 import { createCampaign } from '@/lib/campaign/createCampaign';
 
 export async function POST(request: NextRequest) {
@@ -11,10 +11,10 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (body.adventureId && !getAdventure(body.adventureId)) {
+  const supabase = createServiceRoleClient();
+  if (body.adventureId && !(await getAdventureById(supabase, body.adventureId))) {
     return NextResponse.json({ error: 'unknown adventureId' }, { status: 400 });
   }
-  const supabase = createServiceRoleClient();
   const result = await createCampaign(supabase, body);
   return NextResponse.json(result, { status: 201 });
 }
