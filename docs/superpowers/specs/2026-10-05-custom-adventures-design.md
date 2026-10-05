@@ -17,7 +17,7 @@ Built-in adventures are static, build-time content in `src/lib/adventures/advent
 | Is an image required? | No. A scene with no uploaded image just doesn't render a banner for that scene (same as today when `SceneBanner` can't load an image). |
 | Out of scope | Public sharing/discovery of other players' custom adventures, moderation/review, editing acts after images are attached and having scene keys stay in sync (adding/removing acts after creation regenerates the scene list and orphans any images for removed act keys — acceptable for v1), voice/multi-language beyond the existing Thai/English pair. |
 
-## Data — migration `0013_custom_adventures.sql`
+## Data — migration `0014_custom_adventures.sql`
 
 - `custom_adventures`: `id uuid pk default gen_random_uuid()`, `owner_id uuid not null references auth.users(id) on delete cascade`, `title text not null`, `title_th text not null`, `tagline text not null`, `tagline_th text not null`, `tone text not null`, `tone_th text not null`, `setting text not null`, `hook text not null`, `opening_th text not null`, `secret text not null`, `acts jsonb not null` (`string[]`, at least 1), `npcs jsonb not null default '[]'` (`{name, role}[]`), `scenes jsonb not null default '[]'` (`{key, nameTh, imagePath}[]`, `imagePath` null until uploaded), `created_at timestamptz not null default now()`.
 - RLS: **select** open to everyone including `anon` (other players in a campaign must be able to load the adventure); **insert/update/delete** restricted to `auth.uid() = owner_id`.
