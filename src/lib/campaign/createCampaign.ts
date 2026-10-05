@@ -1,4 +1,4 @@
-import { openingSceneId } from '@/lib/scenes/scenes';
+import { openingSceneIdAsync } from '@/lib/scenes/scenes';
 import { generateJoinCode } from './joinCode';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { DEFAULT_WEAPON_ID, isStartingWeapon } from '@/lib/character/constants';
@@ -43,7 +43,7 @@ export async function createCampaign(
   if (campaignUpdateError) throw campaignUpdateError;
 
   // Show the opening scene. Best effort: campaigns created before the scene column exists still work.
-  const sceneId = openingSceneId(params.adventureId);
+  const sceneId = await openingSceneIdAsync(supabase, params.adventureId);
   if (sceneId) {
     try {
       await supabase.from('campaigns').update({ current_scene_id: sceneId }).eq('id', campaign.id);
