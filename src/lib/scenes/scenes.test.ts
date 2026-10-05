@@ -108,6 +108,15 @@ describe('async scene lookups: custom adventure', () => {
     expect(scene).toEqual({ id: 'a1-opening', scope: 'a1', nameTh: 'เปิดเรื่อง', imageUrl: 'https://cdn/a1/opening.jpg' });
   });
 
+  it('falls back to a generic scene when the DM narrates there', async () => {
+    const scene = await getSceneAsync(fakeSupabase(scenes), 'a1', 'tavern-interior');
+    expect(scene).toEqual({ ...getScene('tavern-interior'), imageUrl: null });
+  });
+
+  it('returns undefined for an id that is neither its own nor generic', async () => {
+    expect(await getSceneAsync(fakeSupabase(scenes), 'a1', 'bell-village')).toBeUndefined();
+  });
+
   it('scene instruction mentions the current place and the adventure\'s own scenes first', async () => {
     const text = await sceneInstructionAsync(fakeSupabase(scenes), 'a1', 'a1-opening');
     expect(text).toContain('currently at a1-opening');

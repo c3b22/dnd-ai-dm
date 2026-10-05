@@ -129,5 +129,8 @@ export async function getSceneAsync(
     return s ? { ...s, imageUrl: null } : undefined;
   }
   const own = await getCustomScenes(supabase, adventureId);
-  return own.find((s) => s.id === sceneId);
+  const ownMatch = own.find((s) => s.id === sceneId);
+  if (ownMatch) return ownMatch;
+  const generic = getScene(sceneId);
+  return generic && generic.scope === 'generic' ? { ...generic, imageUrl: null } : undefined;
 }
