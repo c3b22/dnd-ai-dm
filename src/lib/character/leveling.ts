@@ -55,7 +55,7 @@ export function applyXpTags(
     if (c.status !== 'active') return c;
     const before = c.xp ?? 0;
     const level = levelForXp(before);
-    const cap = level < MAX_LEVEL ? LEVEL_XP_THRESHOLDS[level + 1] - 1 : Infinity;
+    const cap = level + 1 < MAX_LEVEL ? LEVEL_XP_THRESHOLDS[level + 1] - 1 : Infinity;
     const xp = Math.min(before + gain, cap);
     const gained = levelForXp(xp) - level;
     const updated = { ...c, xp };

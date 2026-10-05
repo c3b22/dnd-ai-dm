@@ -111,6 +111,17 @@ describe('applyXpTags', () => {
     expect(result.characters[1].xp).toBe(25);
   });
 
+  it('lets a level 9 player reach level 10 without a NaN cap', () => {
+    const result = applyXpTags([char({ xp: 1400, maxHp: 60, hp: 50 })], [{ kind: 'milestone' }]);
+    const c = result.characters[0];
+    expect(c.xp).toBe(1500);
+    expect(c.xp).not.toBeNaN();
+    expect(c.maxHp).toBe(60);
+    const again = applyXpTags([char({ xp: 1319, maxHp: 55, hp: 55 })], [{ kind: 'xp', tier: 'small' }]);
+    expect(levelForXp(again.characters[0].xp!)).toBe(9);
+    expect(again.characters[0].maxHp).toBe(60);
+  });
+
   it('keeps adding XP at the max level without changing HP', () => {
     const result = applyXpTags([char({ xp: 1620, maxHp: 65, hp: 40 })], [{ kind: 'xp', tier: 'large' }]);
     expect(result.characters[0]).toMatchObject({ xp: 1670, maxHp: 65, hp: 40 });
