@@ -3,6 +3,8 @@
 // Themes are loosely inspired by public-domain myth and folklore; no third-party
 // module text is reproduced here.
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 export interface Adventure {
   id: string;
   /** Thai opening narration posted as the first DM message. */
@@ -261,6 +263,35 @@ export const ADVENTURES: Adventure[] = [
 
 export function getAdventure(id: string | null | undefined): Adventure | undefined {
   return ADVENTURES.find((a) => a.id === id);
+}
+
+export function mapCustomAdventureRow(row: any): Adventure {
+  return {
+    id: row.id,
+    title: row.title,
+    titleTh: row.title_th,
+    tagline: row.tagline,
+    taglineTh: row.tagline_th,
+    tone: row.tone,
+    toneTh: row.tone_th,
+    setting: row.setting,
+    hook: row.hook,
+    openingTh: row.opening_th,
+    secret: row.secret,
+    acts: row.acts,
+    npcs: row.npcs,
+  };
+}
+
+export async function getAdventureById(
+  supabase: SupabaseClient,
+  id: string | null | undefined
+): Promise<Adventure | null> {
+  const builtin = getAdventure(id);
+  if (builtin) return builtin;
+  if (!id) return null;
+  const { data } = await supabase.from('custom_adventures').select('*').eq('id', id).maybeSingle();
+  return data ? mapCustomAdventureRow(data) : null;
 }
 
 export function formatAdventureForPrompt(adventure: Adventure): string {
