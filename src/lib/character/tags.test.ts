@@ -100,4 +100,31 @@ describe('gold, pay and shop tags', () => {
     expect(tags).toEqual([]);
     expect(cleanText).not.toContain('[[');
   });
+
+  describe('xp and milestone tags', () => {
+    it('parses an xp tier and strips the tag', () => {
+      expect(parseCharacterTags('Well done.\n[[xp: medium]]')).toEqual({
+        tags: [{ kind: 'xp', tier: 'medium' }],
+        cleanText: 'Well done.',
+      });
+    });
+
+    it('parses milestone and accepts any casing', () => {
+      expect(parseCharacterTags('Done.\n[[milestone]]').tags).toEqual([{ kind: 'milestone' }]);
+      expect(parseCharacterTags('Done.\n[[XP: Small]]').tags).toEqual([{ kind: 'xp', tier: 'small' }]);
+    });
+
+    it('hides an invalid tier and never applies it', () => {
+      expect(parseCharacterTags('Done.\n[[xp: huge]]')).toEqual({ tags: [], cleanText: 'Done.' });
+    });
+
+    it('keeps reading order alongside other tags', () => {
+      const result = parseCharacterTags('Ow.\n[[hurt: Prem | light]]\n[[xp: large]]\n[[milestone]]');
+      expect(result.tags).toEqual([
+        { kind: 'hurt', name: 'Prem', tier: 'light' },
+        { kind: 'xp', tier: 'large' },
+        { kind: 'milestone' },
+      ]);
+    });
+  });
 });
