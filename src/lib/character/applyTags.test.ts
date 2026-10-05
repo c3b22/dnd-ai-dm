@@ -139,4 +139,31 @@ describe('applyCharacterTags', () => {
   it('never wipes an empty party', () => {
     expect(applyCharacterTags([], [], four)).toEqual({ characters: [], changes: [], wiped: false });
   });
+
+  describe('with a level bonus', () => {
+    // xp 150 = level 3 = +10 max HP, so base max HP is maxHp - 10.
+    it('sanctuary restores base plus the level bonus', () => {
+      const result = applyCharacterTags([char({ xp: 150, maxHp: 22 })], [{ kind: 'sanctuary' }], four);
+      expect(result.characters[0].maxHp).toBe(30);
+    });
+
+    it('revive never drops max HP below the minimum plus the bonus', () => {
+      const party = [char({ xp: 150, maxHp: 30, hp: 0, status: 'downed', revivesSinceSanctuary: 5 }), char({ id: 'p2', displayName: 'Suki' })];
+      const result = applyCharacterTags(party, [{ kind: 'revive', name: 'Prem' }], four);
+      expect(byName(result, 'Prem').maxHp).toBe(20);
+      expect(byName(result, 'Prem').hp).toBe(5);
+    });
+
+    it('a party wipe respects the bonus-adjusted floor and halves HP', () => {
+      const party = [
+        char({ xp: 150, maxHp: 30, hp: 0, status: 'downed', revivesSinceSanctuary: 9 }),
+        char({ id: 'p2', displayName: 'Suki', hp: 0, status: 'downed' }),
+      ];
+      const result = applyCharacterTags(party, [], four);
+      expect(result.wiped).toBe(true);
+      expect(byName(result, 'Prem').maxHp).toBe(20);
+      expect(byName(result, 'Prem').hp).toBe(10);
+      expect(byName(result, 'Suki').maxHp).toBe(16);
+    });
+  });
 });

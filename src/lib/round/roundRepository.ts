@@ -9,6 +9,7 @@ import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
 import { isInventoryConflict } from '@/lib/economy/errors';
+import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 
 export interface RoundContext {
   campaignId: string;
@@ -91,7 +92,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // Separate queries so a database without the character columns still plays.
       const { data: characterRows } = await supabase
         .from('players')
-        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold')
+        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold, xp')
         .eq('campaign_id', campaignId);
 
       // Must not be tolerated like the columns above: an unreadable inventory read as "empty"
@@ -156,10 +157,11 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           weaponId: equippedWeaponId(inventories[row.id] ?? []),
           armorReduction: armorReduction(inventories[row.id] ?? []),
           hp: row.hp as number,
-          maxHp: row.max_hp as number,
+          maxHp: effectiveMaxHp(row.max_hp as number, Number(row.xp ?? 0)),
           status: row.status as 'active' | 'downed',
           revivesSinceSanctuary: row.revives_since_sanctuary as number,
           gold: Number(row.gold ?? 0),
+          xp: Number(row.xp ?? 0),
         })),
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
@@ -226,7 +228,8 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
             goldDelta: 0,
             items: null,
             hp: c.hp,
-            maxHp: c.maxHp,
+            maxHp: baseMaxHp(c.maxHp, c.xp ?? 0),
+            xp: c.xp ?? 0,
             status: c.status,
             revivesSinceSanctuary: c.revivesSinceSanctuary,
           })),

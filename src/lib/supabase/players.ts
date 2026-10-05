@@ -1,5 +1,6 @@
 import { supabaseBrowserClient } from './client';
 import { findOwnerId, sortByTurnOrder } from '@/lib/campaign/turnOrder';
+import { effectiveMaxHp } from '@/lib/character/leveling';
 import { fetchCampaignInventories } from './inventory';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 
@@ -11,6 +12,8 @@ export interface RoundPlayer {
   isOwner: boolean;
   hp: number;
   maxHp: number;
+  /** Experience points; level is derived from this. */
+  xp?: number;
   items: InventoryItem[];
   status: 'active' | 'downed';
   gold: number;
@@ -22,7 +25,7 @@ export async function fetchRoundPlayers(
 ): Promise<RoundPlayer[]> {
   const { data: players, error } = await supabaseBrowserClient
     .from('players')
-    .select('id, display_name, turn_order, created_at, hp, max_hp, status, gold')
+    .select('id, display_name, turn_order, created_at, hp, max_hp, status, gold, xp')
     .eq('campaign_id', campaignId);
   if (error) throw error;
 
@@ -45,7 +48,8 @@ export async function fetchRoundPlayers(
     joinedAt: p.created_at as string,
     items: inventories[p.id] ?? [],
     hp: p.hp as number,
-    maxHp: p.max_hp as number,
+    maxHp: effectiveMaxHp(p.max_hp as number, Number(p.xp ?? 0)),
+    xp: Number(p.xp ?? 0),
     status: p.status as 'active' | 'downed',
     gold: Number(p.gold ?? 0),
   }));
@@ -57,6 +61,7 @@ export async function fetchRoundPlayers(
     isOwner: p.id === ownerId,
     hp: p.hp,
     maxHp: p.maxHp,
+    xp: p.xp,
     items: p.items,
     status: p.status,
     gold: p.gold,

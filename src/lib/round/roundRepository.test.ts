@@ -199,6 +199,39 @@ describe('createSupabaseRoundRepository.insertRollSummary', () => {
   });
 });
 
+describe('createSupabaseRoundRepository levels', () => {
+  it('loads effective max HP (base plus level bonus) and xp', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, xp: 150 },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0, xp: null },
+      ],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.characters.map((c) => [c.maxHp, c.xp])).toEqual([[30, 150], [20, 0]]);
+  });
+
+  it('saves the base max HP (level bonus removed) and the xp', async () => {
+    const rpcCalls: any[] = [];
+    const client: any = {
+      rpc: (name: string, args: unknown) => {
+        rpcCalls.push([name, args]);
+        return Promise.resolve({ error: null });
+      },
+      from: () => ({ update: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
+    };
+    // Level 2 (xp 149) with effective max 25: base is still 20, so a level-up never drifts the column.
+    await createSupabaseRoundRepository(client).saveCharacterState(
+      'camp-1',
+      [{ id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 25, status: 'active', revivesSinceSanctuary: 0, xp: 149 }],
+      false
+    );
+    expect(rpcCalls[0][1].changes[0]).toMatchObject({ maxHp: 20, xp: 149 });
+  });
+});
+
 describe('createSupabaseRoundRepository character state', () => {
   it('reads the characters and the pending wipe flag into the round context', async () => {
     const { client } = createFakeSupabase({
@@ -215,7 +248,7 @@ describe('createSupabaseRoundRepository character state', () => {
     expect(context.pendingWipe).toBe(true);
     expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0 },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0 },
     ]);
   });
 
@@ -281,15 +314,15 @@ describe('createSupabaseRoundRepository character state', () => {
     await createSupabaseRoundRepository(client).saveCharacterState(
       'camp-1',
       [
-        { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 },
+        { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1, xp: 0 },
         { id: 'p2', displayName: 'Nok', weaponId: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0 },
       ],
       true
     );
 
     expect(rpcCalls).toEqual([['apply_changes', { changes: [
-      { playerId: 'p1', goldDelta: 0, items: null, hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1 },
-      { playerId: 'p2', goldDelta: 0, items: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0 },
+      { playerId: 'p1', goldDelta: 0, items: null, hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1, xp: 0 },
+      { playerId: 'p2', goldDelta: 0, items: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, xp: 0 },
     ] }]]);
     expect(updates).toEqual([{ table: 'campaigns', payload: { pending_wipe: true }, id: 'camp-1' }]);
   });

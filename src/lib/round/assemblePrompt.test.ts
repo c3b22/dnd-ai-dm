@@ -92,7 +92,7 @@ describe('assemblePrompt with characters', () => {
       characters,
       pendingWipe: false,
     });
-    expect(prompt).toContain('Prem: HP 20/20, shortsword (1d8), standing');
+    expect(prompt).toContain('Prem (Lv 1): HP 20/20, shortsword (1d8), standing');
     expect(prompt).toContain("Brother Tolliver's empty chapel");
   });
 
