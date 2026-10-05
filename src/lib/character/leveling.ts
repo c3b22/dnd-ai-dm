@@ -71,5 +71,12 @@ export function applyXpTags(
     }
     return updated;
   });
+  // Say so when the one-level-per-round cap held a player's gain below the headline amount.
+  characters.forEach((before, i) => {
+    const real = (next[i].xp ?? 0) - (before.xp ?? 0);
+    if (before.status === 'active' && real < gain) {
+      changes.push(`${before.displayName} ได้ XP เพียง +${real} (ขึ้นเลเวลได้ครั้งละหนึ่งขั้นต่อรอบ)`);
+    }
+  });
   return { characters: next, changes };
 }

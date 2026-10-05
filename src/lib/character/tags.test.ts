@@ -118,6 +118,12 @@ describe('gold, pay and shop tags', () => {
       expect(parseCharacterTags('Done.\n[[xp: huge]]')).toEqual({ tags: [], cleanText: 'Done.' });
     });
 
+    it('hides a misspelled tag name (extra letters) and never applies it', () => {
+      const result = parseCharacterTags('Done.\n[[milestones]]\n[[xps: small]]\n[[hurts: Prem | light]]');
+      expect(result.tags).toEqual([]);
+      expect(result.cleanText).toBe('Done.');
+    });
+
     it('keeps reading order alongside other tags', () => {
       const result = parseCharacterTags('Ow.\n[[hurt: Prem | light]]\n[[xp: large]]\n[[milestone]]');
       expect(result.tags).toEqual([

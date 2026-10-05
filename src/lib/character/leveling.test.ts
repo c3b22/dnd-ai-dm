@@ -111,6 +111,14 @@ describe('applyXpTags', () => {
     expect(result.changes).toEqual(['ทุกคนได้ +25 XP ยกเว้น Prem, Mila']);
   });
 
+  it('tells a player whose XP was held back by the one-level-per-round cap how much they really got', () => {
+    const party = [char({ xp: 50 }), char({ id: 'p2', displayName: 'Suki', xp: 0 })];
+    const result = applyXpTags(party, [{ kind: 'milestone' }]);
+    expect(result.characters[0].xp).toBe(149);
+    expect(result.changes).toContain('Prem ได้ XP เพียง +99 (ขึ้นเลเวลได้ครั้งละหนึ่งขั้นต่อรอบ)');
+    expect(result.changes.some((line) => line.startsWith('Suki ได้ XP เพียง'))).toBe(false);
+  });
+
   it('gives nothing and logs nothing when nobody is active', () => {
     const party = [char({ status: 'downed', hp: 0 })];
     const result = applyXpTags(party, [{ kind: 'milestone' }]);

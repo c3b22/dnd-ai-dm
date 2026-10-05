@@ -23,8 +23,9 @@ export type CharacterTag =
 // follows it on a later line, instead of just leaving itself unstripped in the narration).
 const VALID_TAG =
   /\[\[\s*(?:hurt\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy)|heal\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy|full)|revive\s*:\s*([^\]\n[]+?)|(sanctuary)|(give|take)\s*:\s*([^|\]\n[]+?)\s*\|\s*(?:story\s*:\s*([^\]\n[]+?)|([a-z_]+))|(gold|pay)\s*:\s*([^|\]\n[]+?)\s*\|\s*(small|medium|large)|shop\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|(shop_close)|xp\s*:\s*(small|medium|large)|(milestone))\s*\]\]/gi;
-// A tag-shaped leftover (bad tier, missing part): hidden from players, never applied.
-const LEFTOVER_TAG = /\[\[\s*(?:hurt|heal|revive|sanctuary|give|take|gold|pay|shop_close|shop|xp|milestone)\b[^\]\n[]*\]\]/gi;
+// A tag-shaped leftover (bad tier, missing part, misspelled name like [[milestones]]): hidden from
+// players, never applied.
+const LEFTOVER_TAG = /\[\[\s*(?:hurt|heal|revive|sanctuary|give|take|gold|pay|shop_close|shop|xp|milestone)[^\]\n[]*\]\]/gi;
 
 export function parseCharacterTags(text: string): { tags: CharacterTag[]; cleanText: string } {
   const tags: CharacterTag[] = [];
