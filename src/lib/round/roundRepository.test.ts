@@ -4,6 +4,7 @@ import { createSupabaseRoundRepository } from './roundRepository';
 interface FakeRoundRow {
   campaign_id?: string;
   opened_at?: string;
+  tags_applied_at?: string;
 }
 
 function createFakeSupabase(options: {
@@ -212,9 +213,51 @@ describe('createSupabaseRoundRepository character state', () => {
     const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
 
     expect(context.pendingWipe).toBe(true);
+    expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
       { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0 },
     ]);
+  });
+
+  it('reports tagsApplied once an earlier attempt has claimed this round', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1', tags_applied_at: '2026-01-01T00:00:00Z' } },
+      campaignSummary: null,
+    });
+
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+
+    expect(context.tagsApplied).toBe(true);
+  });
+
+  it('claimRoundTags wins the claim exactly once for a round', async () => {
+    let claimed = false;
+    const client: any = {
+      from: () => ({
+        update: () => ({
+          eq: () => ({
+            is: () => ({
+              select: () => {
+                if (claimed) return Promise.resolve({ data: [], error: null });
+                claimed = true;
+                return Promise.resolve({ data: [{ id: 'round-1' }], error: null });
+              },
+            }),
+          }),
+        }),
+      }),
+    };
+    const repository = createSupabaseRoundRepository(client);
+
+    await expect(repository.claimRoundTags('round-1')).resolves.toBe(true);
+    await expect(repository.claimRoundTags('round-1')).resolves.toBe(false);
+  });
+
+  it('claimRoundTags throws on a genuine database error', async () => {
+    const client: any = {
+      from: () => ({ update: () => ({ eq: () => ({ is: () => ({ select: () => Promise.resolve({ data: null, error: new Error('nope') }) }) }) }) }),
+    };
+    await expect(createSupabaseRoundRepository(client).claimRoundTags('round-1')).rejects.toThrow('nope');
   });
 
   it('saves every character through the one atomic apply_changes call, then the wipe flag', async () => {

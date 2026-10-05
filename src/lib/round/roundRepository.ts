@@ -22,10 +22,18 @@ export interface RoundContext {
   inventories: Inventories;
   pendingWipe: boolean;
   currentShop: ShopState | null;
+  /** True once an earlier attempt at this round already applied its HP/inventory/gold tags. */
+  tagsApplied: boolean;
 }
 
 export interface RoundRepository {
   getRoundContext(roundId: string): Promise<RoundContext>;
+  /**
+   * Claims the right to apply this round's tags: true the first time (and only the first time) it
+   * is called for a round, false on every call after. Lets a stale retry that reaches this point
+   * know whether an earlier attempt already saved these effects.
+   */
+  claimRoundTags(roundId: string): Promise<boolean>;
   insertPlayerActionMessages(
     campaignId: string,
     roundId: string,
@@ -60,7 +68,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     async getRoundContext(roundId) {
       const { data: round, error: roundError } = await supabase
         .from('rounds')
-        .select('campaign_id')
+        .select('campaign_id, tags_applied_at')
         .eq('id', roundId)
         .single();
       if (roundError) throw roundError;
@@ -156,6 +164,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
         currentShop: normalizeShop(wipeRow?.current_shop),
+        tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
           (actionsRows ?? []).map((row: any) => ({
@@ -192,6 +201,17 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         content: JSON.stringify({ type: 'rolls', rolls }),
       });
       if (error) throw error;
+    },
+
+    async claimRoundTags(roundId) {
+      const { data, error } = await supabase
+        .from('rounds')
+        .update({ tags_applied_at: new Date().toISOString() })
+        .eq('id', roundId)
+        .is('tags_applied_at', null)
+        .select('id');
+      if (error) throw error;
+      return (data?.length ?? 0) === 1;
     },
 
     async saveCharacterState(campaignId, characters, pendingWipe) {

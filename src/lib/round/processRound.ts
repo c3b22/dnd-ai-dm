@@ -44,6 +44,14 @@ export async function processRound(
   let potions: ReturnType<typeof applyPotionActions>;
   try {
     context = await deps.repository.getRoundContext(roundId);
+    if (context.tagsApplied) {
+      // An earlier attempt already generated this round's narration and applied its HP/
+      // inventory/gold tags, then failed or timed out before closing (claimRound's staleness
+      // window let this attempt pick it back up). Finish the job without regenerating narration
+      // or re-rolling dice, so nothing doubles up.
+      const nextRoundId = await deps.repository.closeRoundAndOpenNext(context.campaignId, roundId);
+      return { processed: true, nextRoundId };
+    }
     // The server rolls, not the model, so results are fair and can be shown to the table.
     const rollDie = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
     const settings = normalizeSettings(context.settings);
@@ -111,7 +119,10 @@ export async function processRound(
   }
 
   // Best-effort like the scene change: a failure here must never leave the table stuck.
-  if (context.characters.length > 0) {
+  // Claimed before anything is saved, not after: a retry that reaches this point must never
+  // re-apply the same hurt/heal/give/take/gold effects on top of what an earlier attempt already
+  // committed, even if that earlier attempt's own save was itself incomplete.
+  if (context.characters.length > 0 && (await deps.repository.claimRoundTags(roundId))) {
     try {
       const result = applyCharacterTags(potions.characters, tags, deps.rollSides ?? randomDie);
       const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);

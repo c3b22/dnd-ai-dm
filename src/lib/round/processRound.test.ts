@@ -17,7 +17,9 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       inventories: {},
       pendingWipe: false,
       currentShop: null,
+      tagsApplied: false,
     }),
+    claimRoundTags: vi.fn().mockResolvedValue(true),
     insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
     insertRollSummary: vi.fn().mockResolvedValue(undefined),
     saveCharacterState: vi.fn().mockResolvedValue(undefined),
@@ -364,6 +366,30 @@ describe('processRound character status', () => {
 
     expect(repository.saveCharacterState).not.toHaveBeenCalled();
     expect(repository.insertStatsSummary).not.toHaveBeenCalled();
+  });
+
+  it('claims the right to apply tags before saving anything, so a losing claim skips tag effects entirely', async () => {
+    const repository = repoWith([prem]);
+    (repository.claimRoundTags as any).mockResolvedValue(false);
+
+    await processRound(deps(repository, ['Hit.\n[[hurt: Prem | light]]']), 'round-1');
+
+    expect(repository.saveCharacterState).not.toHaveBeenCalled();
+    expect(repository.insertStatsSummary).not.toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalledWith('camp-1', 'round-1');
+  });
+
+  it('skips narration and re-rolling entirely when an earlier attempt already applied this round\'s tags, and just closes it', async () => {
+    const repository = repoWith([prem], { tagsApplied: true });
+    const generateNarration = vi.fn();
+
+    const result = await processRound(deps(repository, [], { generateNarration }), 'round-1');
+
+    expect(generateNarration).not.toHaveBeenCalled();
+    expect(repository.insertPlayerActionMessages).not.toHaveBeenCalled();
+    expect(repository.saveCharacterState).not.toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalledWith('camp-1', 'round-1');
+    expect(result).toEqual({ processed: true, nextRoundId: 'round-2' });
   });
 });
 
