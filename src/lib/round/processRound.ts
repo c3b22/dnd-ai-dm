@@ -1,6 +1,6 @@
 import { assemblePrompt, shouldRotateSummary, type RoundAction } from './assemblePrompt';
 import type { RoundRepository } from './roundRepository';
-import { allowedScenes, parseSceneTag } from '@/lib/scenes/scenes';
+import { parseSceneTag } from '@/lib/scenes/scenes';
 import { normalizeSettings } from '@/lib/campaign/settings';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
@@ -75,8 +75,8 @@ export async function processRound(
       context.campaignSummary,
       context.recentMessages,
       rolled,
-      context.adventureId,
-      context.currentSceneId,
+      context.adventure,
+      context.sceneInstructionText,
       settings,
       { characters: potions.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop }
     );
@@ -110,7 +110,7 @@ export async function processRound(
   const { tags, cleanText: withoutCharacterTags } = parseCharacterTags(narration);
   const { sceneId, cleanText } = parseSceneTag(withoutCharacterTags);
   if (cleanText.trim()) await deps.repository.appendToMessage(messageId, cleanText);
-  if (sceneId && allowedScenes(context.adventureId).some((s) => s.id === sceneId)) {
+  if (sceneId && context.allowedSceneIds.includes(sceneId)) {
     // A missing scene column or a bad tag must never fail the round.
     await deps.repository.setCurrentScene(context.campaignId, sceneId).catch(() => {});
     // The merchant stays put until the story actually moves on.

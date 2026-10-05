@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processRound, ProcessRoundDeps } from './processRound';
 import type { RoundRepository } from './roundRepository';
+import { allowedScenes } from '@/lib/scenes/scenes';
 
 async function* fakeStream(chunks: string[]) {
   for (const chunk of chunks) yield chunk;
@@ -18,6 +19,9 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       pendingWipe: false,
       currentShop: null,
       tagsApplied: false,
+      adventure: null,
+      allowedSceneIds: allowedScenes(undefined).map((s) => s.id),
+      sceneInstructionText: '',
     }),
     claimRoundTags: vi.fn().mockResolvedValue(true),
     insertPlayerActionMessages: vi.fn().mockResolvedValue(undefined),
@@ -275,6 +279,9 @@ describe('processRound character status', () => {
         actions: [{ playerDisplayName: 'Prem', actionText: 'Attack' }],
         characters,
         pendingWipe: false,
+        adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id),
+        sceneInstructionText: '',
         ...extra,
       }),
     });
@@ -399,6 +406,7 @@ const contextWith = (over: object) => ({
   campaignId: 'camp-1', campaignSummary: '', recentMessages: [], pendingWipe: false,
   characters: [prem], inventories: { p1: [potion] }, currentShop: null,
   actions: [{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor' }],
+  adventure: null, allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
   ...over,
 });
 const claim = () => vi.fn().mockResolvedValue(true);
@@ -536,6 +544,9 @@ describe('processRound leveling', () => {
         actions: [{ playerDisplayName: 'Prem', actionText: 'Attack' }],
         characters,
         pendingWipe: false,
+        adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id),
+        sceneInstructionText: '',
         ...extra,
       }),
     });

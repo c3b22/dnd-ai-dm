@@ -10,11 +10,17 @@ import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
+import type { Adventure } from '@/lib/adventures/adventures';
+import { getAdventureById } from '@/lib/adventures/adventures';
+import { allowedSceneIdsAsync, sceneInstructionAsync } from '@/lib/scenes/scenes';
 
 export interface RoundContext {
   campaignId: string;
   adventureId: string | null;
   currentSceneId: string | null;
+  adventure: Adventure | null;
+  allowedSceneIds: string[];
+  sceneInstructionText: string;
   settings: CampaignSettings;
   campaignSummary: string;
   recentMessages: StoredMessage[];
@@ -82,6 +88,14 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .eq('id', campaignId)
         .maybeSingle();
 
+      const adventure = await getAdventureById(supabase, campaignRow?.adventure_id as string | null);
+      const allowedSceneIds = await allowedSceneIdsAsync(supabase, campaignRow?.adventure_id as string | null);
+      const sceneInstructionText = await sceneInstructionAsync(
+        supabase,
+        campaignRow?.adventure_id as string | null,
+        campaignRow?.current_scene_id as string | null
+      );
+
       // Separate query: a database without the settings column just plays with the defaults.
       const { data: settingsRow } = await supabase
         .from('campaigns')
@@ -148,6 +162,9 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         campaignId,
         adventureId: (campaignRow?.adventure_id as string | null) ?? null,
         currentSceneId: (campaignRow?.current_scene_id as string | null) ?? null,
+        adventure,
+        allowedSceneIds,
+        sceneInstructionText,
         settings: normalizeSettings(settingsRow?.settings),
         campaignSummary: summaryRow?.summary ?? '',
         recentMessages: (messageRows ?? []).reverse() as StoredMessage[],
