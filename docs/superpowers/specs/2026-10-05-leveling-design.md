@@ -81,7 +81,7 @@ Order within a round, after the existing hurt/heal/revive, inventory and economy
 Server limits:
 
 - At most **one `xp` tag and one `milestone` tag count per round**; extras are dropped.
-- **At most one level per player per round**; surplus XP is kept and carries into the next round.
+- **At most one level per player per round**: because level is derived from `xp`, a gain that would cross two thresholds is capped at one XP point below the threshold after next (XP beyond that cap is discarded). The player reaches the following level the next time they earn any XP.
 - XP keeps accumulating at level 10 but has no further effect.
 - Downed players receive no XP that round.
 
