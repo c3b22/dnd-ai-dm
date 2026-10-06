@@ -1,0 +1,117 @@
+import { describe, it, expect } from 'vitest';
+import { applyAbilityActions } from './applyAbilities';
+import type { Character } from './types';
+
+const four = () => 4;
+
+function char(over: Partial<Character> = {}): Character {
+  return { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, classId: 'warrior', abilityCooldown: 0, ...over };
+}
+const use = (playerId: string, target: string | null = null, extra: object = {}) => ({ playerId, useAbility: true, abilityTargetId: target, ...extra });
+
+describe('applyAbilityActions', () => {
+  it('lets a ready warrior guard an ally', () => {
+    const party = [char(), char({ id: 'p2', displayName: 'Suki', classId: 'archer' })];
+    const result = applyAbilityActions(party, [use('p1', 'p2')], four);
+    expect(result.guards).toEqual({ p2: 'p1' });
+    expect(result.used).toEqual(['p1']);
+    expect(result.notes.p1).toContain('Suki');
+    expect(result.changes).toEqual(['Prem ใช้ยืนบัง ปกป้อง Suki']);
+  });
+
+  it('refuses a guard on oneself', () => {
+    const result = applyAbilityActions([char()], [use('p1', 'p1')], four);
+    expect(result.guards).toEqual({});
+    expect(result.used).toEqual([]);
+    expect(result.notes.p1).toBe('tried to use ยืนบัง but it was not ready');
+  });
+
+  it('keeps the first guard when two warriors guard the same ally', () => {
+    const party = [char(), char({ id: 'p3', displayName: 'Mila' }), char({ id: 'p2', displayName: 'Suki', classId: 'archer' })];
+    const result = applyAbilityActions(party, [use('p1', 'p2'), use('p3', 'p2')], four);
+    expect(result.guards).toEqual({ p2: 'p1' });
+    expect(result.used).toEqual(['p1', 'p3']);
+  });
+
+  it('heals with the medium tier at level 1 (1d6+1) and caps at max HP', () => {
+    const cleric = char({ classId: 'cleric', weaponId: 'staff' });
+    const hurt = char({ id: 'p2', displayName: 'Suki', hp: 10 });
+    const result = applyAbilityActions([cleric, hurt], [use('p1', 'p2')], four);
+    expect(result.characters[1].hp).toBe(15);
+    expect(result.notes.p1).toContain('5');
+    expect(result.changes).toEqual(['Prem ใช้อวยพรรักษา ให้ Suki (+5 HP)']);
+
+    const nearFull = char({ id: 'p2', displayName: 'Suki', hp: 18 });
+    expect(applyAbilityActions([cleric, nearFull], [use('p1', 'p2')], four).characters[1].hp).toBe(20);
+  });
+
+  it('lets a cleric heal themselves, but never a downed ally', () => {
+    const cleric = char({ classId: 'cleric', hp: 10 });
+    const self = applyAbilityActions([cleric], [use('p1', 'p1')], four);
+    expect(self.characters[0].hp).toBe(15);
+    expect(self.changes).toEqual(['Prem ใช้อวยพรรักษา (+5 HP)']);
+
+    const downed = char({ id: 'p2', displayName: 'Suki', hp: 0, status: 'downed' });
+    const result = applyAbilityActions([cleric, downed], [use('p1', 'p2')], four);
+    expect(result.characters[1].hp).toBe(0);
+    expect(result.used).toEqual([]);
+    expect(result.notes.p1).toContain('not ready');
+  });
+
+  it('heals more at level 5 (2d6)', () => {
+    const cleric = char({ classId: 'cleric', xp: 420 });
+    const hurt = char({ id: 'p2', displayName: 'Suki', hp: 1, maxHp: 30 });
+    expect(applyAbilityActions([cleric, hurt], [use('p1', 'p2')], four).characters[1].hp).toBe(9);
+  });
+
+  it('rolls the archer weapon dice twice at level 1 and three times at level 5, plus the level bonus', () => {
+    const l1 = applyAbilityActions([char({ classId: 'archer', weaponId: 'shortbow' })], [use('p1')], four);
+    expect(l1.damage.p1).toBe(8);
+    expect(l1.notes.p1).toContain('damage roll 8');
+    const l5 = applyAbilityActions([char({ classId: 'archer', weaponId: 'shortbow', xp: 420 })], [use('p1')], four);
+    expect(l5.damage.p1).toBe(14);
+  });
+
+  it('adds 2d6 to the rogue weapon damage at level 1', () => {
+    const result = applyAbilityActions([char({ classId: 'rogue', weaponId: 'dagger' })], [use('p1')], four);
+    expect(result.damage.p1).toBe(12);
+    expect(result.used).toEqual(['p1']);
+  });
+
+  it('does nothing but explain when the cooldown is not over', () => {
+    const result = applyAbilityActions([char({ classId: 'archer', weaponId: 'shortbow', abilityCooldown: 2 })], [use('p1')], four);
+    expect(result.damage).toEqual({});
+    expect(result.used).toEqual([]);
+    expect(result.notes.p1).toBe('tried to use ยิงแม่นยำ but it was not ready');
+  });
+
+  it('refuses a classless player and a downed user', () => {
+    const classless = applyAbilityActions([char({ classId: null })], [use('p1')], four);
+    expect(classless.used).toEqual([]);
+    expect(classless.notes.p1).toContain('not ready');
+    const downed = applyAbilityActions([char({ classId: 'rogue', weaponId: 'dagger', status: 'downed', hp: 0 })], [use('p1')], four);
+    expect(downed.damage).toEqual({});
+    expect(downed.used).toEqual([]);
+  });
+
+  it('refuses a target who is not in the campaign', () => {
+    const result = applyAbilityActions([char()], [use('p1', 'stranger')], four);
+    expect(result.guards).toEqual({});
+    expect(result.used).toEqual([]);
+  });
+
+  it('ignores an action that also drinks a potion', () => {
+    const result = applyAbilityActions([char({ classId: 'archer', weaponId: 'shortbow' })], [use('p1', null, { useItemId: 'potion_minor' })], four);
+    expect(result.notes).toEqual({});
+    expect(result.damage).toEqual({});
+    expect(result.used).toEqual([]);
+  });
+
+  it('ignores actions that do not use an ability and never mutates its input', () => {
+    const party = [char({ classId: 'cleric' }), char({ id: 'p2', displayName: 'Suki', hp: 10 })];
+    const result = applyAbilityActions(party, [{ playerId: 'p1', useAbility: false }, use('p1', 'p2')], four);
+    expect(party[1].hp).toBe(10);
+    expect(result.characters[1].hp).toBe(15);
+    expect(applyAbilityActions(party, [{ playerId: 'p1' }], four).used).toEqual([]);
+  });
+});
