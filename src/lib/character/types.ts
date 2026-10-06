@@ -22,4 +22,8 @@ export interface Character {
   abilityCooldown?: number;
   /** Six ability scores; absent means 10 for every score (see normalizeAbilities). */
   abilities?: AbilityScores;
+  /** Identity text (max 500 chars each, see identity.ts); null or absent means not set. */
+  backstory?: string | null;
+  personality?: string | null;
+  goal?: string | null;
 }
