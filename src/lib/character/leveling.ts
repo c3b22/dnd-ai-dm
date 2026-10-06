@@ -1,4 +1,5 @@
 import { HP_PER_LEVEL, LEVEL_XP_THRESHOLDS, MAX_LEVEL, MILESTONE_XP, XP_TIERS } from './constants';
+import { ABILITY_KEYS, type AbilityKey, type AbilityScores } from './constants';
 import type { CharacterTag } from './tags';
 import type { Character } from './types';
 
@@ -79,4 +80,46 @@ export function applyXpTags(
     }
   });
   return { characters: next, changes };
+}
+
+/** Levels at which a character earns one ability score improvement. */
+export const ABILITY_CHOICE_LEVELS = [4, 8] as const;
+export const ABILITY_SCORE_MAX = 20;
+
+/** Unspent improvements: earned by level minus already used. Never negative; unspent ones never expire. */
+export function abilityChoicesAvailable(level: number, used: number): number {
+  const earned = ABILITY_CHOICE_LEVELS.filter((l) => level >= l).length;
+  return Math.max(0, earned - Math.max(0, used));
+}
+
+export type AbilityChoice =
+  | { kind: 'double'; ability: AbilityKey }
+  | { kind: 'split'; abilities: [AbilityKey, AbilityKey] };
+
+export type ApplyAbilityResult =
+  | { ok: true; abilities: AbilityScores }
+  | { ok: false; error: string };
+
+const isKey = (k: unknown): k is AbilityKey => (ABILITY_KEYS as readonly unknown[]).includes(k);
+
+/** +2 to one ability, or +1 to two different abilities; no score may exceed 20. Does not mutate the input. */
+export function applyAbilityChoice(abilities: AbilityScores, choice: AbilityChoice): ApplyAbilityResult {
+  const bumps: [AbilityKey, number][] = [];
+  if (choice?.kind === 'double') {
+    if (!isKey(choice.ability)) return { ok: false, error: 'ค่า ability ไม่ถูกต้อง' };
+    bumps.push([choice.ability, 2]);
+  } else if (choice?.kind === 'split') {
+    const [a, b] = choice.abilities ?? [];
+    if (!isKey(a) || !isKey(b)) return { ok: false, error: 'ค่า ability ไม่ถูกต้อง' };
+    if (a === b) return { ok: false, error: 'ต้องเลือก ability สองค่าที่ต่างกัน' };
+    bumps.push([a, 1], [b, 1]);
+  } else {
+    return { ok: false, error: 'รูปแบบการเลือกไม่ถูกต้อง' };
+  }
+  const next = { ...abilities };
+  for (const [key, n] of bumps) {
+    if (next[key] + n > ABILITY_SCORE_MAX) return { ok: false, error: `${key} เกิน ${ABILITY_SCORE_MAX}` };
+    next[key] += n;
+  }
+  return { ok: true, abilities: next };
 }

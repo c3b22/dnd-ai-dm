@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { Character } from './types';
 import {
+  abilityChoicesAvailable,
+  applyAbilityChoice,
   applyXpTags,
   baseMaxHp,
   effectiveMaxHp,
@@ -156,5 +158,50 @@ describe('applyXpTags', () => {
     const input = [char()];
     applyXpTags(input, [{ kind: 'xp', tier: 'small' }]);
     expect(input[0].xp).toBeUndefined();
+  });
+});
+
+describe('abilityChoicesAvailable', () => {
+  it('earns one at level 4 and one at level 8', () => {
+    expect(abilityChoicesAvailable(1, 0)).toBe(0);
+    expect(abilityChoicesAvailable(3, 0)).toBe(0);
+    expect(abilityChoicesAvailable(4, 0)).toBe(1);
+    expect(abilityChoicesAvailable(7, 0)).toBe(1);
+    expect(abilityChoicesAvailable(8, 0)).toBe(2);
+    expect(abilityChoicesAvailable(10, 0)).toBe(2);
+  });
+  it('subtracts used and never goes negative', () => {
+    expect(abilityChoicesAvailable(8, 1)).toBe(1);
+    expect(abilityChoicesAvailable(8, 2)).toBe(0);
+    expect(abilityChoicesAvailable(4, 5)).toBe(0);
+    expect(abilityChoicesAvailable(8, -1)).toBe(2);
+  });
+});
+
+describe('applyAbilityChoice', () => {
+  const base = { STR: 10, DEX: 12, CON: 14, INT: 8, WIS: 19, CHA: 20 };
+  it('adds +2 to a single ability without mutating', () => {
+    const r = applyAbilityChoice(base, { kind: 'double', ability: 'STR' });
+    expect(r).toEqual({ ok: true, abilities: { ...base, STR: 12 } });
+    expect(base.STR).toBe(10);
+  });
+  it('adds +1 to two different abilities', () => {
+    const r = applyAbilityChoice(base, { kind: 'split', abilities: ['DEX', 'INT'] });
+    expect(r).toEqual({ ok: true, abilities: { ...base, DEX: 13, INT: 9 } });
+  });
+  it('rejects the same ability twice in a split', () => {
+    expect(applyAbilityChoice(base, { kind: 'split', abilities: ['DEX', 'DEX'] }).ok).toBe(false);
+  });
+  it('rejects going above 20', () => {
+    expect(applyAbilityChoice(base, { kind: 'double', ability: 'WIS' }).ok).toBe(false);
+    expect(applyAbilityChoice(base, { kind: 'split', abilities: ['STR', 'CHA'] }).ok).toBe(false);
+  });
+  it('allows reaching exactly 20', () => {
+    const r = applyAbilityChoice(base, { kind: 'split', abilities: ['WIS', 'STR'] });
+    expect(r.ok && r.abilities.WIS).toBe(20);
+  });
+  it('rejects unknown abilities and shapes', () => {
+    expect(applyAbilityChoice(base, { kind: 'double', ability: 'LUCK' as never }).ok).toBe(false);
+    expect(applyAbilityChoice(base, { kind: 'triple' } as never).ok).toBe(false);
   });
 });
