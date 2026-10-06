@@ -40,6 +40,18 @@ describe('characterPrompt', () => {
     expect(statusLines.join('\n')).not.toMatch(/XP/);
   });
 
+  it('shows the class next to the level and nothing extra for a classless player', () => {
+    const text = characterPrompt([{ ...party[0], xp: 150, classId: 'warrior' }, party[1]], false, undefined).join(String.fromCharCode(10));
+    expect(text).toContain('Prem (Lv 3, นักรบ):');
+    expect(text).toContain('Suki (Lv 1):');
+  });
+
+  it('tells the DM to narrate ability notes without inventing numbers or showing cooldowns', () => {
+    const text = characterPrompt([{ ...party[0], classId: 'cleric', abilityCooldown: 3 }], false, undefined).join(String.fromCharCode(10));
+    expect(text).toMatch(/ability/i);
+    expect(text).not.toMatch(/cooldown/i);
+  });
+
   it('names the sanctuary only when the adventure has one', () => {
     expect(characterPrompt(party, false, 'the old chapel').join('\n')).toContain('[[sanctuary]] only when the party is at: the old chapel');
     expect(characterPrompt(party, false, undefined).join('\n')).not.toContain('[[sanctuary]]');

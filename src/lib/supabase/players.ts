@@ -14,6 +14,10 @@ export interface RoundPlayer {
   maxHp: number;
   /** Experience points; level is derived from this. */
   xp?: number;
+  /** Class id (see classes.ts); null or absent means classless. */
+  classId?: string | null;
+  /** Eventful rounds left before the class ability is ready. */
+  abilityCooldown?: number;
   items: InventoryItem[];
   status: 'active' | 'downed';
   gold: number;
@@ -25,7 +29,7 @@ export async function fetchRoundPlayers(
 ): Promise<RoundPlayer[]> {
   const { data: players, error } = await supabaseBrowserClient
     .from('players')
-    .select('id, display_name, turn_order, created_at, hp, max_hp, status, gold, xp')
+    .select('id, display_name, turn_order, created_at, hp, max_hp, status, gold, xp, class_id, ability_cooldown')
     .eq('campaign_id', campaignId);
   if (error) throw error;
 
@@ -50,6 +54,8 @@ export async function fetchRoundPlayers(
     hp: p.hp as number,
     maxHp: effectiveMaxHp(p.max_hp as number, Number(p.xp ?? 0)),
     xp: Number(p.xp ?? 0),
+    classId: (p.class_id ?? null) as string | null,
+    abilityCooldown: Number(p.ability_cooldown ?? 0),
     status: p.status as 'active' | 'downed',
     gold: Number(p.gold ?? 0),
   }));
@@ -62,6 +68,8 @@ export async function fetchRoundPlayers(
     hp: p.hp,
     maxHp: p.maxHp,
     xp: p.xp,
+    classId: p.classId,
+    abilityCooldown: p.abilityCooldown,
     items: p.items,
     status: p.status,
     gold: p.gold,

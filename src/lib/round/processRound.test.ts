@@ -601,3 +601,97 @@ describe('processRound leveling', () => {
     expect(repository.saveCharacterState).not.toHaveBeenCalled();
   });
 });
+
+describe('processRound abilities', () => {
+  const base = { hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+  const archer = { ...base, id: 'p1', displayName: 'Prem', weaponId: 'shortbow', classId: 'archer', abilityCooldown: 0 };
+  const warrior = { ...base, id: 'p1', displayName: 'Prem', weaponId: 'shortsword', classId: 'warrior', abilityCooldown: 0 };
+  const suki = { ...base, id: 'p2', displayName: 'Suki', weaponId: 'staff', classId: 'cleric', abilityCooldown: 0 };
+  const useAbility = (target: string | null = null) => ({ playerDisplayName: 'Prem', actionText: 'ใช้ความสามารถ', playerId: 'p1', useAbility: true, abilityTargetId: target });
+
+  function repoWith(characters: unknown[], actions: unknown[], extra: Record<string, unknown> = {}) {
+    return createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1',
+        campaignSummary: '',
+        recentMessages: [],
+        actions,
+        characters,
+        pendingWipe: false,
+        ...extra,
+      }),
+    });
+  }
+  const deps = (repository: RoundRepository, narration: string[]): ProcessRoundDeps => ({
+    claimRound: vi.fn().mockResolvedValue(true),
+    repository,
+    generateNarration: vi.fn().mockResolvedValue(fakeStream(narration)),
+    rollDie: () => 14,
+    rollSides: () => 4,
+  });
+  const saved = (repository: RoundRepository) => (repository.saveCharacterState as any).mock.calls[0][1] as any[];
+
+  it('replaces the action damage with the ability roll and tells the DM', async () => {
+    const repository = repoWith([archer], [useAbility()]);
+    const d = deps(repository, ['Narration.']);
+    await processRound(d, 'round-1');
+    const prompt = (d.generateNarration as any).mock.calls[0][0] as string;
+    expect(prompt).toContain('shortbow damage roll 8');
+    expect(prompt).toContain('used ยิงแม่นยำ: damage roll 8');
+  });
+
+  it('tells the DM when the ability was not ready', async () => {
+    const repository = repoWith([{ ...archer, abilityCooldown: 2 }], [useAbility()]);
+    const d = deps(repository, ['Narration.']);
+    await processRound(d, 'round-1');
+    expect((d.generateNarration as any).mock.calls[0][0]).toContain('tried to use ยิงแม่นยำ but it was not ready');
+  });
+
+  it("moves a guarded ally's hurt to the warrior", async () => {
+    const repository = repoWith([warrior, suki], [useAbility('p2')]);
+    await processRound(deps(repository, ['Ow.\n[[hurt: Suki | medium]]']), 'round-1');
+    const [w, s] = saved(repository);
+    expect(w.hp).toBe(17); // ceil(5 / 2) = 3
+    expect(s.hp).toBe(20);
+  });
+
+  it('applies a cleric heal before narration so the saved HP includes it', async () => {
+    const cleric = { ...suki, id: 'p1', displayName: 'Prem', classId: 'cleric' };
+    const hurt = { ...base, id: 'p2', displayName: 'Suki', weaponId: 'staff', hp: 10, classId: null };
+    const repository = repoWith([cleric, hurt], [useAbility('p2')]);
+    await processRound(deps(repository, ['Narration.']), 'round-1');
+    expect(saved(repository)[1].hp).toBe(15);
+  });
+
+  it('ticks cooldowns only on eventful rounds', async () => {
+    const eventful = repoWith([{ ...archer, abilityCooldown: 2 }], []);
+    await processRound(deps(eventful, ['Well done.\n[[xp: small]]']), 'round-1');
+    expect(saved(eventful)[0].abilityCooldown).toBe(1);
+
+    const sceneOnly = repoWith([{ ...archer, abilityCooldown: 2 }], []);
+    await processRound(deps(sceneOnly, ['Quiet.\n[[scene: crypt]]']), 'round-1');
+    expect(saved(sceneOnly)[0].abilityCooldown).toBe(2);
+
+    const silent = repoWith([{ ...archer, abilityCooldown: 2 }], []);
+    await processRound(deps(silent, ['Nothing happens.']), 'round-1');
+    expect(saved(silent)[0].abilityCooldown).toBe(2);
+  });
+
+  it('starts the full cooldown for the player who used it, even on an eventful round', async () => {
+    const repository = repoWith([archer], [useAbility()]);
+    await processRound(deps(repository, ['Hit!\n[[xp: small]]']), 'round-1');
+    expect(saved(repository)[0].abilityCooldown).toBe(3);
+  });
+
+  it('does not tick or set a cooldown when a retry finds the tags already applied', async () => {
+    const repository = repoWith([archer], [useAbility()], { tagsApplied: true });
+    await processRound(deps(repository, ['Hit!\n[[xp: small]]']), 'round-1');
+    expect(repository.saveCharacterState).not.toHaveBeenCalled();
+  });
+
+  it('logs the ability use in the stats line', async () => {
+    const repository = repoWith([archer], [useAbility()]);
+    await processRound(deps(repository, ['Hit.']), 'round-1');
+    expect((repository.insertStatsSummary as any).mock.calls[0][2]).toContain('Prem ใช้ยิงแม่นยำ');
+  });
+});

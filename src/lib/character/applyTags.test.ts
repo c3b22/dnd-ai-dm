@@ -166,4 +166,69 @@ describe('applyCharacterTags', () => {
       expect(byName(result, 'Suki').maxHp).toBe(16);
     });
   });
+
+  describe('with a warrior guarding', () => {
+    const warrior = (over: Partial<Character> = {}) => char({ id: 'w', displayName: 'Warra', classId: 'warrior', armorReduction: 1, ...over });
+    const suki = (over: Partial<Character> = {}) => char({ id: 'p2', displayName: 'Suki', ...over });
+    const hurtSuki = (tier: 'light' | 'medium' | 'heavy' = 'medium') => [{ kind: 'hurt' as const, name: 'Suki', tier }];
+
+    it('moves the hurt to the warrior, after armor and halved (rounded up) at level 1', () => {
+      const result = applyCharacterTags([warrior(), suki()], hurtSuki('medium'), four, { p2: 'w' });
+      expect(byName(result, 'Suki').hp).toBe(20);
+      expect(byName(result, 'Warra').hp).toBe(18); // ceil((5 - 1) / 2) = 2
+      expect(result.changes).toEqual(['Warra รับดาเมจแทน Suki −2 HP']);
+    });
+
+    it('takes one third (rounded up) from level 5', () => {
+      const lvl5 = warrior({ xp: 420, maxHp: 40, hp: 40 });
+      expect(byName(applyCharacterTags([lvl5, suki()], hurtSuki('medium'), four, { p2: 'w' }), 'Warra').hp).toBe(38); // ceil(4 / 3) = 2
+      expect(byName(applyCharacterTags([lvl5, suki()], hurtSuki('heavy'), four, { p2: 'w' }), 'Warra').hp).toBe(37); // ceil(7 / 3) = 3
+    });
+
+    it('never takes less than 1', () => {
+      const armored = warrior({ armorReduction: 3 });
+      expect(byName(applyCharacterTags([armored, suki()], hurtSuki('light'), four, { p2: 'w' }), 'Warra').hp).toBe(19);
+    });
+
+    it('does not redirect when the warrior is already downed, including by an earlier hurt in the same narration', () => {
+      const tags = [
+        { kind: 'hurt' as const, name: 'Warra', tier: 'heavy' as const },
+        { kind: 'hurt' as const, name: 'Suki', tier: 'medium' as const },
+      ];
+      const result = applyCharacterTags([warrior({ hp: 5 }), suki()], tags, four, { p2: 'w' });
+      expect(byName(result, 'Warra').status).toBe('downed');
+      expect(byName(result, 'Suki').hp).toBe(15);
+      const alreadyDown = applyCharacterTags([warrior({ hp: 0, status: 'downed' }), suki()], hurtSuki('medium'), four, { p2: 'w' });
+      expect(byName(alreadyDown, 'Suki').hp).toBe(15);
+    });
+
+    it('leaves unguarded players and heals alone', () => {
+      const mila = char({ id: 'p3', displayName: 'Mila' });
+      const result = applyCharacterTags(
+        [warrior(), suki({ hp: 10 }), mila],
+        [{ kind: 'hurt', name: 'Mila', tier: 'medium' }, { kind: 'heal', name: 'Suki', tier: 'light' }],
+        four,
+        { p2: 'w' }
+      );
+      expect(byName(result, 'Mila').hp).toBe(15);
+      expect(byName(result, 'Suki').hp).toBe(14);
+      expect(byName(result, 'Warra').hp).toBe(20);
+    });
+
+    it('downs the warrior at 0 HP and a follow-up hurt can complete a party wipe', () => {
+      const tags = [
+        { kind: 'hurt' as const, name: 'Suki', tier: 'medium' as const },
+        { kind: 'hurt' as const, name: 'Suki', tier: 'heavy' as const },
+      ];
+      const result = applyCharacterTags([warrior({ hp: 2 }), suki({ hp: 5 })], tags, four, { p2: 'w' });
+      expect(result.changes).toContain('Warra ล้มลง');
+      expect(result.wiped).toBe(true);
+    });
+
+    it('behaves exactly as before with no guards', () => {
+      const result = applyCharacterTags([warrior(), suki()], hurtSuki('medium'), four);
+      expect(byName(result, 'Suki').hp).toBe(15);
+      expect(byName(result, 'Warra').hp).toBe(20);
+    });
+  });
 });

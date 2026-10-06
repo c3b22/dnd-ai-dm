@@ -32,6 +32,9 @@ export interface RoundAction {
   playerId?: string;
   /** Catalog id of a consumable the player drinks this round. */
   useItemId?: string | null;
+  /** True when the player triggers their class ability this round, with an optional ally target. */
+  useAbility?: boolean;
+  abilityTargetId?: string | null;
   /** Server-side outcome of the action (for example a potion drunk) that the narration must match. */
   note?: string;
 }

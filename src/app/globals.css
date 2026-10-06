@@ -164,6 +164,8 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .qa { border: 1px solid var(--line); background: var(--surface-2); border-radius: 99px; padding: 5px 13px; font-size: 13.5px; }
 .qa:hover:not(:disabled) { border-color: var(--accent); }
 .qa:disabled { opacity: 0.45; cursor: not-allowed; }
+.qa.ability { border-color: var(--accent); font-weight: 700; }
+.hint-row .cd { font-size: 12px; color: var(--muted); }
 .compose { display: flex; gap: 8px; }
 .compose input { flex: 1; }
 
@@ -234,7 +236,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   .log { scroll-behavior: auto; }
 }
 
-.wp-list { border: 0; padding: 0; margin: 12px 0; display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wp-list { border: 0; padding: 0; margin: 12px 0; display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .wp-item { text-align: left; padding: 10px 12px; }
 
 .hp { display: grid; gap: 3px; margin-top: 4px; }

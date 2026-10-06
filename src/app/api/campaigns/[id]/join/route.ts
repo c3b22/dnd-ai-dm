@@ -19,6 +19,7 @@ export async function POST(
     campaignId: id,
     userId: body.userId,
     displayName: body.displayName,
+    classId: body.classId,
     weaponId: body.weaponId,
   });
   return NextResponse.json(player, { status: 201 });

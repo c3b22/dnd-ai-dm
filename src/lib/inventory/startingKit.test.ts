@@ -20,3 +20,10 @@ describe('seedStartingKit', () => {
     await expect(seedStartingKit(supabase, { campaignId: 'c1', playerId: 'p1', weaponId: 'staff' })).rejects.toThrow('boom');
   });
 });
+
+describe('dagger in the catalog', () => {
+  it('is a weapon the starting kit can equip', async () => {
+    const { catalogEntry } = await import('./catalog');
+    expect(catalogEntry('dagger')?.kind).toBe('weapon');
+  });
+});
