@@ -13,6 +13,9 @@ import { findByDisplayName } from './names';
 import type { CharacterTag } from './tags';
 import type { Character } from './types';
 
+/** The log line a sanctuary tag adds; round processing ignores it when judging whether a round was eventful. */
+export const SANCTUARY_CHANGE = 'ถึงสถานที่ปลอดภัย: max HP ของทุกคนกลับมาเต็ม';
+
 export interface ApplyResult {
   characters: Character[];
   /** Thai lines for the game log, in the order things happened. */
@@ -42,7 +45,7 @@ export function applyCharacterTags(
         c.maxHp = BASE_MAX_HP + bonusOf(c);
         c.revivesSinceSanctuary = 0;
       }
-      changes.push('ถึงสถานที่ปลอดภัย: max HP ของทุกคนกลับมาเต็ม');
+      changes.push(SANCTUARY_CHANGE);
       continue;
     }
 

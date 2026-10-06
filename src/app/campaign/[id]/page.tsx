@@ -254,7 +254,10 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         cooldown: me?.abilityCooldown ?? 0,
         allies: players
           .filter((p) => p.status === 'active' && (p.id !== playerId || myClass.ability.target === 'ally_or_self'))
+          // A heal on someone at full health would waste the ability, so only hurt players are offered.
+          .filter((p) => myClass.id !== 'cleric' || p.hp < p.maxHp)
           .map((p) => ({ id: p.id, name: p.displayName })),
+        noTargetText: myClass.id === 'cleric' ? 'ไม่มีใครบาดเจ็บ' : undefined,
       }
     : undefined;
 

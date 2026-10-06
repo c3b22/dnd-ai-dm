@@ -36,16 +36,16 @@ All numbers live in constants under `src/lib/character/` (`classes.ts`, `abiliti
 Rules for every ability:
 
 - Usable only if the player is `active`, has a class, and `ability_cooldown` is 0. It is the player's action for the round.
-- Targets must belong to the same campaign and be `active`. Guard cannot target oneself.
+- Targets must belong to the same campaign and be `active`. Guard cannot target oneself, and an ally already guarded this round by another warrior cannot be guarded again (the second attempt fails and keeps its cooldown).
 - The cleric's heal never revives a downed player: reviving still needs `[[revive]]` and its max-HP cost.
-- Healing never exceeds max HP.
+- Healing never exceeds max HP, and the cleric cannot target someone at full HP (the attempt fails and keeps its cooldown). The target list offers only hurt players.
 - The ability does not depend on the equipped weapon, but archer and rogue use the dice of the weapon equipped at the time. The player's level damage bonus (leveling spec) is added once to the ability's damage like any weapon hit.
 - Guard: the redirected damage is the existing `hurt` roll minus the **warrior's** armor, then halved/thirded (rounded up, at least 1). If the warrior is no longer active when the tag is applied, the `hurt` lands on the original target as usual. Guard affects `hurt` tags only.
 - An attempt that fails validation (cooldown not ready, bad target, no class, downed) has no effect. The AI receives a note that the player tried to use the ability but it was not ready, and the round proceeds.
 
 ## Cooldown: eventful rounds
 
-After a round's tags are applied, if the narration contained **at least one valid tag** of kind `hurt`, `heal`, `revive`, `xp`, `milestone`, `give`, `take`, `gold` or `pay`, every player's `ability_cooldown` drops by 1 (not below 0). Then each player who successfully used an ability this round gets that ability's full cooldown (so the round it was used never counts toward its own cooldown).
+After a round's tags are applied, if at least one tag of kind `hurt`, `heal`, `revive`, `xp`, `milestone`, `give`, `take`, `gold` or `pay` **actually changed something** (judged from the log lines each tag-driven system produced, so a misspelled name, an unknown item, a downed target or a payment from a player with no gold does not count), every player's `ability_cooldown` drops by 1 (not below 0). Then each player who successfully used an ability this round gets that ability's full cooldown (so the round it was used never counts toward its own cooldown).
 
 `[[scene]]`, `[[shop]]`, `[[shop_close]]` and `[[sanctuary]]` do not count. A round with no counting tag leaves every cooldown unchanged, which stops cooldowns being refreshed by idle rounds or timeouts. The existing rule that harmless actions never produce `hurt` stops "fake risk" from being used to tick cooldowns for free.
 
