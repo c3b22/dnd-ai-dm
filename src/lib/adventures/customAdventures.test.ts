@@ -60,9 +60,9 @@ function fakeSupabase(row: Record<string, unknown> | null) {
   const updateCalls: unknown[] = [];
   const client: any = {
     from: () => ({
-      insert: (payload: unknown) => ({ select: () => ({ single: () => Promise.resolve({ data: { ...payload, id: 'custom-1' }, error: null }) }) }),
+      insert: (payload: Record<string, unknown>) => ({ select: () => ({ single: () => Promise.resolve({ data: { ...payload, id: 'custom-1' }, error: null }) }) }),
       select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: row, error: null }) }) }),
-      update: (payload: unknown) => { updateCalls.push(payload); return { eq: () => ({ select: () => ({ single: () => Promise.resolve({ data: { ...row, ...payload }, error: null }) }) }) }; },
+      update: (payload: Record<string, unknown>) => { updateCalls.push(payload); return { eq: () => ({ select: () => ({ single: () => Promise.resolve({ data: { ...row, ...payload }, error: null }) }) }) }; },
       delete: () => ({ eq: () => Promise.resolve({ error: null }) }),
     }),
     storage: { from: () => ({ list: () => Promise.resolve({ data: [], error: null }), remove: () => Promise.resolve({ error: null }) }) },
