@@ -11,6 +11,7 @@ import type { ShopState } from '@/lib/economy/apply';
 import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
+import { normalizeAbilities } from '@/lib/character/constants';
 import type { Adventure } from '@/lib/adventures/adventures';
 import { getAdventureById } from '@/lib/adventures/adventures';
 import { allowedSceneIdsAsync, sceneInstructionAsync } from '@/lib/scenes/scenes';
@@ -113,6 +114,11 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold, xp, class_id, ability_cooldown')
         .eq('campaign_id', campaignId);
 
+      // Ability scores in their own query: players.abilities may not exist yet, and that must not
+      // hide the characters above. Unreadable means every score defaults to 10.
+      const { data: abilityRows } = await supabase.from('players').select('id, abilities').eq('campaign_id', campaignId);
+      const abilitiesById = new Map<string, unknown>((abilityRows ?? []).map((row: any) => [row.id as string, row.abilities]));
+
       // Must not be tolerated like the columns above: an unreadable inventory read as "empty"
       // would let a later give/take save delete the player's real items.
       const { data: inventoryRows, error: inventoryError } = await supabase
@@ -192,6 +198,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           xp: Number(row.xp ?? 0),
           classId: (row.class_id ?? null) as string | null,
           abilityCooldown: Number(row.ability_cooldown ?? 0),
+          abilities: normalizeAbilities(abilitiesById.get(row.id as string)),
         })),
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),

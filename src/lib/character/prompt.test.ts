@@ -76,4 +76,17 @@ describe('characterPrompt harm-risk guidance', () => {
     const text = characterPrompt(party, false, undefined).join('\n').toLowerCase();
     expect(text).toContain('full to restore them completely with no roll');
   });
+
+  it('shows ability modifiers and proficient skills so the DM can set DCs', () => {
+    const warrior: Character = { ...party[0], classId: 'warrior', abilities: { STR: 15, DEX: 13, CON: 14, INT: 8, WIS: 12, CHA: 10 } };
+    const text = characterPrompt([warrior], false, undefined).join('\n');
+    expect(text).toContain('Prem modifiers: STR +2 DEX +1 CON +2 INT -1 WIS +1 CHA +0; proficient: athletics +4, intimidation +2, perception +3, survival +3');
+    expect(text).toContain('set sensible DCs');
+  });
+
+  it('treats missing abilities as 10 and omits skills for a classless character', () => {
+    const text = characterPrompt([party[0]], false, undefined).join('\n');
+    expect(text).toContain('Prem modifiers: STR +0 DEX +0 CON +0 INT +0 WIS +0 CHA +0');
+    expect(text).not.toContain('proficient');
+  });
 });

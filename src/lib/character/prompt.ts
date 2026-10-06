@@ -1,7 +1,22 @@
-import { diceLabel, weaponFor } from './constants';
-import { classOf } from './classes';
+import { ABILITY_KEYS, abilityModifier, diceLabel, normalizeAbilities, weaponFor } from './constants';
+import { classOf, skillModifier } from './classes';
 import { levelForXp } from './leveling';
 import type { Character } from './types';
+
+const signed = (n: number): string => (n >= 0 ? `+${n}` : `${n}`);
+
+/** One compact line: ability modifiers and the class's proficient skills (missing scores count as 10). */
+function abilityLine(c: Character): string {
+  const abilities = normalizeAbilities(c.abilities);
+  const mods = ABILITY_KEYS.map((k) => `${k} ${signed(abilityModifier(abilities[k]))}`).join(' ');
+  const cls = classOf(c.classId);
+  const skills = cls
+    ? `; proficient: ${cls.skills
+        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0) }))}`)
+        .join(', ')}`
+    : '';
+  return `  ${c.displayName} modifiers: ${mods}${skills}`;
+}
 
 export function characterPrompt(
   characters: Character[],
@@ -21,6 +36,8 @@ export function characterPrompt(
       const cls = classOf(c.classId);
       return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
     }),
+    'Ability modifiers (use them to set sensible DCs: easier for what a character is good at, harder for what they are bad at; the server adds the modifier to the roll, so never add it yourself):',
+    ...characters.map(abilityLine),
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',
     '  [[hurt: PlayerName | light]] - that player was hurt (use light, medium or heavy by how bad the hit is)',
