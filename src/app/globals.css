@@ -10,6 +10,7 @@
   --accent-ink: #1b1508;
   --teal: #5fb3a5;
   --danger: #d46a5a;
+  --warn: #e0b84a;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   --f-display: var(--font-cinzel), 'Noto Serif Thai', serif;
   --f-story: var(--font-noto-serif-thai), Georgia, serif;
@@ -28,6 +29,7 @@
     --accent-ink: #ffffff;
     --teal: #1f7a6d;
     --danger: #b2402f;
+    --warn: #8a6a00;
     --shadow: 0 8px 24px rgba(30, 50, 55, 0.12);
     color-scheme: light;
   }
@@ -43,6 +45,7 @@
   --accent-ink: #ffffff;
   --teal: #1f7a6d;
   --danger: #b2402f;
+  --warn: #8a6a00;
   --shadow: 0 8px 24px rgba(30, 50, 55, 0.12);
   color-scheme: light;
 }
@@ -244,6 +247,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 @media (max-width: 860px) {
   .home-grid, .table-grid { grid-template-columns: minmax(0, 1fr); }
   .rail { order: -1; }
+  .enc-toggle { display: inline-block; }
+  .enc-list.collapsed { display: none; }
   .msg.pl { max-width: 94%; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -275,6 +280,20 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .down-note { margin: 0; color: var(--danger); font-size: 13px; }
 .stat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; justify-items: center; }
 .stat-line { font-family: var(--f-display); letter-spacing: 0.02em; }
+
+/* Encounter panel (enemy pips) */
+.enc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.enc-toggle { display: none; font-size: 12px; padding: 2px 10px; }
+.enc-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.enc-row { display: grid; gap: 3px; transition: opacity 0.3s; }
+.enc-row .hp-track.pips { gap: 2px; justify-content: flex-start; background: transparent; border: 0; height: 8px; overflow: visible; }
+.pip { flex: 1; height: 100%; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); }
+.pips.ok .pip.on { background: var(--teal); border-color: var(--teal); }
+.pips.warn .pip.on { background: var(--warn); border-color: var(--warn); }
+.pips.low .pip.on { background: var(--danger); border-color: var(--danger); }
+.enc-row.is-dead, .enc-row.is-fled { opacity: 0.45; }
+.enc-row.is-dead .nm { text-decoration: line-through; }
+.badge-fled { justify-self: start; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-weight: 600; }
 
 /* Inventory card */
 .inv-weight { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }

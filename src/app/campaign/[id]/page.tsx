@@ -8,6 +8,7 @@ import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
 import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import { EncounterPanel } from '@/components/EncounterPanel';
 import { Inventory } from '@/components/Inventory';
 import { Shop } from '@/components/Shop';
 import { Trades } from '@/components/Trades';
@@ -75,7 +76,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [timeUpRoundId, setTimeUpRoundId] = useState<string | null>(null);
   const [shop, setShop] = useState<ShopState | null>(null);
   // Synced only; the combat tracker UI reads it later.
-  const [, setEncounter] = useState<Encounter | null>(null);
+  const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [facts, setFacts] = useState<CampaignFact[]>([]);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
@@ -488,6 +489,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               reorderPolicy={settings.reorderPolicy}
             />
           )}
+          <EncounterPanel encounter={encounter} />
           {me && (
             <Inventory
               items={me.items}

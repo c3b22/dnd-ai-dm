@@ -15,8 +15,8 @@ const { getAdventureById, campaignRow, supabaseBrowserClient, fetchEncounter, su
     getAdventureById: vi.fn(),
     campaignRow,
     supabaseBrowserClient,
-    fetchEncounter: vi.fn(() => Promise.resolve(null)),
-    subscribeToEncounter: vi.fn(() => unsubscribeEncounter),
+    fetchEncounter: vi.fn((_id: string) => Promise.resolve(null as unknown)),
+    subscribeToEncounter: vi.fn((_id: string, _cb: (e: unknown) => void) => unsubscribeEncounter),
     unsubscribeEncounter,
   };
 });
@@ -142,6 +142,16 @@ describe('CampaignPage — encounter sync', () => {
     await renderPage();
     expect(fetchEncounter).toHaveBeenCalledWith('c1');
     expect(subscribeToEncounter).toHaveBeenCalledWith('c1', expect.any(Function));
+  });
+
+  it('shows the enemy panel while an encounter is active and hides it when it ends', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: null, current_scene_id: null };
+    fetchEncounter.mockResolvedValue({ enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] });
+    await renderPage();
+    expect(await screen.findByLabelText('หมาป่า เหลือ 1 จาก 2')).toBeTruthy();
+    const onChange = subscribeToEncounter.mock.calls[0][1] as (e: unknown) => void;
+    await act(async () => onChange(null));
+    expect(screen.queryByLabelText('ศัตรู')).toBeNull();
   });
 
   it('unsubscribes when the page unmounts', async () => {
