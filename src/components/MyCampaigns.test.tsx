@@ -12,8 +12,8 @@ describe('MyCampaigns', () => {
     render(
       <MyCampaigns
         campaigns={[
-          { id: 'camp-1', playerId: 'player-1', name: 'ค่ำคืนแรก', adventureId: 'sunken-bell', started: true },
-          { id: 'camp-2', playerId: 'player-2', name: 'ห้องรอ', adventureId: null, started: false },
+          { id: 'camp-1', playerId: 'player-1', name: 'ค่ำคืนแรก', adventureId: 'sunken-bell', started: true, isOwner: true },
+          { id: 'camp-2', playerId: 'player-2', name: 'ห้องรอ', adventureId: null, started: false, isOwner: false },
         ]}
       />
     );

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { findOwnerId } from './turnOrder';
 
 export interface MyCampaignSummary {
   id: string;
@@ -6,6 +7,8 @@ export interface MyCampaignSummary {
   name: string;
   adventureId: string | null;
   started: boolean;
+  /** True when this user is the table owner (earliest-joined player). */
+  isOwner: boolean;
 }
 
 interface PlayerRow {
@@ -16,6 +19,7 @@ interface PlayerRow {
     adventure_id: string | null;
     started_at: string | null;
     created_at: string;
+    players?: { id: string; created_at: string }[] | null;
   } | null;
 }
 
@@ -25,7 +29,7 @@ export async function fetchMyCampaigns(
 ): Promise<MyCampaignSummary[]> {
   const { data, error } = await supabase
     .from('players')
-    .select('id, campaign_id, campaigns(name, adventure_id, started_at, created_at)')
+    .select('id, campaign_id, campaigns(name, adventure_id, started_at, created_at, players(id, created_at))')
     .eq('user_id', userId);
   if (error) throw error;
 
@@ -40,5 +44,7 @@ export async function fetchMyCampaigns(
       name: row.campaigns.name,
       adventureId: row.campaigns.adventure_id,
       started: Boolean(row.campaigns.started_at),
+      isOwner:
+        findOwnerId((row.campaigns.players ?? []).map((p) => ({ id: p.id, joinedAt: p.created_at }))) === row.id,
     }));
 }
