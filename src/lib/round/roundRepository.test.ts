@@ -17,6 +17,8 @@ function createFakeSupabase(options: {
   actionRows?: unknown[];
   currentShop?: unknown;
   currentEncounter?: unknown;
+  factRows?: unknown[];
+  factsError?: boolean;
   messageRows?: { role: string; content: string }[];
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
@@ -88,6 +90,12 @@ function createFakeSupabase(options: {
           select: () => ({
             eq: () => Promise.resolve({ data: options.players ?? [], error: null }),
           }),
+        };
+      }
+      if (table === 'campaign_facts') {
+        if (options.factsError) throw new Error('relation does not exist');
+        return {
+          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: options.factRows ?? [], error: null }) }) }),
         };
       }
       if (table === 'messages') {
@@ -708,5 +716,16 @@ describe('createSupabaseRoundRepository encounter', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(createSupabaseRoundRepository(broken).saveFacts('c1', [{ kind: 'clue', key: null, value: 'x' }])).resolves.toBeUndefined();
     spy.mockRestore();
+  });
+
+  it('getRoundContext loads campaign facts, and falls back to none when the table is unreadable', async () => {
+    const base = { roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null };
+    const row = { id: 'f1', campaign_id: 'c1', kind: 'npc', key: 'Elara', value: 'friendly', updated_at: 't' };
+    const withFacts = createFakeSupabase({ ...base, factRows: [row] });
+    const context = await createSupabaseRoundRepository(withFacts.client).getRoundContext('r1');
+    expect(context.facts).toEqual([{ id: 'f1', campaignId: 'c1', kind: 'npc', key: 'Elara', value: 'friendly', updatedAt: 't' }]);
+
+    const broken = createFakeSupabase({ ...base, factsError: true });
+    expect((await createSupabaseRoundRepository(broken.client).getRoundContext('r1')).facts).toEqual([]);
   });
 });

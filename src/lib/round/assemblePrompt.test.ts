@@ -193,3 +193,33 @@ describe('assemblePrompt combat', () => {
     expect(prompt).toContain('No fight is in progress');
   });
 });
+
+describe('assemblePrompt world memory', () => {
+  const actions = [{ playerDisplayName: 'Prem', actionText: 'Look' }];
+  const facts = [
+    { id: 'f1', campaignId: 'c', kind: 'npc' as const, key: 'Elara', value: 'friendly', updatedAt: 't' },
+    { id: 'f2', campaignId: 'c', kind: 'quest' as const, key: 'Find ring', value: 'open', updatedAt: 't' },
+    { id: 'f3', campaignId: 'c', kind: 'clue' as const, key: null, value: 'Blood on the door', updatedAt: 't' },
+  ];
+
+  it('always explains the memory tags, even with no facts', () => {
+    const prompt = assemblePrompt('', [], actions);
+    expect(prompt).toContain('[[npc: Name | attitude]]');
+    expect(prompt).not.toContain('Known NPCs');
+  });
+
+  it('lists facts as a section separate from the story summary', () => {
+    const prompt = assemblePrompt('SUMMARY-TEXT', [], actions, null, '', undefined, undefined, facts);
+    expect(prompt).toContain('- Elara: friendly');
+    expect(prompt).toContain('- Find ring');
+    expect(prompt).toContain('- Blood on the door');
+    const summaryAt = prompt.indexOf('SUMMARY-TEXT');
+    const npcAt = prompt.indexOf('- Elara: friendly');
+    expect(npcAt).toBeGreaterThan(summaryAt);
+    expect(prompt.slice(summaryAt, npcAt)).toContain('Story memory');
+  });
+
+  it('stays free of blank-line pairs from the memory section', () => {
+    expect(assemblePrompt('', [], actions).includes('\n\n\n')).toBe(false);
+  });
+});

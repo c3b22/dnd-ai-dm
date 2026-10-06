@@ -9,7 +9,8 @@ import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
 import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
-import { persistFacts, type FactInput } from '@/lib/memory/facts';
+import { persistFacts, loadFacts, type FactInput } from '@/lib/memory/facts';
+import type { CampaignFact } from '@/lib/memory/types';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 import { normalizeAbilities } from '@/lib/character/constants';
@@ -35,6 +36,8 @@ export interface RoundContext {
   currentShop: ShopState | null;
   /** The fight in progress, or null. Null as well when the column does not exist yet. */
   currentEncounter: Encounter | null;
+  /** World memory (npc/quest/clue); [] when the table is missing or unreadable. */
+  facts: CampaignFact[];
   /** True once an earlier attempt at this round already applied its HP/inventory/gold tags. */
   tagsApplied: boolean;
 }
@@ -217,6 +220,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         pendingWipe: Boolean(wipeRow?.pending_wipe),
         currentShop: normalizeShop(wipeRow?.current_shop),
         currentEncounter: normalizeEncounter(encounterRow?.current_encounter),
+        facts: await loadFacts(supabase, campaignId),
         tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(

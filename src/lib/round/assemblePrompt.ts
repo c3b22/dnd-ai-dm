@@ -14,6 +14,8 @@ import { inventoryPrompt } from '@/lib/inventory/prompt';
 import type { Inventories } from '@/lib/inventory/types';
 import { economyPrompt } from '@/lib/economy/prompt';
 import type { ShopState } from '@/lib/economy/apply';
+import { memoryPrompt } from '@/lib/memory/prompt';
+import type { CampaignFact } from '@/lib/memory/types';
 import { combatPrompt } from '@/lib/combat/prompt';
 import type { Encounter } from '@/lib/combat/encounter';
 import { isStoryRole, type MessageRole } from '@/lib/messages/roles';
@@ -49,7 +51,8 @@ export function assemblePrompt(
   adventure: Adventure | null = null,
   sceneInstructionText = '',
   settings: CampaignSettings = DEFAULT_SETTINGS,
-  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null }
+  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null },
+  facts: CampaignFact[] = []
 ): string {
   // Defensive: ooc/ask/ask_answer must never reach the AI prompt (also filtered at the query).
   const historyText = recentMessages
@@ -80,6 +83,9 @@ export function assemblePrompt(
     '',
     'Recent narration and dialogue:',
     historyText || '(no recent messages)',
+    '',
+    // World memory is its own section, not part of the summary, so summarizing never drops it.
+    ...memoryPrompt(facts),
     '',
     ...(characterState
       ? (() => {

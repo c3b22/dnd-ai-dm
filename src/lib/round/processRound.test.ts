@@ -18,6 +18,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       inventories: {},
       pendingWipe: false,
       currentShop: null,
+      facts: [],
       tagsApplied: false,
       adventure: null,
       allowedSceneIds: allowedScenes(undefined).map((s) => s.id),
@@ -824,5 +825,20 @@ describe('processRound world memory', () => {
     const result = await run(repository, '[[clue: something]]');
     expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
     expect(repository.insertStatsSummary).toHaveBeenCalled();
+  });
+});
+
+describe('processRound memory prompt', () => {
+  it('puts known facts into the narration prompt', async () => {
+    const facts = [
+      { id: 'f1', campaignId: 'camp-1', kind: 'npc' as const, key: 'Elara', value: 'friendly', updatedAt: 't' },
+      { id: 'f2', campaignId: 'camp-1', kind: 'clue' as const, key: null, value: 'Blood on the door', updatedAt: 't' },
+    ];
+    const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(contextWith({ facts })) });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    const prompt = generateNarration.mock.calls[0][0] as string;
+    expect(prompt).toContain('- Elara: friendly');
+    expect(prompt).toContain('- Blood on the door');
   });
 });
