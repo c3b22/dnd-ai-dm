@@ -194,6 +194,10 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .my-campaign-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
 .my-campaign-row:hover { border-color: var(--accent); }
 .my-campaign-row .name { font-weight: 500; overflow-wrap: anywhere; }
+.my-campaign-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.my-campaign-item .my-campaign-row { flex: 1 1 200px; }
+.my-campaign-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; }
+.my-campaign-confirm p { margin: 0; flex-basis: 100%; }
 .status-badge { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); flex: none; }
 .status-badge.playing { color: var(--teal); border-color: var(--teal); }
 .join-code-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
