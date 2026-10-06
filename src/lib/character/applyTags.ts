@@ -7,6 +7,7 @@ import {
   WIPE_EXTRA_MAX_HP_PENALTY,
 } from './constants';
 import { rollDice } from './dice';
+import { guardDivisor } from './abilities';
 import { levelForXp, levelHpBonus } from './leveling';
 import { findByDisplayName } from './names';
 import type { CharacterTag } from './tags';
@@ -25,7 +26,9 @@ const bonusOf = (c: Character): number => levelHpBonus(levelForXp(c.xp ?? 0));
 export function applyCharacterTags(
   characters: Character[],
   tags: CharacterTag[],
-  rollDie: (sides: number) => number
+  rollDie: (sides: number) => number,
+  /** Protected ally id -> the warrior guarding them this round (see applyAbilityActions). */
+  guards: Record<string, string> = {}
 ): ApplyResult {
   const next = characters.map((c) => ({ ...c }));
   const changes: string[] = [];
@@ -49,13 +52,25 @@ export function applyCharacterTags(
 
     if (tag.kind === 'hurt' && target.status === 'active') {
       const rolled = rollDice(TIERS[tag.tier], rollDie);
-      const damage = Math.max(1, rolled - (target.armorReduction ?? 0));
-      const absorbed = rolled - damage;
-      target.hp = Math.max(0, target.hp - damage);
-      changes.push(`${target.displayName} −${damage} HP${absorbed > 0 ? ` (เกราะกัน ${absorbed})` : ''}`);
-      if (target.hp === 0) {
-        target.status = 'downed';
-        changes.push(`${target.displayName} ล้มลง`);
+      const guard = guards[target.id] ? next.find((c) => c.id === guards[target.id]) : undefined;
+      if (guard && guard.status === 'active' && guard.id !== target.id) {
+        // The warrior's armor applies, not the protected ally's.
+        const damage = Math.max(1, Math.ceil((rolled - (guard.armorReduction ?? 0)) / guardDivisor(levelForXp(guard.xp ?? 0))));
+        guard.hp = Math.max(0, guard.hp - damage);
+        changes.push(`${guard.displayName} รับดาเมจแทน ${target.displayName} −${damage} HP`);
+        if (guard.hp === 0) {
+          guard.status = 'downed';
+          changes.push(`${guard.displayName} ล้มลง`);
+        }
+      } else {
+        const damage = Math.max(1, rolled - (target.armorReduction ?? 0));
+        const absorbed = rolled - damage;
+        target.hp = Math.max(0, target.hp - damage);
+        changes.push(`${target.displayName} −${damage} HP${absorbed > 0 ? ` (เกราะกัน ${absorbed})` : ''}`);
+        if (target.hp === 0) {
+          target.status = 'downed';
+          changes.push(`${target.displayName} ล้มลง`);
+        }
       }
     } else if (tag.kind === 'heal' && target.status === 'active') {
       const gained =
