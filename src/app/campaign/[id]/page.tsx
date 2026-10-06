@@ -19,7 +19,7 @@ import {
   saveCampaignSettings,
   subscribeToCampaignSettings,
 } from '@/lib/supabase/campaignSettings';
-import { getAdventure } from '@/lib/adventures/adventures';
+import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
   saveTurnOrder,
@@ -53,6 +53,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [players, setPlayers] = useState<RoundPlayer[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(null);
   const [adventureId, setAdventureId] = useState<string | null>(null);
+  const [adventure, setAdventure] = useState<Adventure | null>(null);
   const [campaignName, setCampaignName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [startedAt, setStartedAt] = useState<string | null | undefined>(undefined);
@@ -129,6 +130,25 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       unsubscribeStarted();
     };
   }, [campaignId]);
+
+  // Built-in adventures resolve locally; a custom one is read from custom_adventures.
+  useEffect(() => {
+    if (!adventureId) {
+      setAdventure(null);
+      return;
+    }
+    let cancelled = false;
+    getAdventureById(supabaseBrowserClient, adventureId)
+      .then((found) => {
+        if (!cancelled) setAdventure(found);
+      })
+      .catch(() => {
+        // The title is cosmetic; failing to load it must never break the table.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adventureId]);
 
   async function handleStart() {
     await startCampaignForClient(campaignId);
@@ -308,8 +328,6 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     });
     return unsubscribe;
   }, [roundId, campaignId, triggerProcessing]);
-
-  const adventure = getAdventure(adventureId);
 
   if (loadingCampaign || loadError) {
     return (
