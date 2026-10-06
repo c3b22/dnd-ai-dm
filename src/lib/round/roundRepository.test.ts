@@ -278,6 +278,19 @@ describe('createSupabaseRoundRepository classes', () => {
     expect(context.characters[1].abilities).toEqual({ STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 });
   });
 
+  it('loads backstory, personality and goal, null when missing', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, backstory: 'Orphan', personality: 'Calm', goal: 'Revenge' },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 },
+      ],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.characters.map((c) => [c.backstory, c.personality, c.goal])).toEqual([['Orphan', 'Calm', 'Revenge'], [null, null, null]]);
+  });
+
   it('loads the ability flag and target of an action', async () => {
     const { client } = createFakeSupabase({
       roundsById: { 'round-1': { campaign_id: 'camp-1' } },
@@ -358,7 +371,7 @@ describe('createSupabaseRoundRepository character state', () => {
     expect(context.pendingWipe).toBe(true);
     expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 } },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, backstory: null, personality: null, goal: null },
     ]);
   });
 

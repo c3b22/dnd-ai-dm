@@ -120,6 +120,10 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       const { data: abilityRows } = await supabase.from('players').select('id, abilities').eq('campaign_id', campaignId);
       const abilitiesById = new Map<string, unknown>((abilityRows ?? []).map((row: any) => [row.id as string, row.abilities]));
 
+      // Identity text in its own query for the same reason: unreadable means no identity, not no characters.
+      const { data: identityRows } = await supabase.from('players').select('id, backstory, personality, goal').eq('campaign_id', campaignId);
+      const identityById = new Map<string, any>((identityRows ?? []).map((row: any) => [row.id as string, row]));
+
       // Must not be tolerated like the columns above: an unreadable inventory read as "empty"
       // would let a later give/take save delete the player's real items.
       const { data: inventoryRows, error: inventoryError } = await supabase
@@ -202,6 +206,9 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           classId: (row.class_id ?? null) as string | null,
           abilityCooldown: Number(row.ability_cooldown ?? 0),
           abilities: normalizeAbilities(abilitiesById.get(row.id as string)),
+          backstory: (identityById.get(row.id as string)?.backstory ?? null) as string | null,
+          personality: (identityById.get(row.id as string)?.personality ?? null) as string | null,
+          goal: (identityById.get(row.id as string)?.goal ?? null) as string | null,
         })),
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
