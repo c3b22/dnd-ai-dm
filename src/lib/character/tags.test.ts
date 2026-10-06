@@ -175,4 +175,36 @@ describe('gold, pay and shop tags', () => {
       ]);
     });
   });
+
+  describe('memory fact tags (npc / quest / clue)', () => {
+    it('parses npc, quest and clue tags and strips them from the narration', () => {
+      const result = parseCharacterTags(
+        'เสียงลม [[npc: ลุงบอบ | เป็นมิตร]] [[quest: ตามหาแหวน | open]] [[clue: ประตูลับอยู่หลังหิ้ง]] จบ',
+      );
+      expect(result.tags).toEqual([
+        { kind: 'npc', key: 'ลุงบอบ', value: 'เป็นมิตร' },
+        { kind: 'quest', key: 'ตามหาแหวน', value: 'open' },
+        { kind: 'clue', key: null, value: 'ประตูลับอยู่หลังหิ้ง' },
+      ]);
+      expect(result.cleanText).toBe('เสียงลม    จบ');
+    });
+
+    it('tolerates case and spacing, normalizes quest status', () => {
+      const { tags } = parseCharacterTags('[[ QUEST :  A  |  DONE ]]');
+      expect(tags).toEqual([{ kind: 'quest', key: 'A', value: 'done' }]);
+    });
+
+    it('hides malformed fact tags without applying them', () => {
+      const result = parseCharacterTags(
+        ['Hi.', '[[quest: A | maybe]]', '[[quest: A]]', '[[npc: Bob]]', '[[clue:]]', '[[clues: x]]'].join('\n'),
+      );
+      expect(result.tags).toEqual([]);
+      expect(result.cleanText).toBe('Hi.');
+    });
+
+    it('does not swallow a following real tag', () => {
+      const { tags } = parseCharacterTags(['[[npc: Bob', '[[clue: real]]'].join('\n'));
+      expect(tags).toEqual([{ kind: 'clue', key: null, value: 'real' }]);
+    });
+  });
 });
