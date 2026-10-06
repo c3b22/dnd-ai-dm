@@ -4,6 +4,7 @@ import { allowedScenes, parseSceneTag } from '@/lib/scenes/scenes';
 import { normalizeSettings } from '@/lib/campaign/settings';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
+import { applyAbilityActions, isEventfulRound, tickCooldowns } from '@/lib/character/applyAbilities';
 import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/leveling';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
@@ -43,6 +44,7 @@ export async function processRound(
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
+  let abilities: ReturnType<typeof applyAbilityActions>;
   try {
     context = await deps.repository.getRoundContext(roundId);
     if (context.tagsApplied) {
@@ -61,15 +63,20 @@ export async function processRound(
     // Potions resolve before narration so the DM sees the real HP; nothing is saved until the end,
     // so a failed generation leaves the potion untouched for the retry.
     potions = applyPotionActions(context.characters, context.inventories, context.actions, rollSides);
+    // Class abilities resolve here too, before narration and unsaved until the end, like potions.
+    abilities = applyAbilityActions(potions.characters, context.actions, rollSides);
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
     rolled = context.actions.map((action) => {
-      const a = { ...action, note: action.playerId ? potions.notes[action.playerId] : undefined };
+      const note = action.playerId
+        ? [potions.notes[action.playerId], abilities.notes[action.playerId]].filter(Boolean).join('; ') || undefined
+        : undefined;
+      const a = { ...action, note };
       if (!diceEnabled) return a;
       const roll = rollDie();
       const character = characterByName.get(a.playerDisplayName.toLowerCase());
       if (!character) return { ...a, roll };
       const weapon = weaponFor(character.weaponId);
-      return { ...a, roll, weaponLabel: weapon.id, damage: rollDice(weapon.dice, rollSides) + levelDamageBonus(levelForXp(character.xp ?? 0)) };
+      return { ...a, roll, weaponLabel: weapon.id, damage: abilities.damage[character.id] ?? rollDice(weapon.dice, rollSides) + levelDamageBonus(levelForXp(character.xp ?? 0)) };
     });
     prompt = assemblePrompt(
       context.campaignSummary,
@@ -78,7 +85,7 @@ export async function processRound(
       context.adventureId,
       context.currentSceneId,
       settings,
-      { characters: potions.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop }
+      { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop }
     );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
@@ -125,14 +132,16 @@ export async function processRound(
   // committed, even if that earlier attempt's own save was itself incomplete.
   if (context.characters.length > 0 && (await deps.repository.claimRoundTags(roundId))) {
     try {
-      const result = applyCharacterTags(potions.characters, tags, deps.rollSides ?? randomDie);
+      const result = applyCharacterTags(abilities.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
       const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
-      await deps.repository.saveCharacterState(context.campaignId, xpResult.characters, result.wiped);
+      // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
+      const finalCharacters = tickCooldowns(xpResult.characters, isEventfulRound(tags), abilities.used);
+      await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
       const changedIds = [...new Set([...potions.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
       if (changedIds.length > 0) {
@@ -170,6 +179,7 @@ export async function processRound(
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
         ...potions.changes,
+        ...abilities.changes,
         ...result.changes,
         ...xpResult.changes,
         ...inventoryResult.changes,
