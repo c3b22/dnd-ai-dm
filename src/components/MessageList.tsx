@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MessageRole } from '@/lib/messages/roles';
 import { D20Icon } from './D20Icon';
-import { DiceRollOverlay, type DiceRollOverlayProps } from './DiceRollOverlay';
+import { DiceRollOverlay, checkFormula, type DiceCheckView, type DiceRollOverlayProps } from './DiceRollOverlay';
+import { skillLabel } from '@/lib/character/skillLabels';
 
 export interface Message {
   id: string;
@@ -15,6 +16,11 @@ export interface Message {
 interface RollEntry {
   playerDisplayName: string;
   roll: number;
+  check?: { skill: string; dc: number; modifier: number; proficiency: number; total: number; success: boolean };
+}
+
+function checkViews(rolls: RollEntry[]): DiceCheckView[] {
+  return rolls.flatMap((r) => (r.check ? [{ playerDisplayName: r.playerDisplayName, die: r.roll, ...r.check }] : []));
 }
 
 function parseRollMessage(content: string): RollEntry[] | null {
@@ -58,6 +64,12 @@ function RollSummary({ rolls, pending }: { rolls: RollEntry[]; pending: boolean 
           </span>
           <span className="who">{r.playerDisplayName}</span>
           <span className="num">{pending ? '?' : r.roll}</span>
+          {r.check && !pending && (
+            <span className={`check-detail ${r.check.success ? 'pass' : 'fail'}`}>
+              {skillLabel(r.check.skill)} DC {r.check.dc} · {checkFormula({ die: r.roll, ...r.check })} ·{' '}
+              {r.check.success ? 'ผ่าน' : 'ไม่ผ่าน'}
+            </span>
+          )}
         </li>
       ))}
     </ul>
@@ -97,7 +109,7 @@ export function MessageList({
   playerNames,
 }: MessageListProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[] } | null>(
+  const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[]; checks: DiceCheckView[] } | null>(
     null
   );
   const listRef = useRef<HTMLUListElement>(null);
@@ -138,7 +150,7 @@ export function MessageList({
         const rolls = parseRollMessage(message.content);
         if (rolls && rolls.length > 0) {
           pendingRollIdRef.current = message.id;
-          setPendingRoll({ messageId: message.id, values: rolls.map((r) => r.roll) });
+          setPendingRoll({ messageId: message.id, values: rolls.map((r) => r.roll), checks: checkViews(rolls) });
         }
       }
 
@@ -167,7 +179,7 @@ export function MessageList({
   return (
     <>
       {pendingRoll && (
-        <RollOverlay values={pendingRoll.values} onComplete={handleRollOverlayComplete} />
+        <RollOverlay values={pendingRoll.values} checks={pendingRoll.checks} onComplete={handleRollOverlayComplete} />
       )}
       <ul className="log" aria-label="session log" ref={listRef}>
         {messages.map((message) => {

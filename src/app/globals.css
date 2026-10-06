@@ -160,6 +160,13 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .dice-overlay { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: rgba(6, 8, 9, 0.6); animation: scene-fade 0.2s ease; }
 .dice-overlay-box { width: min(94vw, 640px); height: min(72vh, 640px); }
 .dice-overlay-box.landed { visibility: hidden; }
+.roll-line { flex-wrap: wrap; }
+.roll-line .check-detail { font-size: 12px; color: var(--muted); }
+.roll-line .check-detail.pass { color: var(--ok, #4caf50); }
+.roll-line .check-detail.fail { color: var(--danger); }
+.dice-checks { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-family: var(--f-ui); font-size: clamp(13px, 3.4vw, 16px); font-weight: 500; letter-spacing: 0; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8); }
+.dice-check.pass { color: #8be28b; }
+.dice-check.fail { color: #ff8a8a; }
 .dice-result { font-family: var(--f-display); font-size: clamp(32px, 8vw, 56px); font-weight: 700; color: var(--danger); letter-spacing: 0.05em; text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6); animation: pop 0.3s ease; }
 .thinking { display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: 14px; padding: 0 20px 14px; animation: rise 0.35s ease both; }
 .d20 { width: 44px; height: 44px; color: var(--accent); flex: none; }

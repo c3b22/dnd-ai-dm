@@ -12,6 +12,18 @@ import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
 import { applyEnemyTags } from '@/lib/combat/encounter';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
+import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
+import type { RollSummaryEntry } from './roundRepository';
+
+async function collect(stream: AsyncIterable<string>): Promise<string> {
+  let text = '';
+  for await (const chunk of stream) text += chunk;
+  return text;
+}
+
+async function* single(text: string): AsyncIterable<string> {
+  yield text;
+}
 
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
@@ -80,20 +92,43 @@ export async function processRound(
       const weapon = weaponFor(character.weaponId);
       return { ...a, roll, weaponLabel: weapon.id, damage: abilities.damage[character.id] ?? rollDice(weapon.dice, rollSides) + levelDamageBonus(levelForXp(character.xp ?? 0)) };
     });
-    prompt = assemblePrompt(
-      context.campaignSummary,
-      context.recentMessages,
-      rolled,
-      context.adventure,
-      context.sceneInstructionText,
-      settings,
-      { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop, encounter: context.currentEncounter },
-      context.facts ?? []
-    );
+    const build = (actions: RoundAction[], planChecks = false) =>
+      assemblePrompt(
+        context.campaignSummary,
+        context.recentMessages,
+        actions,
+        context.adventure,
+        context.sceneInstructionText,
+        settings,
+        { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop, encounter: context.currentEncounter },
+        context.facts ?? [],
+        { planChecks }
+      );
+    prompt = build(rolled);
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
     // DM message or player-action messages that a retry would duplicate.
-    stream = await deps.generateNarration(prompt);
+    if (diceEnabled && abilities.characters.length > 0) {
+      // Dice tables: the first call either asks for skill checks or narrates outright. Only a
+      // round with checks costs a second call; anything unusable falls back to a plain narration.
+      const first = parseCheckPlan(await collect(await deps.generateNarration(build(rolled, true))));
+      if (first.kind === 'narration' || first.kind === 'plain') {
+        stream = single(first.text);
+      } else {
+        const outcomes = first.kind === 'checks' ? runChecks(first.checks, abilities.characters, rollDie) : [];
+        if (outcomes.length > 0) {
+          const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
+          rolled = rolled.map((a) => {
+            const check = byName.get(a.playerDisplayName.toLowerCase());
+            return check ? { ...a, check } : a;
+          });
+          prompt = build(rolled);
+        }
+        stream = await deps.generateNarration(prompt);
+      }
+    } else {
+      stream = await deps.generateNarration(prompt);
+    }
   } catch (error) {
     // Nothing was written yet, so it is safe to release the claim for an immediate retry.
     await deps.releaseRound?.(roundId).catch(() => {});
@@ -106,7 +141,15 @@ export async function processRound(
       .insertRollSummary(
         context.campaignId,
         roundId,
-        rolled.map((r) => ({ playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 }))
+        rolled.map((r): RollSummaryEntry => {
+          const c = r.check;
+          if (!c) return { playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 };
+          return {
+            playerDisplayName: r.playerDisplayName,
+            roll: c.die,
+            check: { skill: c.skill, dc: c.dc, advantage: c.advantage, dice: c.dice, modifier: c.modifier, proficiency: c.proficiency, total: c.total, success: c.success, critical: c.critical },
+          };
+        })
       )
       .catch(() => {});
   }

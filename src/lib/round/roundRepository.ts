@@ -42,6 +42,23 @@ export interface RoundContext {
   tagsApplied: boolean;
 }
 
+/** One line of the posted roll summary; `check` is present when the roll was a skill check. */
+export interface RollSummaryEntry {
+  playerDisplayName: string;
+  roll: number;
+  check?: {
+    skill: string;
+    dc: number;
+    advantage: 'none' | 'advantage' | 'disadvantage';
+    dice: number[];
+    modifier: number;
+    proficiency: number;
+    total: number;
+    success: boolean;
+    critical: 'success' | 'failure' | null;
+  };
+}
+
 export interface RoundRepository {
   getRoundContext(roundId: string): Promise<RoundContext>;
   /**
@@ -58,7 +75,7 @@ export interface RoundRepository {
   insertRollSummary(
     campaignId: string,
     roundId: string,
-    rolls: { playerDisplayName: string; roll: number }[]
+    rolls: RollSummaryEntry[]
   ): Promise<void>;
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
   saveInventories(

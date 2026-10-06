@@ -842,3 +842,85 @@ describe('processRound memory prompt', () => {
     expect(prompt).toContain('- Blood on the door');
   });
 });
+
+describe('processRound skill checks (two-call dice flow)', () => {
+  const prem = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const repo = () =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'ย่องผ่านทหารยาม' }],
+        characters: [prem],
+      }),
+    });
+  const streams = (...texts: string[]) => {
+    const fn = vi.fn();
+    texts.forEach((t) => fn.mockResolvedValueOnce(fakeStream([t])));
+    return fn;
+  };
+  const deps = (repository: RoundRepository, generateNarration: ReturnType<typeof vi.fn>, rolls: number[] = [14]): ProcessRoundDeps => {
+    const queue = [...rolls];
+    return { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration, rollDie: () => queue.shift() ?? 10, rollSides: () => 4 };
+  };
+
+  it('no check: one call, the narration inside the JSON is used and tags still apply', async () => {
+    const repository = repo();
+    const generate = streams(JSON.stringify({ narration: 'ล้มลง [[hurt: Prem | light]]' }));
+    await processRound(deps(repository, generate), 'round-1');
+    expect(generate).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(repository.appendToMessage).mock.calls[0][1];
+    expect(saved).toContain('ล้มลง');
+    expect(saved).not.toContain('[[hurt');
+    expect(repository.saveCharacterState).toHaveBeenCalled();
+    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 14 }]);
+  });
+
+  it('with a check: rolls on the server, calls the DM twice, tells the DM the result and posts it', async () => {
+    const repository = repo();
+    const generate = streams(
+      '{"checks":[{"player":"Prem","skill":"stealth","dc":16,"advantage":"none"}]}',
+      'ย่องผ่านสำเร็จ'
+    );
+    await processRound(deps(repository, generate, [14, 12]), 'round-1');
+    expect(generate).toHaveBeenCalledTimes(2);
+    const second = generate.mock.calls[1][0] as string;
+    expect(second).toContain('stealth check DC 16');
+    expect(second).toContain('d20 12 + 5 = 17');
+    expect(second).toContain('SUCCESS');
+    expect(second).not.toContain('FORMAT OF YOUR ANSWER');
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'ย่องผ่านสำเร็จ');
+    const posted = vi.mocked(repository.insertRollSummary).mock.calls[0][2];
+    expect(posted[0]).toMatchObject({ playerDisplayName: 'Prem', roll: 12, check: { skill: 'stealth', dc: 16, total: 17, success: true, modifier: 3, proficiency: 2 } });
+  });
+
+  it('rolls two dice for advantage', async () => {
+    const generate = streams('{"checks":[{"player":"Prem","skill":"stealth","dc":20,"advantage":"advantage"}]}', 'ok');
+    await processRound(deps(repo(), generate, [14, 3, 17]), 'round-1');
+    expect(generate.mock.calls[1][0]).toContain('rolled 3 and 17');
+    expect(generate.mock.calls[1][0]).toContain('d20 17 + 5 = 22');
+  });
+
+  it('broken JSON: falls back to a plain narration call without checks, tags still work', async () => {
+    const repository = repo();
+    const generate = streams('{"checks":[{"player":', 'เล่าปกติ [[hurt: Prem | light]]');
+    await processRound(deps(repository, generate), 'round-1');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0]).not.toContain('FORMAT OF YOUR ANSWER');
+    expect(generate.mock.calls[1][0]).not.toContain('check DC');
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เล่าปกติ');
+    expect(repository.saveCharacterState).toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+  });
+
+  it('asks for the JSON format only when dice are on and the table has characters', async () => {
+    const generate = streams('{"narration":"x"}');
+    await processRound(deps(repo(), generate), 'round-1');
+    expect(generate.mock.calls[0][0]).toContain('FORMAT OF YOUR ANSWER');
+    expect(generate.mock.calls[0][0]).toContain('ONLY for actions whose result is truly uncertain');
+  });
+});
