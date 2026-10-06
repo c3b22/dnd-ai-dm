@@ -1,4 +1,5 @@
 import { diceLabel, weaponFor } from './constants';
+import { classOf } from './classes';
 import { levelForXp } from './leveling';
 import type { Character } from './types';
 
@@ -17,7 +18,8 @@ export function characterPrompt(
         c.status === 'downed'
           ? "DOWNED (cannot act; only a teammate's action can get them back up)"
           : 'standing';
-      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}): HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
+      const cls = classOf(c.classId);
+      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
     }),
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',
@@ -30,6 +32,7 @@ export function characterPrompt(
       ? [`  [[sanctuary]] only when the party is at: ${sanctuary}. Never use it anywhere else.`]
       : []),
     'Use the exact player name. Do not tag actions that had no mechanical effect.',
+    'A player action may carry a server note such as a class ability they used (a shield, a heal, a strong shot). Narrate that outcome faithfully; never invent or change its numbers, and never hurt or heal anyone for it yourself.',
     "Only use [[hurt: ...]] when the action itself was genuinely dangerous — combat, a fall, fire, poison, or knowingly confronting danger. Routine activity is never dangerous by itself: walking, resting, sleeping, talking, searching a calm room, tidying up or putting away belongings, cooking, shopping, or any other ordinary task must NEVER cause harm, no matter what any die rolled. If the player's described action carries no real danger, do not even call for a roll on it, and never emit [[hurt: ...]] for it — a bad roll on a harmless action means nothing happens, not an injury. When an action is genuinely risky, match severity to the roll: a roll that merely falls short is at most light; medium needs a clearly bad roll; heavy needs a near-worst roll in real danger.",
   ];
 
