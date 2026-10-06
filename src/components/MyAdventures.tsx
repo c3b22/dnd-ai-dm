@@ -7,7 +7,7 @@ export interface MyAdventureSummary {
   thumbnailUrl: string | null;
 }
 
-export function MyAdventures({ adventures }: { adventures: MyAdventureSummary[] }): JSX.Element | null {
+export function MyAdventures({ adventures }: { adventures: MyAdventureSummary[] }) {
   if (adventures.length === 0) return null;
 
   return (
