@@ -14,6 +14,8 @@ import { inventoryPrompt } from '@/lib/inventory/prompt';
 import type { Inventories } from '@/lib/inventory/types';
 import { economyPrompt } from '@/lib/economy/prompt';
 import type { ShopState } from '@/lib/economy/apply';
+import { combatPrompt } from '@/lib/combat/prompt';
+import type { Encounter } from '@/lib/combat/encounter';
 
 export interface StoredMessage {
   role: 'dm' | 'player' | 'system';
@@ -46,7 +48,7 @@ export function assemblePrompt(
   adventure: Adventure | null = null,
   sceneInstructionText = '',
   settings: CampaignSettings = DEFAULT_SETTINGS,
-  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null }
+  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null }
 ): string {
   const historyText = recentMessages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
@@ -85,10 +87,13 @@ export function assemblePrompt(
           );
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
           const economy = economyPrompt(characterState.characters, characterState.shop ?? null);
+          const combat = combatPrompt(characterState.encounter ?? null);
           return [
             ...(block.length ? [...block, ''] : []),
             ...(inventory.length ? [...inventory, ''] : []),
             ...(economy.length ? [...economy, ''] : []),
+            ...combat,
+            '',
           ];
         })()
       : []),

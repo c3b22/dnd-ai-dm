@@ -86,7 +86,7 @@ export async function processRound(
       context.adventure,
       context.sceneInstructionText,
       settings,
-      { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop }
+      { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop, encounter: context.currentEncounter }
     );
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty

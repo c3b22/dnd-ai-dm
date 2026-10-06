@@ -154,3 +154,18 @@ describe('assemblePrompt economy', () => {
     expect(prompt).toContain('Old Mara');
   });
 });
+
+describe('assemblePrompt combat', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0 };
+  const act = [{ playerDisplayName: 'Prem', actionText: 'Look' }];
+  it('includes the combat tags and the current enemies', () => {
+    const prompt = assemblePrompt('', [], act, null, '', undefined,
+      { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] } });
+    expect(prompt).toContain('[[enemy_hurt:');
+    expect(prompt).toContain('- หมาป่า (normal): 1/2 pips');
+  });
+  it('says no fight is in progress without an encounter', () => {
+    const prompt = assemblePrompt('', [], act, null, '', undefined, { characters: [prem], pendingWipe: false });
+    expect(prompt).toContain('No fight is in progress');
+  });
+});

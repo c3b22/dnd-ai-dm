@@ -732,6 +732,13 @@ describe('processRound encounter', () => {
   const run = (repository: RoundRepository, narration: string) =>
     processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
 
+  it('shows the current enemies in the prompt', async () => {
+    const repository = one({ currentEncounter: { enemies: [wolf] } });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(generateNarration.mock.calls[0][0]).toContain('- หมาป่า (normal): 2/2 pips');
+  });
+
   it('starts an encounter from an enemy tag and strips the tag', async () => {
     const repository = one();
     await run(repository, ['หมาป่าโผล่มา', '[[enemy: หมาป่า | normal]]'].join('\n'));
