@@ -53,3 +53,24 @@ export const XP_TIERS = { small: 10, medium: 25, large: 50 } as const;
 export type XpTier = keyof typeof XP_TIERS;
 /** What a [[milestone]] tag awards. */
 export const MILESTONE_XP = 100;
+
+export const ABILITY_KEYS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const;
+export type AbilityKey = (typeof ABILITY_KEYS)[number];
+export type AbilityScores = Record<AbilityKey, number>;
+export const DEFAULT_ABILITY_SCORE = 10;
+
+/** D&D modifier for an ability score: floor((score - 10) / 2). */
+export function abilityModifier(score: number): number {
+  return Math.floor((score - 10) / 2);
+}
+
+/** Tolerant reader for `players.abilities` (jsonb, column may be missing): anything unusable becomes 10. */
+export function normalizeAbilities(raw: unknown): AbilityScores {
+  const src = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const out = {} as AbilityScores;
+  for (const key of ABILITY_KEYS) {
+    const v = src[key];
+    out[key] = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : DEFAULT_ABILITY_SCORE;
+  }
+  return out;
+}

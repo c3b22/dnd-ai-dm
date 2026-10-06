@@ -1,3 +1,5 @@
+import type { AbilityScores } from './constants';
+
 export type CharacterStatus = 'active' | 'downed';
 
 export interface Character {
@@ -18,4 +20,6 @@ export interface Character {
   classId?: string | null;
   /** Eventful rounds left before the class ability is ready; absent means 0. */
   abilityCooldown?: number;
+  /** Six ability scores; absent means 10 for every score (see normalizeAbilities). */
+  abilities?: AbilityScores;
 }
