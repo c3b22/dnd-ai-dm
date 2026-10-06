@@ -315,3 +315,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .questlog ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-family: var(--f-story); font-size: 14px; }
 .questlog li small { display: block; color: var(--muted); font-family: var(--f-ui); font-size: 12px; }
 .questlog ul.done li { color: var(--muted); text-decoration: line-through; }
+
+.ability-badge { justify-self: start; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.ability-choice { margin-top: 6px; display: grid; gap: 8px; font-size: 13px; }
+.ability-modes { display: flex; gap: 14px; flex-wrap: wrap; }
+.ability-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.ability-opt { display: flex; align-items: center; gap: 6px; }
+.ability-actions { display: flex; gap: 8px; }
+.ability-error { color: var(--danger); font-size: 12px; }

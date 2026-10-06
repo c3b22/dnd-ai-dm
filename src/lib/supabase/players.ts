@@ -1,6 +1,7 @@
 import { supabaseBrowserClient } from './client';
 import { findOwnerId, sortByTurnOrder } from '@/lib/campaign/turnOrder';
-import { effectiveMaxHp } from '@/lib/character/leveling';
+import { abilityChoicesAvailable, effectiveMaxHp, levelForXp, type AbilityChoice } from '@/lib/character/leveling';
+import { normalizeAbilities, type AbilityScores } from '@/lib/character/constants';
 import { fetchCampaignInventories } from './inventory';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 
@@ -18,6 +19,10 @@ export interface RoundPlayer {
   classId?: string | null;
   /** Eventful rounds left before the class ability is ready. */
   abilityCooldown?: number;
+  /** Ability scores; absent when the column is not readable yet. */
+  abilities?: AbilityScores;
+  /** Unspent ability score improvements (level 4 and 8); absent/0 means none. */
+  abilityChoicesLeft?: number;
   items: InventoryItem[];
   status: 'active' | 'downed';
   gold: number;
@@ -27,10 +32,16 @@ export async function fetchRoundPlayers(
   campaignId: string,
   roundId: string | null
 ): Promise<RoundPlayer[]> {
-  const { data: players, error } = await supabaseBrowserClient
-    .from('players')
-    .select('id, display_name, turn_order, created_at, hp, max_hp, status, gold, xp, class_id, ability_cooldown')
-    .eq('campaign_id', campaignId);
+  const baseColumns = 'id, display_name, turn_order, created_at, hp, max_hp, status, gold, xp, class_id, ability_cooldown';
+  const load = (columns: string) =>
+    supabaseBrowserClient.from('players').select(columns).eq('campaign_id', campaignId);
+  // `abilities` / `ability_choices_used` may be missing on a database without the latest migrations.
+  let withAbilities = true;
+  let { data: players, error } = await load(`${baseColumns}, abilities, ability_choices_used`);
+  if (error) {
+    withAbilities = false;
+    ({ data: players, error } = await load(baseColumns));
+  }
   if (error) throw error;
 
   // A database without the inventory table (migration not applied yet) plays with empty packs.
@@ -58,6 +69,10 @@ export async function fetchRoundPlayers(
     abilityCooldown: Number(p.ability_cooldown ?? 0),
     status: p.status as 'active' | 'downed',
     gold: Number(p.gold ?? 0),
+    abilities: withAbilities ? normalizeAbilities(p.abilities) : undefined,
+    abilityChoicesLeft: withAbilities
+      ? abilityChoicesAvailable(levelForXp(Number(p.xp ?? 0)), Number(p.ability_choices_used ?? 0))
+      : 0,
   }));
   const ownerId = findOwnerId(rows);
   return sortByTurnOrder(rows).map((p) => ({
@@ -73,6 +88,8 @@ export async function fetchRoundPlayers(
     items: p.items,
     status: p.status,
     gold: p.gold,
+    abilities: p.abilities,
+    abilityChoicesLeft: p.abilityChoicesLeft,
   }));
 }
 
@@ -105,4 +122,17 @@ export async function saveTurnOrder(
     body: JSON.stringify({ playerId, orderedPlayerIds }),
   });
   if (!response.ok) throw new Error('could not save the turn order');
+}
+
+export async function requestAbilityChoice(campaignId: string, choice: AbilityChoice): Promise<void> {
+  const { data } = await supabaseBrowserClient.auth.getSession();
+  const response = await fetch(`/api/campaigns/${campaignId}/ability-choice`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify({ choice }),
+  });
+  if (!response.ok) throw new Error('could not save the ability choice');
 }

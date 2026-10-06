@@ -8,6 +8,7 @@ import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
 import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import type { AbilityChoice } from '@/lib/character/leveling';
 import { EncounterPanel } from '@/components/EncounterPanel';
 import { Inventory } from '@/components/Inventory';
 import { Shop } from '@/components/Shop';
@@ -26,6 +27,7 @@ import {
 import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
+  requestAbilityChoice,
   saveTurnOrder,
   subscribeToPlayers,
   type RoundPlayer,
@@ -306,6 +308,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  async function handleAbilityChoice(choice: AbilityChoice) {
+    await requestAbilityChoice(campaignId, choice);
+    refreshPlayers();
+  }
+
   async function handleDrink(itemId: string) {
     if (!roundId) return;
     const item = me?.items.find((i) => i.itemId === itemId);
@@ -486,6 +493,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               locked={players.find((p) => p.id === playerId)?.acted ?? false}
               onMove={handleMove}
               onReorder={handleReorder}
+              onAbilityChoice={handleAbilityChoice}
               reorderPolicy={settings.reorderPolicy}
             />
           )}
