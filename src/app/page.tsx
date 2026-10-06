@@ -43,13 +43,21 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Loaded here, not at module scope: this page is statically prerendered at build
-      // time, and creating the Supabase client there would require its keys during `next build`.
-      const { supabaseBrowserClient } = await import('@/lib/supabase/client');
-      // Only reads an existing session: a first-time visitor is not signed in just to see this list.
-      const { data } = await supabaseBrowserClient.auth.getSession();
-      const userId = data.session?.user.id;
-      if (!userId) return;
+      let supabaseBrowserClient: Awaited<typeof import('@/lib/supabase/client')>['supabaseBrowserClient'] | undefined;
+      let userId: string | undefined;
+      let accessToken: string | undefined;
+      try {
+        // Loaded here, not at module scope: this page is statically prerendered at build
+        // time, and creating the Supabase client there would require its keys during `next build`.
+        ({ supabaseBrowserClient } = await import('@/lib/supabase/client'));
+        // Only reads an existing session: a first-time visitor is not signed in just to see this list.
+        const { data } = await supabaseBrowserClient.auth.getSession();
+        userId = data.session?.user.id;
+        accessToken = data.session?.access_token;
+      } catch {
+        // Both lists below are a convenience; failing to even load the session must never break the page.
+      }
+      if (!userId || !supabaseBrowserClient) return;
       try {
         const { fetchMyCampaigns } = await import('@/lib/campaign/myCampaigns');
         const campaigns = await fetchMyCampaigns(supabaseBrowserClient, userId);
@@ -58,9 +66,8 @@ export default function Home() {
         // The list is a convenience; failing to load it must never break creating or joining a game.
       }
       try {
-        const token = data.session?.access_token;
         const response = await fetch('/api/adventures/mine', {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!response.ok) return;
         const body = await response.json();
