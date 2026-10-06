@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
+import { normalizeIdentityFields } from '@/lib/character/identity';
 import { joinCampaign } from '@/lib/campaign/joinCampaign';
 
 export async function POST(
@@ -21,6 +22,7 @@ export async function POST(
     displayName: body.displayName,
     classId: body.classId,
     weaponId: body.weaponId,
+    ...normalizeIdentityFields(body),
   });
   return NextResponse.json(player, { status: 201 });
 }

@@ -116,4 +116,37 @@ describe('joinCampaign', () => {
     expect(inserts[1]).toEqual({ campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior' });
     expect(player.id).toBe('new-player');
   });
+
+  it('stores normalized identity fields and leaves blank ones out', async () => {
+    const { client, inserts } = fakeSupabase({ existing: null });
+    await joinCampaign(client, {
+      campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem',
+      backstory: '  เด็กกำพร้า  ', personality: '   ', goal: 'x'.repeat(600),
+    });
+    expect(inserts[0]).toMatchObject({ backstory: 'เด็กกำพร้า', goal: 'x'.repeat(500) });
+    expect(inserts[0]).not.toHaveProperty('personality');
+  });
+
+  it('retries without identity columns when migration 0020 is not applied', async () => {
+    const inserts: Record<string, unknown>[] = [];
+    const client: any = {
+      from: (table: string) => table === 'inventory_items'
+        ? { insert: () => Promise.resolve({ error: null }) }
+        : {
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
+          insert: (payload: Record<string, unknown>) => {
+            inserts.push(payload);
+            const bad = 'backstory' in payload;
+            return { select: () => ({ single: () => Promise.resolve(bad
+              ? { data: null, error: { message: "Could not find the 'backstory' column of 'players'" } }
+              : { data: { id: 'p1' }, error: null }) }) };
+          },
+        },
+    };
+    const player = await joinCampaign(client, { campaignId: 'c', userId: 'u', displayName: 'P', backstory: 'b', goal: 'g' });
+    expect(player.id).toBe('p1');
+    expect(inserts).toHaveLength(2);
+    expect(inserts[1]).not.toHaveProperty('backstory');
+    expect(inserts[1]).toHaveProperty('abilities');
+  });
 });

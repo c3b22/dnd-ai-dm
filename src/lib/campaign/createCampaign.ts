@@ -3,11 +3,12 @@ import { generateJoinCode } from './joinCode';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { CLASSES, resolveClassId, startingAbilities } from '@/lib/character/classes';
 import { insertPlayer } from './insertPlayer';
+import { identityColumns, type IdentityFields } from '@/lib/character/identity';
 import { seedStartingKit } from '@/lib/inventory/startingKit';
 
 export async function createCampaign(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  params: { name: string; userId: string; displayName: string; adventureId?: string | null; classId?: string; weaponId?: string }
+  params: { name: string; userId: string; displayName: string; adventureId?: string | null; classId?: string; weaponId?: string } & IdentityFields
 ) {
   const { data: campaign, error: campaignError } = await supabase
     .from('campaigns')
@@ -26,6 +27,7 @@ export async function createCampaign(
       display_name: params.displayName,
       weapon_id: weaponId,
       class_id: classId,
+      ...identityColumns(params),
     },
     startingAbilities(classId)
   );

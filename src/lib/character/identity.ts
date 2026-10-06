@@ -26,3 +26,10 @@ export function normalizeIdentityFields(input: unknown): IdentityFields {
   }
   return out;
 }
+
+/** Normalized identity fields as player-row columns: blank fields are dropped, so nothing is sent for them. */
+export function identityColumns(input: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(normalizeIdentityFields(input)).filter(([, v]) => typeof v === 'string' && v)
+  ) as Record<string, string>;
+}
