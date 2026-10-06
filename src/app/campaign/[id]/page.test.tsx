@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, cleanup } from '@testing-library/react';
 
-const { getAdventureById, campaignRow, supabaseBrowserClient } = vi.hoisted(() => {
+const { getAdventureById, campaignRow, supabaseBrowserClient, fetchEncounter, subscribeToEncounter, unsubscribeEncounter } = vi.hoisted(() => {
   const campaignRow: { current: Record<string, unknown> } = { current: {} };
   const supabaseBrowserClient = {
     from: () => ({
@@ -10,7 +10,15 @@ const { getAdventureById, campaignRow, supabaseBrowserClient } = vi.hoisted(() =
       }),
     }),
   };
-  return { getAdventureById: vi.fn(), campaignRow, supabaseBrowserClient };
+  const unsubscribeEncounter = vi.fn();
+  return {
+    getAdventureById: vi.fn(),
+    campaignRow,
+    supabaseBrowserClient,
+    fetchEncounter: vi.fn(() => Promise.resolve(null)),
+    subscribeToEncounter: vi.fn(() => unsubscribeEncounter),
+    unsubscribeEncounter,
+  };
 });
 
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams('playerId=p1') }));
@@ -46,6 +54,7 @@ vi.mock('@/lib/supabase/roundActionsRealtime', () => ({
   subscribeToCurrentShop: () => () => {},
   subscribeToCampaignStarted: () => () => {},
 }));
+vi.mock('@/lib/supabase/encounter', () => ({ fetchEncounter, subscribeToEncounter }));
 vi.mock('@/lib/supabase/startCampaign', () => ({ startCampaignForClient: vi.fn() }));
 vi.mock('@/lib/round/triggerRoundProcessing', () => ({ triggerRoundProcessing: vi.fn() }));
 
@@ -108,5 +117,28 @@ describe('CampaignPage — adventure title', () => {
     getAdventureById.mockRejectedValue(new Error('network'));
     await renderPage();
     expect((await screen.findByTestId('lobby-title')).textContent).toBe('');
+  });
+});
+
+describe('CampaignPage — encounter sync', () => {
+  beforeEach(() => {
+    fetchEncounter.mockReset();
+    fetchEncounter.mockResolvedValue(null);
+    subscribeToEncounter.mockClear();
+    unsubscribeEncounter.mockClear();
+  });
+
+  it('loads the encounter and subscribes to realtime updates for the campaign', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: null, adventure_id: null, current_scene_id: null };
+    await renderPage();
+    expect(fetchEncounter).toHaveBeenCalledWith('c1');
+    expect(subscribeToEncounter).toHaveBeenCalledWith('c1', expect.any(Function));
+  });
+
+  it('unsubscribes when the page unmounts', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: null, adventure_id: null, current_scene_id: null };
+    await renderPage();
+    cleanup();
+    expect(unsubscribeEncounter).toHaveBeenCalled();
   });
 });

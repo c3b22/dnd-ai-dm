@@ -45,6 +45,8 @@ import {
 import { startCampaignForClient } from '@/lib/supabase/startCampaign';
 import { triggerRoundProcessing } from '@/lib/round/triggerRoundProcessing';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
+import { fetchEncounter, subscribeToEncounter } from '@/lib/supabase/encounter';
+import type { Encounter } from '@/lib/combat/encounter';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
@@ -67,6 +69,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   // auto-processing the next one in the render where the new round id arrives.
   const [timeUpRoundId, setTimeUpRoundId] = useState<string | null>(null);
   const [shop, setShop] = useState<ShopState | null>(null);
+  // Synced only; the combat tracker UI reads it later.
+  const [, setEncounter] = useState<Encounter | null>(null);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
@@ -113,6 +117,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       .then(({ data }) => setShop(normalizeShop(data?.current_shop)));
     const unsubscribeShop = subscribeToCurrentShop(campaignId, setShop);
 
+    fetchEncounter(campaignId).then(setEncounter);
+    const unsubscribeEncounter = subscribeToEncounter(campaignId, setEncounter);
+
     fetchCampaignSettings(campaignId).then(setSettings);
     const unsubscribeSettings = subscribeToCampaignSettings(campaignId, setSettings);
 
@@ -127,6 +134,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       unsubscribeRound();
       unsubscribeScene();
       unsubscribeShop();
+      unsubscribeEncounter();
       unsubscribeSettings();
       unsubscribeStarted();
     };
