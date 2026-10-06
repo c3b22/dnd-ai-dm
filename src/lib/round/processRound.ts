@@ -8,7 +8,7 @@ import { applyAbilityActions, eventfulRound, tickCooldowns } from '@/lib/charact
 import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/leveling';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
-import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
+import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { applyEnemyTags } from '@/lib/combat/encounter';
 import { applyAttackOutcomes, applyEnemyAttacks, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
@@ -61,6 +61,7 @@ export async function processRound(
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
   let abilities: ReturnType<typeof applyAbilityActions>;
+  let scrolls: ReturnType<typeof applyScrollActions>;
   try {
     context = await deps.repository.getRoundContext(roundId);
     if (context.tagsApplied) {
@@ -81,10 +82,12 @@ export async function processRound(
     potions = applyPotionActions(context.characters, context.inventories, context.actions, rollSides);
     // Class abilities resolve here too, before narration and unsaved until the end, like potions.
     abilities = applyAbilityActions(potions.characters, context.actions, rollSides);
+    // F5e: scrolls cut pips off the targeted enemy before narration; like potions nothing is saved until the end.
+    scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
     rolled = context.actions.map((action) => {
       const note = action.playerId
-        ? [potions.notes[action.playerId], abilities.notes[action.playerId]].filter(Boolean).join('; ') || undefined
+        ? [potions.notes[action.playerId], scrolls.notes[action.playerId], abilities.notes[action.playerId]].filter(Boolean).join('; ') || undefined
         : undefined;
       const a = { ...action, note };
       if (!diceEnabled) return a;
@@ -102,7 +105,7 @@ export async function processRound(
         context.adventure,
         context.sceneInstructionText,
         settings,
-        { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: potions.inventories, shop: context.currentShop, encounter: context.currentEncounter },
+        { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter },
         context.facts ?? [],
         { planChecks }
       );
@@ -122,7 +125,7 @@ export async function processRound(
         const damageByName = new Map(rolled.map((a) => [a.playerDisplayName.toLowerCase(), a.damage]));
         attackOutcomes =
           first.kind === 'checks'
-            ? runAttacks(first.attacks, abilities.characters, context.currentEncounter ?? null, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
+            ? runAttacks(first.attacks, abilities.characters, scrolls.encounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
             : [];
         const attackers = new Set(attackOutcomes.map((o) => o.playerDisplayName.toLowerCase()));
         const outcomes =
@@ -202,7 +205,7 @@ export async function processRound(
       const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
       const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags);
       const result = applyCharacterTags(enemyAttacks.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
-      const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
+      const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags);
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
@@ -215,7 +218,7 @@ export async function processRound(
         abilities.used
       );
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
-      const changedIds = [...new Set([...potions.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
+      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
       if (changedIds.length > 0) {
         try {
@@ -253,7 +256,7 @@ export async function processRound(
       // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
       // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
       const before = context.currentEncounter ?? null;
-      const after = applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : before, attackOutcomes), tags);
+      const after = applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : scrolls.encounter, attackOutcomes), tags);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         try {
           await deps.repository.setEncounter(context.campaignId, after);
@@ -272,6 +275,7 @@ export async function processRound(
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
         ...potions.changes,
+        ...scrolls.changes,
         ...abilities.changes,
         ...enemyAttacks.changes,
         ...result.changes,

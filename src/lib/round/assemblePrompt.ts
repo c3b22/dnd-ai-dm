@@ -39,6 +39,8 @@ export interface RoundAction {
   playerId?: string;
   /** Catalog id of a consumable the player drinks this round. */
   useItemId?: string | null;
+  /** Name of the enemy a scroll (useItemId) is aimed at (F5e). */
+  itemTarget?: string | null;
   /** True when the player triggers their class ability this round, with an optional ally target. */
   useAbility?: boolean;
   abilityTargetId?: string | null;

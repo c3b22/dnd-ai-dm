@@ -16,7 +16,8 @@ export type CatalogEntry =
   | { kind: 'weapon'; nameTh: string; weight: number }
   | { kind: 'armor'; nameTh: string; weight: number; reduction: number }
   | { kind: 'accessory'; nameTh: string; weight: number; skill: SkillId; skillBonus: number }
-  | { kind: 'consumable'; nameTh: string; weight: number; heal: DiceSpec };
+  | { kind: 'consumable'; nameTh: string; weight: number; heal: DiceSpec }
+  | { kind: 'scroll'; nameTh: string; weight: number; pipReduction: number };
 
 // Weapon dice live in character/constants WEAPONS (single source of truth); ids match its keys.
 const BASE_CATALOG = {
@@ -31,7 +32,7 @@ const BASE_CATALOG = {
   potion_major: { kind: 'consumable', nameTh: 'ยาฟื้นฟูใหญ่', weight: 1, heal: { count: 2, sides: 6, bonus: 0 } },
 } as const satisfies Record<string, CatalogEntry>;
 
-/** Magic weapons / armor / healing potions generated from magicItems.ts (F5c). Accessories included (F5d). Scrolls, charms come later. */
+/** Magic weapons / armor / healing potions generated from magicItems.ts (F5c). Accessories (F5d) and scrolls (F5e) included. Charms come later. */
 const MAGIC_CATALOG: Record<string, CatalogEntry> = Object.fromEntries(
   MAGIC_ITEMS.flatMap((item): [string, CatalogEntry][] => {
     const m = item.mechanic;
@@ -39,6 +40,7 @@ const MAGIC_CATALOG: Record<string, CatalogEntry> = Object.fromEntries(
     if (m.kind === 'armor') return [[item.id, { kind: 'armor', nameTh: item.nameTh, weight: item.weight, reduction: m.reduction }]];
     if (m.kind === 'accessory') return [[item.id, { kind: 'accessory', nameTh: item.nameTh, weight: item.weight, skill: m.skill, skillBonus: m.skillBonus }]];
     if (m.kind === 'consumable') return [[item.id, { kind: 'consumable', nameTh: item.nameTh, weight: item.weight, heal: m.heal }]];
+    if (m.kind === 'scroll') return [[item.id, { kind: 'scroll', nameTh: item.nameTh, weight: item.weight, pipReduction: m.pipReduction }]];
     return [];
   })
 );
@@ -51,5 +53,5 @@ export function catalogEntry(id: string): CatalogEntry | null {
 }
 
 export function slotOf(entry: CatalogEntry): Slot | null {
-  return entry.kind === 'consumable' ? null : entry.kind;
+  return entry.kind === 'consumable' || entry.kind === 'scroll' ? null : entry.kind;
 }

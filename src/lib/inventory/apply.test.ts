@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyInventoryTags, applyPotionActions } from './apply';
+import { applyInventoryTags, applyPotionActions, applyScrollActions } from './apply';
+import type { Encounter } from '@/lib/combat/encounter';
 import type { Character } from '@/lib/character/types';
 import type { InventoryItem, Inventories } from './types';
 
@@ -91,5 +92,63 @@ describe('applyPotionActions', () => {
     const input = [person('p1', 'Prem')];
     applyPotionActions(input, { p1: [potion()] }, [{ playerId: 'p1', useItemId: 'potion_minor' }], four);
     expect(input[0].hp).toBe(10);
+  });
+});
+
+describe('applyScrollActions (F5e)', () => {
+  const scroll = (itemId = 'scroll_spark', quantity = 1): InventoryItem => ({ itemId, customName: '', quantity, slot: null, equipped: false });
+  const enemy = (name: string, tier: 'minion' | 'normal' | 'strong' | 'boss', pip: number, max: number) => ({ name, tier, pip, maxPip: max, fled: false });
+  const fight = () => ({ enemies: [enemy('หมาป่า', 'strong', 3, 3), enemy('เจ้าป่า', 'boss', 5, 5)] });
+  const use = (over = {}) => ({ playerId: 'p1', useItemId: 'scroll_spark', itemTarget: 'หมาป่า', ...over });
+
+  it('removes the scroll pips from the target, consumes the scroll and logs it', () => {
+    const r = applyScrollActions(party, { p1: [scroll('scroll_flame')] }, fight(), [use({ useItemId: 'scroll_flame' })]);
+    expect(r.encounter!.enemies[0].pip).toBe(1);
+    expect(r.inventories.p1).toEqual([]);
+    expect(r.changes).toEqual(['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
+    expect(r.notes.p1).toContain('หมาป่า');
+    expect(r.changedPlayerIds).toEqual(['p1']);
+  });
+
+  it('hits a boss through the shared damage rule, and decrements stacked scrolls', () => {
+    const r = applyScrollActions(party, { p1: [scroll('scroll_starfall', 2)] }, fight(), [use({ useItemId: 'scroll_starfall', itemTarget: 'เจ้าป่า' })]);
+    expect(r.encounter!.enemies[1].pip).toBe(2); // 5 - 3
+    const stronger = applyScrollActions(party, { p1: [scroll('scroll_starfall')] }, { enemies: [enemy('เจ้าป่า', 'boss', 5, 5)] }, [use({ useItemId: 'scroll_starfall', itemTarget: 'เจ้าป่า' })]);
+    expect(stronger.encounter!.enemies[0].pip).toBe(2);
+    expect(r.inventories.p1[0].quantity).toBe(1);
+  });
+
+  it('does not use the scroll without a fight, with a bad target, a fled/downed target, or an unowned scroll', () => {
+    const inv = { p1: [scroll()] };
+    const cases: [Encounter | null, object][] = [
+      [null, {}],
+      [fight(), { itemTarget: 'มังกร' }],
+      [fight(), { itemTarget: null }],
+      [{ enemies: [{ ...enemy('หมาป่า', 'strong', 3, 3), fled: true }, enemy('x', 'minion', 1, 1)] }, {}],
+      [{ enemies: [enemy('หมาป่า', 'strong', 0, 3), enemy('x', 'minion', 1, 1)] }, {}],
+      [fight(), { playerId: 'p9' }],
+    ];
+    for (const [enc, over] of cases) {
+      const r = applyScrollActions(party, inv, enc, [use(over)]);
+      expect(r.inventories).toBe(inv);
+      expect(r.encounter).toBe(enc);
+      expect(r.changes).toEqual([]);
+    }
+    const none = applyScrollActions(party, { p1: [] }, fight(), [use()]);
+    expect(none.changes).toEqual([]);
+  });
+
+  it('ignores a downed user, potions and does not mutate the input', () => {
+    const downed = [person('p1', 'Prem', { status: 'downed' })];
+    expect(applyScrollActions(downed, { p1: [scroll()] }, fight(), [use()]).changes).toEqual([]);
+    expect(applyScrollActions(party, { p1: [potion()] }, fight(), [use({ useItemId: 'potion_minor' })]).changes).toEqual([]);
+    const enc = fight();
+    applyScrollActions(party, { p1: [scroll()] }, enc, [use()]);
+    expect(enc.enemies[0].pip).toBe(3);
+  });
+
+  it('applyPotionActions leaves a scroll alone', () => {
+    const r = applyPotionActions(party, { p1: [scroll()] }, [{ playerId: 'p1', useItemId: 'scroll_spark' }], four);
+    expect(r.changes).toEqual([]);
   });
 });

@@ -56,3 +56,21 @@ describe('accessories wired into catalog / prices (F5d)', () => {
     }
   });
 });
+
+describe('scrolls wired into catalog / prices (F5e)', () => {
+  const scrolls = MAGIC_ITEMS.filter((i) => i.mechanic.kind === 'scroll');
+  it('every scroll is in CATALOG with its pip reduction, has no slot, and is priced', () => {
+    expect(scrolls.length).toBeGreaterThan(0);
+    for (const item of scrolls) {
+      const entry = catalogEntry(item.id);
+      expect(entry, item.id).toMatchObject({ kind: 'scroll', weight: item.weight });
+      if (item.mechanic.kind === 'scroll') expect(entry).toMatchObject({ pipReduction: item.mechanic.pipReduction });
+      expect(slotOf(entry!)).toBeNull();
+      expect(buyPrice(item.id), item.id).toBe(item.price);
+    }
+  });
+  it('legendary scrolls are not sold in shops', () => {
+    const legendary = scrolls.find((i) => i.rarity === 'legendary')!;
+    expect(normalizeShop({ name: 'ร้าน', itemIds: [legendary.id] })).toBeNull();
+  });
+});

@@ -175,6 +175,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .eq('round_id', roundId);
       if (actionsError) throw actionsError;
 
+      // Scroll targets (F5e) in their own query: round_actions.item_target may not exist yet, and that
+      // must not hide the actions above. Unreadable means scrolls simply have no target (not used).
+      const { data: targetRows } = await supabase.from('round_actions').select('player_id, item_target').eq('round_id', roundId);
+      const itemTargetByPlayer = new Map<string, string>(
+        (targetRows ?? []).filter((r: any) => r.item_target).map((r: any) => [r.player_id as string, r.item_target as string])
+      );
+
       const { data: summaryRow } = await supabase
         .from('campaign_summary')
         .select('summary, covers_up_to_round')
@@ -247,12 +254,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
             actionText: row.action_text as string,
             playerId: row.player_id as string,
             useItemId: (row.use_item_id ?? null) as string | null,
+            itemTarget: itemTargetByPlayer.get(row.player_id as string) ?? null,
             useAbility: Boolean(row.use_ability),
             abilityTargetId: (row.ability_target_id ?? null) as string | null,
             turnOrder: (row.players?.turn_order ?? null) as number | null,
             joinedAt: (row.players?.created_at ?? '') as string,
           }))
-        ).map(({ playerDisplayName, actionText, playerId, useItemId, useAbility, abilityTargetId }) => ({ playerDisplayName, actionText, playerId, useItemId, useAbility, abilityTargetId })),
+        ).map(({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId }) => ({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId })),
       };
     },
 

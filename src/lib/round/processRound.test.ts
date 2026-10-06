@@ -972,3 +972,36 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
     expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 17 })], false);
   });
 });
+
+describe('processRound scrolls (F5e)', () => {
+  const scrollItem = { itemId: 'scroll_flame', customName: '', quantity: 1, slot: null, equipped: false };
+  const wolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 3, maxPip: 3, fled: false };
+  const scrollContext = (over: object = {}) =>
+    contextWith({
+      inventories: { p1: [scrollItem] },
+      currentEncounter: { enemies: [wolf] },
+      actions: [{ playerDisplayName: 'Prem', actionText: 'อ่านม้วน', playerId: 'p1', useItemId: 'scroll_flame', itemTarget: 'หมาป่า' }],
+      ...over,
+    });
+
+  it('cuts pips off the target before narration, consumes the scroll and saves the encounter', async () => {
+    const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(scrollContext()) });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['เล่าเรื่อง']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollDie: () => 7, rollSides: () => 4 }, 'round-1');
+
+    const prompt = generateNarration.mock.calls[0][0] as string;
+    expect(prompt).toContain('read ม้วนคัมภีร์เปลวไฟ at หมาป่า');
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [], baseItems: [scrollItem] }]);
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
+  });
+
+  it('keeps the scroll when there is no fight or the target is wrong', async () => {
+    for (const over of [{ currentEncounter: null }, { actions: [{ playerDisplayName: 'Prem', actionText: 'x', playerId: 'p1', useItemId: 'scroll_flame', itemTarget: 'มังกร' }] }]) {
+      const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(scrollContext(over)) });
+      await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['ok'])), rollDie: () => 7, rollSides: () => 4 }, 'round-1');
+      expect(repository.saveInventories).not.toHaveBeenCalled();
+      expect(repository.setEncounter).not.toHaveBeenCalled();
+    }
+  });
+});

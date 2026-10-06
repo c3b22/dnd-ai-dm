@@ -575,7 +575,7 @@ describe('createSupabaseRoundRepository inventory', () => {
       actionRows: [{ action_text: 'ดื่มยา', use_item_id: 'potion_minor', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
     });
     const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
-    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor', useAbility: false, abilityTargetId: null }]);
+    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor', itemTarget: null, useAbility: false, abilityTargetId: null }]);
   });
 });
 
@@ -738,5 +738,17 @@ describe('createSupabaseRoundRepository encounter', () => {
 
     const broken = createFakeSupabase({ ...base, factsError: true });
     expect((await createSupabaseRoundRepository(broken.client).getRoundContext('r1')).facts).toEqual([]);
+  });
+});
+
+describe('scroll target (F5e)', () => {
+  it('reads the enemy a scroll is aimed at into the action', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'ใช้ม้วน', use_item_id: 'scroll_spark', item_target: 'หมาป่า', use_ability: false, ability_target_id: null, player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.actions[0]).toMatchObject({ playerId: 'p1', useItemId: 'scroll_spark', itemTarget: 'หมาป่า' });
   });
 });

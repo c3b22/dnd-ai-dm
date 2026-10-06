@@ -121,6 +121,17 @@ export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<Ski
   return bonuses;
 }
 
+/** Spends one scroll (F5e); null when it is not a scroll or the player does not have it. */
+export function useScroll(
+  items: InventoryItem[],
+  itemId: string
+): { items: InventoryItem[]; pipReduction: number; label: string } | null {
+  const entry = catalogEntry(itemId);
+  if (!entry || entry.kind !== 'scroll') return null;
+  const taken = takeItem(items, itemId);
+  return taken.taken ? { items: taken.items, pipReduction: entry.pipReduction, label: entry.nameTh } : null;
+}
+
 export function useConsumable(
   items: InventoryItem[],
   itemId: string
