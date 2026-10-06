@@ -12,6 +12,7 @@ import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 import { normalizeAbilities } from '@/lib/character/constants';
+import { STORY_MESSAGE_ROLES } from '@/lib/messages/roles';
 import type { Adventure } from '@/lib/adventures/adventures';
 import { getAdventureById } from '@/lib/adventures/adventures';
 import { allowedSceneIdsAsync, sceneInstructionAsync } from '@/lib/scenes/scenes';
@@ -166,7 +167,9 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       let messagesQuery = supabase
         .from('messages')
         .select('role, content')
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        // Filter before the limit so ooc/ask rows never fill or reach the AI history window.
+        .in('role', [...STORY_MESSAGE_ROLES]);
       if (sinceTimestamp) {
         messagesQuery = messagesQuery.gt('created_at', sinceTimestamp);
       }

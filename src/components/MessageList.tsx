@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { MessageRole } from '@/lib/messages/roles';
 import { D20Icon } from './D20Icon';
 import { DiceRollOverlay, type DiceRollOverlayProps } from './DiceRollOverlay';
 
 export interface Message {
   id: string;
-  role: 'dm' | 'player' | 'system';
+  role: MessageRole;
+  player_id?: string | null;
   content: string;
 }
 
@@ -76,6 +78,9 @@ const ROLE_CLASS: Record<Message['role'], string> = {
   dm: 'msg dm',
   player: 'msg pl',
   system: 'msg system',
+  ooc: 'msg ooc',
+  ask: 'msg ask',
+  ask_answer: 'msg ask-answer',
 };
 
 export function MessageList({

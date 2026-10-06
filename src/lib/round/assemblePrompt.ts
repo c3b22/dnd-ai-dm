@@ -16,9 +16,10 @@ import { economyPrompt } from '@/lib/economy/prompt';
 import type { ShopState } from '@/lib/economy/apply';
 import { combatPrompt } from '@/lib/combat/prompt';
 import type { Encounter } from '@/lib/combat/encounter';
+import { isStoryRole, type MessageRole } from '@/lib/messages/roles';
 
 export interface StoredMessage {
-  role: 'dm' | 'player' | 'system';
+  role: MessageRole;
   content: string;
 }
 
@@ -50,7 +51,9 @@ export function assemblePrompt(
   settings: CampaignSettings = DEFAULT_SETTINGS,
   characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null }
 ): string {
+  // Defensive: ooc/ask/ask_answer must never reach the AI prompt (also filtered at the query).
   const historyText = recentMessages
+    .filter((m) => isStoryRole(m.role))
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n');
 

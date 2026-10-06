@@ -1,3 +1,6 @@
+// E1 audit (docs/audit-chat-history-e1.md): ooc (team chat), ask and ask_answer (player <-> DM Q&A)
+// messages must NEVER reach the AI prompt. The query in roundRepository filters them before the
+// 40-row limit; assemblePrompt filters again defensively (tested below).
 import { describe, it, expect } from 'vitest';
 import { assemblePrompt, shouldRotateSummary, StoredMessage } from './assemblePrompt';
 import { getAdventure } from '@/lib/adventures/adventures';
@@ -21,6 +24,27 @@ describe('assemblePrompt', () => {
       { playerDisplayName: 'Prem', actionText: 'Look around' },
     ]);
     expect(prompt).toContain('(campaign just started)');
+  });
+});
+
+describe('assemblePrompt role filtering', () => {
+  it('never includes ooc, ask or ask_answer messages in the prompt', () => {
+    const prompt = assemblePrompt(
+      '',
+      [
+        { role: 'dm', content: 'The door creaks open.' },
+        { role: 'ooc', content: 'SECRET-OOC-CHAT' },
+        { role: 'ask', content: 'SECRET-ASK-QUESTION' },
+        { role: 'ask_answer', content: 'SECRET-ASK-ANSWER' },
+        { role: 'player', content: 'I step inside.' },
+      ],
+      [{ playerDisplayName: 'Prem', actionText: 'Look around' }]
+    );
+    expect(prompt).toContain('The door creaks open.');
+    expect(prompt).toContain('I step inside.');
+    expect(prompt).not.toContain('SECRET-OOC-CHAT');
+    expect(prompt).not.toContain('SECRET-ASK-QUESTION');
+    expect(prompt).not.toContain('SECRET-ASK-ANSWER');
   });
 });
 

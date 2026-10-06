@@ -17,6 +17,7 @@ function createFakeSupabase(options: {
   actionRows?: unknown[];
   currentShop?: unknown;
   currentEncounter?: unknown;
+  messageRows?: { role: string; content: string }[];
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
 
@@ -99,6 +100,10 @@ function createFakeSupabase(options: {
             messagesCalls.push({ method: 'eq', args });
             return builder;
           },
+          in: (...args: unknown[]) => {
+            messagesCalls.push({ method: 'in', args });
+            return builder;
+          },
           gt: (...args: unknown[]) => {
             messagesCalls.push({ method: 'gt', args });
             return builder;
@@ -109,7 +114,14 @@ function createFakeSupabase(options: {
           },
           limit: (...args: unknown[]) => {
             messagesCalls.push({ method: 'limit', args });
-            return Promise.resolve({ data: [], error: null });
+            const inCall = messagesCalls.find((c) => c.method === 'in');
+            const allowed = inCall ? (inCall.args[1] as string[]) : null;
+            // Rows are stored oldest-first; the query orders newest-first, filters, then limits.
+            const rows = [...(options.messageRows ?? [])]
+              .reverse()
+              .filter((r) => (allowed ? allowed.includes(r.role) : true))
+              .slice(0, args[0] as number);
+            return Promise.resolve({ data: rows, error: null });
           },
         };
         return builder;
@@ -152,6 +164,34 @@ describe('createSupabaseRoundRepository.getRoundContext', () => {
 
     const gtCall = messagesCalls.find((c) => c.method === 'gt');
     expect(gtCall).toBeUndefined();
+  });
+});
+
+describe('createSupabaseRoundRepository.getRoundContext message roles', () => {
+  it('filters to story roles at the query, before the 40-row limit', async () => {
+    const story = Array.from({ length: 40 }, (_, i) => ({ role: 'dm', content: `story ${i}` }));
+    const chatter = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 3 === 0 ? 'ooc' : i % 3 === 1 ? 'ask' : 'ask_answer',
+      content: `side ${i}`,
+    }));
+    const { client, messagesCalls } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      // 40 story rows first, then 30 newer side-channel rows: without filtering
+      // before the limit the whole window would be side chat.
+      messageRows: [...story, ...chatter],
+    });
+
+    const repository = createSupabaseRoundRepository(client);
+    const ctx = await repository.getRoundContext('round-1');
+
+    const inCall = messagesCalls.find((c) => c.method === 'in');
+    expect(inCall!.args).toEqual(['role', ['dm', 'player', 'system']]);
+    const methods = messagesCalls.map((c) => c.method);
+    expect(methods.indexOf('in')).toBeLessThan(methods.indexOf('limit'));
+    expect(ctx.recentMessages).toHaveLength(40);
+    expect(ctx.recentMessages.every((m) => ['dm', 'player', 'system'].includes(m.role))).toBe(true);
+    expect(ctx.recentMessages.some((m) => m.content.startsWith('side'))).toBe(false);
   });
 });
 
