@@ -199,6 +199,51 @@ describe('createSupabaseRoundRepository.insertRollSummary', () => {
   });
 });
 
+describe('createSupabaseRoundRepository classes', () => {
+  it('loads class and ability cooldown, defaulting to classless and 0 for old rows', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, class_id: 'cleric', ability_cooldown: 2 },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 },
+      ],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.characters.map((c) => [c.classId, c.abilityCooldown])).toEqual([['cleric', 2], [null, 0]]);
+  });
+
+  it('loads the ability flag and target of an action', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'ใช้ยืนบัง', use_item_id: null, use_ability: true, ability_target_id: 'p2', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.actions[0]).toMatchObject({ playerId: 'p1', useAbility: true, abilityTargetId: 'p2' });
+  });
+
+  it('saves the ability cooldown with each character', async () => {
+    const rpcCalls: any[] = [];
+    const client: any = {
+      rpc: (name: string, args: unknown) => {
+        rpcCalls.push([name, args]);
+        return Promise.resolve({ error: null });
+      },
+      from: () => ({ update: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
+    };
+    await createSupabaseRoundRepository(client).saveCharacterState(
+      'camp-1',
+      [
+        { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, abilityCooldown: 2 },
+        { id: 'p2', displayName: 'Nok', weaponId: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0 },
+      ],
+      false
+    );
+    expect(rpcCalls[0][1].changes.map((c: any) => c.abilityCooldown)).toEqual([2, 0]);
+  });
+});
+
 describe('createSupabaseRoundRepository levels', () => {
   it('loads effective max HP (base plus level bonus) and xp', async () => {
     const { client } = createFakeSupabase({
@@ -248,7 +293,7 @@ describe('createSupabaseRoundRepository character state', () => {
     expect(context.pendingWipe).toBe(true);
     expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0 },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0 },
     ]);
   });
 
@@ -314,15 +359,15 @@ describe('createSupabaseRoundRepository character state', () => {
     await createSupabaseRoundRepository(client).saveCharacterState(
       'camp-1',
       [
-        { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1, xp: 0 },
+        { id: 'p1', displayName: 'Prem', weaponId: 'staff', hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1, xp: 0, abilityCooldown: 0 },
         { id: 'p2', displayName: 'Nok', weaponId: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0 },
       ],
       true
     );
 
     expect(rpcCalls).toEqual([['apply_changes', { changes: [
-      { playerId: 'p1', goldDelta: 0, items: null, hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1, xp: 0 },
-      { playerId: 'p2', goldDelta: 0, items: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, xp: 0 },
+      { playerId: 'p1', goldDelta: 0, items: null, hp: 5, maxHp: 18, status: 'active', revivesSinceSanctuary: 1, xp: 0, abilityCooldown: 0 },
+      { playerId: 'p2', goldDelta: 0, items: null, hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, xp: 0, abilityCooldown: 0 },
     ] }]]);
     expect(updates).toEqual([{ table: 'campaigns', payload: { pending_wipe: true }, id: 'camp-1' }]);
   });
@@ -433,7 +478,7 @@ describe('createSupabaseRoundRepository inventory', () => {
       actionRows: [{ action_text: 'ดื่มยา', use_item_id: 'potion_minor', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
     });
     const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
-    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor' }]);
+    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor', useAbility: false, abilityTargetId: null }]);
   });
 });
 

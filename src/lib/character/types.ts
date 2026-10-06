@@ -14,4 +14,8 @@ export interface Character {
   gold?: number;
   /** Experience points; absent means 0. Level is always derived from this. */
   xp?: number;
+  /** Class id (see classes.ts); null or absent means classless. */
+  classId?: string | null;
+  /** Eventful rounds left before the class ability is ready; absent means 0. */
+  abilityCooldown?: number;
 }

@@ -92,7 +92,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // Separate queries so a database without the character columns still plays.
       const { data: characterRows } = await supabase
         .from('players')
-        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold, xp')
+        .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold, xp, class_id, ability_cooldown')
         .eq('campaign_id', campaignId);
 
       // Must not be tolerated like the columns above: an unreadable inventory read as "empty"
@@ -112,7 +112,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
-        .select('action_text, use_item_id, player_id, players(display_name, turn_order, created_at)')
+        .select('action_text, use_item_id, use_ability, ability_target_id, player_id, players(display_name, turn_order, created_at)')
         .eq('round_id', roundId);
       if (actionsError) throw actionsError;
 
@@ -162,6 +162,8 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           revivesSinceSanctuary: row.revives_since_sanctuary as number,
           gold: Number(row.gold ?? 0),
           xp: Number(row.xp ?? 0),
+          classId: (row.class_id ?? null) as string | null,
+          abilityCooldown: Number(row.ability_cooldown ?? 0),
         })),
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
@@ -174,10 +176,12 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
             actionText: row.action_text as string,
             playerId: row.player_id as string,
             useItemId: (row.use_item_id ?? null) as string | null,
+            useAbility: Boolean(row.use_ability),
+            abilityTargetId: (row.ability_target_id ?? null) as string | null,
             turnOrder: (row.players?.turn_order ?? null) as number | null,
             joinedAt: (row.players?.created_at ?? '') as string,
           }))
-        ).map(({ playerDisplayName, actionText, playerId, useItemId }) => ({ playerDisplayName, actionText, playerId, useItemId })),
+        ).map(({ playerDisplayName, actionText, playerId, useItemId, useAbility, abilityTargetId }) => ({ playerDisplayName, actionText, playerId, useItemId, useAbility, abilityTargetId })),
       };
     },
 
@@ -230,6 +234,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
             hp: c.hp,
             maxHp: baseMaxHp(c.maxHp, c.xp ?? 0),
             xp: c.xp ?? 0,
+            abilityCooldown: c.abilityCooldown ?? 0,
             status: c.status,
             revivesSinceSanctuary: c.revivesSinceSanctuary,
           })),
