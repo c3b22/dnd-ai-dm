@@ -6,8 +6,8 @@ import { ADVENTURES } from '@/lib/adventures/adventures';
 import { openingSceneId } from '@/lib/scenes/scenes';
 import { D20Icon } from '@/components/D20Icon';
 import { MyCampaigns } from '@/components/MyCampaigns';
-import { WeaponPicker } from '@/components/WeaponPicker';
-import { DEFAULT_WEAPON_ID } from '@/lib/character/constants';
+import { ClassPicker } from '@/components/ClassPicker';
+import { DEFAULT_CLASS_ID } from '@/lib/character/classes';
 import type { MyCampaignSummary } from '@/lib/campaign/myCampaigns';
 
 function sceneUrl(adventureId: string) {
@@ -20,7 +20,7 @@ export default function Home() {
   const [adventureId, setAdventureId] = useState(ADVENTURES[0].id);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [weaponId, setWeaponId] = useState<string>(DEFAULT_WEAPON_ID);
+  const [classId, setClassId] = useState<string>(DEFAULT_CLASS_ID);
   const [joinCode, setJoinCode] = useState('');
   const [joiningByCode, setJoiningByCode] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -92,7 +92,7 @@ export default function Home() {
       const response = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, userId: user.id, displayName, adventureId, weaponId }),
+        body: JSON.stringify({ name, userId: user.id, displayName, adventureId, classId }),
       });
       if (!response.ok) {
         setError('สร้างแคมเปญไม่สำเร็จ ลองอีกครั้ง');
@@ -208,7 +208,7 @@ export default function Home() {
               onChange={(e) => setDisplayName(e.target.value)}
             />
           </div>
-          <WeaponPicker value={weaponId} onChange={setWeaponId} />
+          <ClassPicker value={classId} onChange={setClassId} />
           <button className="btn" type="submit" disabled={!name.trim() || !displayName.trim() || creating}>
             {creating ? 'กำลังสร้าง…' : 'เริ่มผจญภัย'}
           </button>

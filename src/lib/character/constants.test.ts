@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { weaponFor, isStartingWeapon, diceLabel, TIERS, DEFAULT_WEAPON_ID } from './constants';
+import { weaponFor, diceLabel, TIERS } from './constants';
 
 describe('weaponFor', () => {
   it('returns the named weapon', () => {
@@ -10,19 +10,6 @@ describe('weaponFor', () => {
     expect(weaponFor(null).id).toBe('fists');
     expect(weaponFor('lightsaber').id).toBe('fists');
     expect(weaponFor('constructor').id).toBe('fists');
-  });
-});
-
-describe('isStartingWeapon', () => {
-  it('accepts only the three starting weapons', () => {
-    expect(isStartingWeapon('shortsword')).toBe(true);
-    expect(isStartingWeapon('staff')).toBe(true);
-    expect(isStartingWeapon('fists')).toBe(false);
-    expect(isStartingWeapon(undefined)).toBe(false);
-  });
-
-  it('has a default that is itself a starting weapon', () => {
-    expect(isStartingWeapon(DEFAULT_WEAPON_ID)).toBe(true);
   });
 });
 

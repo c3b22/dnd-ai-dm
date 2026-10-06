@@ -31,15 +31,8 @@ export const WEAPONS = {
 } as const satisfies Record<string, { nameTh: string; dice: DiceSpec }>;
 export type WeaponId = keyof typeof WEAPONS;
 
-export const STARTING_WEAPON_IDS = ['shortsword', 'shortbow', 'staff'] as const;
-export const DEFAULT_WEAPON_ID: (typeof STARTING_WEAPON_IDS)[number] = 'shortsword';
-
 function isWeaponId(id: unknown): id is WeaponId {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(WEAPONS, id);
-}
-
-export function isStartingWeapon(id: unknown): id is (typeof STARTING_WEAPON_IDS)[number] {
-  return typeof id === 'string' && (STARTING_WEAPON_IDS as readonly string[]).includes(id);
 }
 
 export function weaponFor(id: string | null | undefined): { id: WeaponId; nameTh: string; dice: DiceSpec } {
