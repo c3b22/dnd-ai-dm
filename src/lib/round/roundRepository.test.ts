@@ -50,6 +50,15 @@ function createFakeSupabase(options: {
           }),
         };
       }
+      if (table === 'custom_adventures') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+            }),
+          }),
+        };
+      }
       if (table === 'round_actions') {
         return {
           select: () => ({

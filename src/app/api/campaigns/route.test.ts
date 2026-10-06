@@ -1,5 +1,46 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
 import { createCampaign } from '@/lib/campaign/createCampaign';
+
+const { getAdventureById } = vi.hoisted(() => ({
+  getAdventureById: vi.fn(),
+}));
+
+vi.mock('@/lib/supabase/server', () => {
+  const createFakeSupabase = (responses: Record<string, any>) => {
+    const from = (table: string) => {
+      const builder: any = {
+        insert: (payload: unknown) => {
+          builder._lastPayload = payload;
+          return builder;
+        },
+        update: () => {
+          return builder;
+        },
+        eq: () => builder,
+        select: () => builder,
+        single: () => Promise.resolve({ data: responses[table], error: null }),
+        maybeSingle: () => Promise.resolve({ data: responses[table] ?? null, error: null }),
+      };
+      return builder;
+    };
+    return { from };
+  };
+  return {
+    createServiceRoleClient: () => createFakeSupabase({
+      campaigns: { id: 'camp-1', name: 'Test' },
+      players: { id: 'player-1', campaign_id: 'camp-1' },
+      rounds: { id: 'round-1', campaign_id: 'camp-1', status: 'pending' },
+    }),
+  };
+});
+
+vi.mock('@/lib/adventures/adventures', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/adventures/adventures')>()),
+  getAdventureById,
+}));
+
+import { POST } from './route';
 
 function createFakeSupabase(responses: Record<string, any>) {
   const calls: { table: string; action: string; payload?: unknown }[] = [];
@@ -123,5 +164,33 @@ describe('createCampaign', () => {
         displayName: 'Prem',
       })
     ).rejects.toThrow(updateError);
+  });
+});
+
+describe('POST /api/campaigns', () => {
+  beforeEach(() => {
+    getAdventureById.mockReset();
+  });
+
+  it('rejects an adventureId that matches neither a built-in nor a custom row', async () => {
+    getAdventureById.mockResolvedValue(null);
+    const response = await POST(
+      new NextRequest('http://localhost/api/campaigns', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'T', userId: 'u1', displayName: 'Prem', adventureId: 'nope' }),
+      })
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it('accepts a real custom adventure id', async () => {
+    getAdventureById.mockResolvedValue({ id: 'custom-1', title: 'Custom Adventure' });
+    const response = await POST(
+      new NextRequest('http://localhost/api/campaigns', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'T', userId: 'u1', displayName: 'Prem', adventureId: 'custom-1' }),
+      })
+    );
+    expect(response.status).toBe(201);
   });
 });

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { assemblePrompt, shouldRotateSummary, StoredMessage } from './assemblePrompt';
+import { getAdventure } from '@/lib/adventures/adventures';
+import { sceneInstruction } from '@/lib/scenes/scenes';
 
 describe('assemblePrompt', () => {
   it('includes the campaign summary, recent messages, and this round actions', () => {
@@ -34,13 +36,14 @@ describe('shouldRotateSummary', () => {
   });
 
   it('includes the chosen adventure outline as the story backbone', () => {
-    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], 'sunken-bell-of-marrowmere');
+    const adventure = getAdventure('sunken-bell-of-marrowmere')!;
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], adventure, sceneInstruction(adventure.id, null));
     expect(prompt).toContain('The Sunken Bell of Marrowmere');
     expect(prompt).toContain('Hidden truth');
   });
 
   it('omits adventure text when none is set', () => {
-    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }]);
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], null, '');
     expect(prompt).not.toContain('Adventure:');
   });
 });
@@ -88,7 +91,8 @@ describe('assemblePrompt with characters', () => {
   ];
 
   it('includes the party status block when characters are given', () => {
-    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Attack' }], 'sunken-bell-of-marrowmere', null, undefined, {
+    const adventure = getAdventure('sunken-bell-of-marrowmere')!;
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Attack' }], adventure, sceneInstruction(adventure.id, null), undefined, {
       characters,
       pendingWipe: false,
     });
@@ -121,7 +125,7 @@ describe('assemblePrompt inventory', () => {
     const prompt = assemblePrompt(
       '', [],
       [{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', note: 'drank ยาฟื้นฟูเล็ก and recovered 5 HP' }],
-      null, null, undefined,
+      null, '', undefined,
       { characters: [prem], pendingWipe: false, inventories: { p1: [] } }
     );
     expect(prompt).toContain('Prem: nothing; weight 0/10');
@@ -144,7 +148,7 @@ describe('assemblePrompt scope guard', () => {
 describe('assemblePrompt economy', () => {
   const prem = { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 14 };
   it('includes the economy block with the open shop', () => {
-    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], null, null, undefined,
+    const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'Look' }], null, '', undefined,
       { characters: [prem], pendingWipe: false, inventories: {}, shop: { name: 'Old Mara', itemIds: ['staff'] } });
     expect(prompt).toContain('Prem: 14 gold');
     expect(prompt).toContain('Old Mara');

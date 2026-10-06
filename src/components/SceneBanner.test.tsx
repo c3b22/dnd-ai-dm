@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SceneBanner } from './SceneBanner';
+
+vi.mock('@/lib/supabase/client', () => ({ supabaseBrowserClient: {} }));
+vi.mock('@/lib/scenes/scenes', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/scenes/scenes')>()),
+  getSceneAsync: vi.fn().mockResolvedValue({ id: 'custom-1-opening', scope: 'custom-1', nameTh: 'เปิดเรื่อง', imageUrl: 'https://cdn/custom-1/opening.jpg' }),
+}));
 
 describe('SceneBanner', () => {
   it('shows the scene image with its Thai name and the adventure mood tint', () => {
@@ -33,5 +39,13 @@ describe('SceneBanner place announcement', () => {
 
     rerender(<SceneBanner sceneId="throne-room" adventureId={null} />);
     expect(screen.getByTestId('scene-title').textContent).toContain('ท้องพระโรง');
+  });
+});
+
+describe('SceneBanner with a custom adventure', () => {
+  it('resolves and shows the uploaded scene image', async () => {
+    const { container } = render(<SceneBanner sceneId="custom-1-opening" adventureId="custom-1" />);
+    await waitFor(() => expect(container.querySelector('img')?.getAttribute('src')).toBe('https://cdn/custom-1/opening.jpg'));
+    expect(screen.getByText('เปิดเรื่อง')).toBeTruthy();
   });
 });

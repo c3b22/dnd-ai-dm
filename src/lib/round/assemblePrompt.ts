@@ -1,5 +1,5 @@
-import { getAdventure, formatAdventureForPrompt } from '@/lib/adventures/adventures';
-import { sceneInstruction } from '@/lib/scenes/scenes';
+import type { Adventure } from '@/lib/adventures/adventures';
+import { formatAdventureForPrompt } from '@/lib/adventures/adventures';
 import {
   DEFAULT_SETTINGS,
   diceInstructions,
@@ -43,12 +43,11 @@ export function assemblePrompt(
   campaignSummary: string,
   recentMessages: StoredMessage[],
   actions: RoundAction[],
-  adventureId?: string | null,
-  currentSceneId?: string | null,
+  adventure: Adventure | null = null,
+  sceneInstructionText = '',
   settings: CampaignSettings = DEFAULT_SETTINGS,
   characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null }
 ): string {
-  const adventure = getAdventure(adventureId);
   const historyText = recentMessages
     .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
     .join('\n');
@@ -70,7 +69,7 @@ export function assemblePrompt(
     ...scopeInstructions(),
     ...styleInstructions(settings),
     '',
-    ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstruction(adventure.id, currentSceneId), ''] : []),
+    ...(adventure ? [formatAdventureForPrompt(adventure), sceneInstructionText, ''] : []),
     'Story so far:',
     campaignSummary || '(campaign just started)',
     '',
@@ -82,7 +81,7 @@ export function assemblePrompt(
           const block = characterPrompt(
             characterState.characters,
             characterState.pendingWipe,
-            sanctuaryFor(adventureId)
+            sanctuaryFor(adventure?.id ?? null)
           );
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
           const economy = economyPrompt(characterState.characters, characterState.shop ?? null);

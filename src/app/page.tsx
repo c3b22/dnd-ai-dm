@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { ADVENTURES } from '@/lib/adventures/adventures';
 import { openingSceneId } from '@/lib/scenes/scenes';
 import { D20Icon } from '@/components/D20Icon';
 import { MyCampaigns } from '@/components/MyCampaigns';
 import { ClassPicker } from '@/components/ClassPicker';
 import { DEFAULT_CLASS_ID } from '@/lib/character/classes';
+import { MyAdventures, type MyAdventureSummary } from '@/components/MyAdventures';
 import type { MyCampaignSummary } from '@/lib/campaign/myCampaigns';
 
 function sceneUrl(adventureId: string) {
@@ -27,26 +29,49 @@ export default function Home() {
   const [rolling, setRolling] = useState(false);
   const [rollText, setRollText] = useState('');
   const [myCampaigns, setMyCampaigns] = useState<MyCampaignSummary[]>([]);
+  const [myAdventures, setMyAdventures] = useState<MyAdventureSummary[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
-  const adventure = ADVENTURES.find((a) => a.id === adventureId) ?? ADVENTURES[0];
+  const pickerItems = [
+    ...ADVENTURES.map((a) => ({ id: a.id, titleTh: a.titleTh, taglineTh: a.taglineTh, toneTh: a.toneTh, thumbnailUrl: sceneUrl(a.id) })),
+    ...myAdventures.map((a) => ({ id: a.id, titleTh: a.titleTh, taglineTh: a.taglineTh, toneTh: '', thumbnailUrl: a.thumbnailUrl })),
+  ];
+  const picked = pickerItems.find((a) => a.id === adventureId) ?? pickerItems[0];
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let supabaseBrowserClient: Awaited<typeof import('@/lib/supabase/client')>['supabaseBrowserClient'] | undefined;
+      let userId: string | undefined;
+      let accessToken: string | undefined;
       try {
         // Loaded here, not at module scope: this page is statically prerendered at build
         // time, and creating the Supabase client there would require its keys during `next build`.
-        const { supabaseBrowserClient } = await import('@/lib/supabase/client');
+        ({ supabaseBrowserClient } = await import('@/lib/supabase/client'));
         // Only reads an existing session: a first-time visitor is not signed in just to see this list.
         const { data } = await supabaseBrowserClient.auth.getSession();
-        const userId = data.session?.user.id;
-        if (!userId) return;
+        userId = data.session?.user.id;
+        accessToken = data.session?.access_token;
+      } catch {
+        // Both lists below are a convenience; failing to even load the session must never break the page.
+      }
+      if (!userId || !supabaseBrowserClient) return;
+      try {
         const { fetchMyCampaigns } = await import('@/lib/campaign/myCampaigns');
         const campaigns = await fetchMyCampaigns(supabaseBrowserClient, userId);
         if (!cancelled) setMyCampaigns(campaigns);
+      } catch {
+        // The list is a convenience; failing to load it must never break creating or joining a game.
+      }
+      try {
+        const response = await fetch('/api/adventures/mine', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) return;
+        const body = await response.json();
+        if (!cancelled) setMyAdventures(body.adventures);
       } catch {
         // The list is a convenience; failing to load it must never break creating or joining a game.
       }
@@ -141,6 +166,8 @@ export default function Home() {
         </div>
       </div>
       <MyCampaigns campaigns={myCampaigns} />
+      <MyAdventures adventures={myAdventures} />
+      <Link href="/adventures/new" className="btn ghost">+ สร้างเนื้อเรื่องใหม่</Link>
       <div className="roll-row">
         <button type="button" className="btn ghost" onClick={rollForAdventure} disabled={rolling}>
           ทอยเต๋าสุ่มเรื่อง
@@ -155,7 +182,7 @@ export default function Home() {
           <legend className="lede" style={{ marginBottom: 8 }}>
             เนื้อเรื่อง
           </legend>
-          {ADVENTURES.map((a) => (
+          {pickerItems.map((a) => (
             <button
               key={a.id}
               type="button"
@@ -165,13 +192,15 @@ export default function Home() {
             >
               <span className="thumb">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={sceneUrl(a.id)} alt="" />
+                <img src={a.thumbnailUrl ?? ''} alt="" />
               </span>
               <span className="t">{a.titleTh}</span>
               <span className="d">{a.taglineTh}</span>
-              <span className="chips">
-                <span className="chip">{a.toneTh}</span>
-              </span>
+              {a.toneTh && (
+                <span className="chips">
+                  <span className="chip">{a.toneTh}</span>
+                </span>
+              )}
             </button>
           ))}
         </fieldset>
@@ -183,11 +212,17 @@ export default function Home() {
             handleCreate();
           }}
         >
-          <div className="preview-art" key={adventure.id}>
+          <div className="preview-art" key={picked.id}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={sceneUrl(adventure.id)} alt={`ภาพฉากเปิดเรื่อง ${adventure.titleTh}`} />
+            <img src={picked.thumbnailUrl ?? ''} alt={`ภาพฉากเปิดเรื่อง ${picked.titleTh}`} />
           </div>
-          <div className="preview-hook">{adventure.openingTh.split('...')[0].slice(0, 150)}…</div>
+          {ADVENTURES.some((a) => a.id === picked.id) ? (
+            <div className="preview-hook">
+              {(ADVENTURES.find((a) => a.id === picked.id) ?? ADVENTURES[0]).openingTh.split('...')[0].slice(0, 150)}…
+            </div>
+          ) : (
+            <div className="preview-hook">{picked.taglineTh}</div>
+          )}
           <div className="field">
             <label htmlFor="campaign-name">ชื่อแคมเปญ</label>
             <input

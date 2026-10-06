@@ -55,3 +55,6 @@ supabase/.temp/
 
 # Scratch files (code-review diffs, etc.)
 .scratch/
+
+# Subagent-driven-development workspace (ledgers, briefs, review packages)
+.superpowers/
