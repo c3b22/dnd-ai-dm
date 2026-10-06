@@ -37,6 +37,8 @@ export interface CheckOutcome {
   die: number;
   modifier: number;
   proficiency: number;
+  /** Bonus from a worn accessory matching the skill (F5d); 0 when none. */
+  itemBonus: number;
   total: number;
   success: boolean;
   critical: 'success' | 'failure' | null;
@@ -117,8 +119,9 @@ export function runChecks(planned: PlannedCheck[], characters: Character[], roll
     const level = levelForXp(character.xp ?? 0);
     const proficient = classOf(character.classId)?.skills.includes(check.skill) ?? false;
     const ability = abilities[SKILL_ABILITIES[check.skill]];
+    const itemBonus = character.skillBonuses?.[check.skill] ?? 0;
     const dice = check.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
-    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage: check.advantage });
+    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage: check.advantage, bonus: itemBonus });
     const die = check.advantage === 'advantage' ? Math.max(...dice) : check.advantage === 'disadvantage' ? Math.min(...dice) : dice[0];
     out.push({
       playerDisplayName: character.displayName,
@@ -129,6 +132,7 @@ export function runChecks(planned: PlannedCheck[], characters: Character[], roll
       die,
       modifier: abilityModifier(ability),
       proficiency: proficient ? proficiencyBonus(level) : 0,
+      itemBonus,
       total: result.total,
       success: result.success,
       critical: result.critical,

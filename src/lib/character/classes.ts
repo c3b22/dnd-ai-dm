@@ -50,9 +50,16 @@ export function proficiencyBonus(level: number): number {
 }
 
 /** Modifier for a skill: ability modifier of its governing ability, plus proficiency bonus if proficient. */
-export function skillModifier(params: { skill: SkillId; abilities: AbilityScores; classId: ClassId; level: number }): number {
+export function skillModifier(params: {
+  skill: SkillId;
+  abilities: AbilityScores;
+  classId: ClassId;
+  level: number;
+  /** Worn-accessory bonuses (F5d), added when they name this skill. */
+  skillBonuses?: Partial<Record<SkillId, number>>;
+}): number {
   const mod = Math.floor((params.abilities[SKILL_ABILITIES[params.skill]] - 10) / 2);
-  return mod + (CLASSES[params.classId].skills.includes(params.skill) ? proficiencyBonus(params.level) : 0);
+  return mod + (CLASSES[params.classId].skills.includes(params.skill) ? proficiencyBonus(params.level) : 0) + (params.skillBonuses?.[params.skill] ?? 0);
 }
 
 export const CLASSES: Record<ClassId, ClassDef> = {

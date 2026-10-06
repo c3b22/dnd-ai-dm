@@ -13,8 +13,8 @@ export interface InventoryProps {
   onDrink: (itemId: string) => void;
 }
 
-const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, consumable: 2 };
-const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 3;
+const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, accessory: 2, consumable: 3 };
+const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 4;
 
 export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDrink }: InventoryProps) {
   // The database returns rows in no particular order, so the list would jump around after every change.
@@ -46,7 +46,7 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
                   {item.quantity > 1 ? ` ×${item.quantity}` : ''}
                   {item.equipped && <b className="badge-worn">สวมอยู่</b>}
                 </span>
-                {(kind === 'weapon' || kind === 'armor') && (
+                {(kind === 'weapon' || kind === 'armor' || kind === 'accessory') && (
                   <button
                     type="button"
                     className="qa"

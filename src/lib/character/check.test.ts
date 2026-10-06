@@ -58,3 +58,10 @@ describe('resolveCheck', () => {
 function abilityMod1() {
   return -5; // score 1 -> floor(-9/2) = -5
 }
+
+describe('resolveCheck bonus (F5d)', () => {
+  it('adds a flat bonus to the total', () => {
+    expect(resolveCheck({ ...base, d20s: [10], bonus: 2 }).total).toBe(12);
+    expect(resolveCheck({ ...base, d20s: [8], dc: 10, bonus: 2 }).success).toBe(true);
+  });
+});

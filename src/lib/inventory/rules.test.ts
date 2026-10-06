@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  armorReduction, equipItem, equippedArmorId, equippedWeaponId, giveItem, itemLabel,
+  armorReduction, equipItem, equippedArmorId, equippedSkillBonuses, equippedWeaponId, giveItem, itemLabel,
   takeItem, unequipSlot, useConsumable, weightOf,
 } from './rules';
 import type { InventoryItem } from './types';
@@ -126,5 +126,33 @@ describe('itemLabel', () => {
   it('uses the Thai catalog name or the story title', () => {
     expect(itemLabel(item({ itemId: 'staff' }))).toBe('ไม้เท้า');
     expect(itemLabel(item({ itemId: 'story', customName: 'Rusty Key' }))).toBe('Rusty Key');
+  });
+});
+
+describe('accessory slot (F5d)', () => {
+  const ring = item({ itemId: 'acc_acrobat', slot: 'accessory', equipped: true });
+  const shawl = item({ itemId: 'acc_silentshawl', slot: 'accessory' });
+  const anklet = item({ itemId: 'acc_soundlessanklet', slot: 'accessory' });
+
+  it('auto-equips a first accessory but leaves a second in the pack', () => {
+    const first = giveItem([], 'acc_acrobat').items;
+    expect(first[0]).toMatchObject({ slot: 'accessory', equipped: true });
+    expect(giveItem(first, 'acc_silentshawl').items[1]).toMatchObject({ slot: 'accessory', equipped: false });
+  });
+
+  it('wears only 1 accessory: equipping another swaps, and weapon/armor are untouched', () => {
+    const next = equipItem([sword, ring, shawl], 'acc_silentshawl').items;
+    expect(next.map((i) => i.equipped)).toEqual([true, false, true]);
+  });
+
+  it('unequips the accessory slot', () => {
+    expect(unequipSlot([sword, ring], 'accessory').map((i) => i.equipped)).toEqual([true, false]);
+  });
+
+  it('equippedSkillBonuses counts only worn accessories', () => {
+    expect(equippedSkillBonuses([sword, ring, shawl])).toEqual({ acrobatics: 1 });
+    expect(equippedSkillBonuses([sword, shawl, anklet])).toEqual({});
+    expect(equippedSkillBonuses([{ ...anklet, equipped: true }])).toEqual({ stealth: 2 });
+    expect(equippedSkillBonuses([])).toEqual({});
   });
 });

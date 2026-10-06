@@ -62,3 +62,24 @@ describe('runChecks', () => {
     expect(out[0]).toMatchObject({ dice: [3, 18], die: 18, total: 23, success: false });
   });
 });
+
+describe('runChecks with an accessory bonus (F5d)', () => {
+  const rogue: Character = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 10, maxHp: 10, status: 'active',
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 },
+    skillBonuses: { stealth: 2 },
+  };
+  const plan = (skill: 'stealth' | 'athletics') => [{ player: 'Prem', skill, dc: 15, advantage: 'none' as const }];
+
+  it('adds the bonus to a matching skill and can turn a miss into a success', () => {
+    const [r] = runChecks(plan('stealth'), [rogue], () => 8);
+    expect(r).toMatchObject({ itemBonus: 2, total: 8 + 3 + 2 + 2, success: true });
+    const [without] = runChecks(plan('stealth'), [{ ...rogue, skillBonuses: undefined }], () => 8);
+    expect(without).toMatchObject({ itemBonus: 0, total: 13, success: false });
+  });
+
+  it('gives nothing for a different skill', () => {
+    const [r] = runChecks(plan('athletics'), [rogue], () => 8);
+    expect(r).toMatchObject({ itemBonus: 0, total: 8 - 1 });
+  });
+});

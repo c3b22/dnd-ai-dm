@@ -12,7 +12,7 @@ function abilityLine(c: Character): string {
   const cls = classOf(c.classId);
   const skills = cls
     ? `; proficient: ${cls.skills
-        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0) }))}`)
+        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0), skillBonuses: c.skillBonuses }))}`)
         .join(', ')}`
     : '';
   return `  ${c.displayName} modifiers: ${mods}${skills}`;

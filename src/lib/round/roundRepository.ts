@@ -4,7 +4,7 @@ import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
 import type { Character } from '@/lib/character/types';
 import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
-import { equippedWeaponId, armorReduction } from '@/lib/inventory/rules';
+import { equippedWeaponId, armorReduction, equippedSkillBonuses } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
@@ -220,6 +220,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           displayName: row.display_name as string,
           weaponId: equippedWeaponId(inventories[row.id] ?? []),
           armorReduction: armorReduction(inventories[row.id] ?? []),
+          skillBonuses: equippedSkillBonuses(inventories[row.id] ?? []),
           hp: row.hp as number,
           maxHp: effectiveMaxHp(row.max_hp as number, Number(row.xp ?? 0)),
           status: row.status as 'active' | 'downed',

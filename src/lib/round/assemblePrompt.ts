@@ -66,7 +66,7 @@ function attackText(a: AttackOutcome): string {
 function checkText(c: CheckOutcome): string {
   const adv = c.advantage === 'none' ? '' : ` with ${c.advantage} (rolled ${c.dice.join(' and ')})`;
   const crit = c.critical === 'success' ? ', natural 20' : c.critical === 'failure' ? ', natural 1' : '';
-  const bonus = c.modifier + c.proficiency;
+  const bonus = c.modifier + c.proficiency + (c.itemBonus ?? 0);
   return ` (${c.skill} check DC ${c.dc}${adv}: d20 ${c.die} ${bonus >= 0 ? '+' : '-'} ${Math.abs(bonus)} = ${c.total}${crit} -> ${c.success ? 'SUCCESS' : 'FAILURE'})`;
 }
 

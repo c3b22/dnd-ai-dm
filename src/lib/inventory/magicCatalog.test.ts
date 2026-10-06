@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { WEAPONS, weaponFor } from '@/lib/character/constants';
 import { buyPrice } from '@/lib/economy/prices';
 import { buyFromShop, normalizeShop } from '@/lib/economy/shop';
-import { CATALOG, catalogEntry } from './catalog';
+import { CATALOG, catalogEntry, slotOf } from './catalog';
 import { MAGIC_ITEMS } from './magicItems';
 
 const wired = MAGIC_ITEMS.filter((i) => ['weapon', 'armor', 'consumable'].includes(i.mechanic.kind));
@@ -40,5 +40,19 @@ describe('magic items wired into catalog / prices / weapons (F5c)', () => {
     expect(normalizeShop({ name: 'ร้าน', itemIds: [legendary.id] })).toBeNull();
     const shop = { name: 'ร้าน', itemIds: [legendary.id] };
     expect(buyFromShop([], 99999, shop, legendary.id)).toEqual({ ok: false, reason: 'not_sold' });
+  });
+});
+
+describe('accessories wired into catalog / prices (F5d)', () => {
+  const accessories = MAGIC_ITEMS.filter((i) => i.mechanic.kind === 'accessory');
+  it('every accessory is in CATALOG with its skill and bonus, in the accessory slot, and priced', () => {
+    expect(accessories.length).toBeGreaterThan(0);
+    for (const item of accessories) {
+      const entry = catalogEntry(item.id);
+      expect(entry, item.id).toMatchObject({ kind: 'accessory', weight: item.weight });
+      if (item.mechanic.kind === 'accessory') expect(entry).toMatchObject({ skill: item.mechanic.skill, skillBonus: item.mechanic.skillBonus });
+      expect(slotOf(entry!)).toBe('accessory');
+      expect(buyPrice(item.id), item.id).toBe(item.price);
+    }
   });
 });

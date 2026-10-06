@@ -1,4 +1,5 @@
 import type { AbilityScores } from './constants';
+import type { SkillId } from './classes';
 
 export type CharacterStatus = 'active' | 'downed';
 
@@ -12,6 +13,8 @@ export interface Character {
   revivesSinceSanctuary: number;
   /** Flat damage the equipped armor absorbs from each hit; absent means none. */
   armorReduction?: number;
+  /** Check bonus per skill from the worn accessory (see equippedSkillBonuses); absent means none. */
+  skillBonuses?: Partial<Record<SkillId, number>>;
   /** Personal gold; absent means 0. */
   gold?: number;
   /** Experience points; absent means 0. Level is always derived from this. */

@@ -22,6 +22,8 @@ export interface CheckInput {
   level: number;
   dc: number;
   advantage?: Advantage;
+  /** Flat extra bonus, e.g. from a worn accessory (F5d). */
+  bonus?: number;
 }
 
 export interface CheckResult {
@@ -31,7 +33,7 @@ export interface CheckResult {
 }
 
 export function resolveCheck(input: CheckInput): CheckResult {
-  const { d20s, ability, proficient, level, dc, advantage = 'none' } = input;
+  const { d20s, ability, proficient, level, dc, advantage = 'none', bonus = 0 } = input;
   const needed = advantage === 'none' ? 1 : 2;
   if (d20s.length < needed) throw new Error(`resolveCheck needs ${needed} d20 roll(s)`);
   const used = d20s.slice(0, needed);
@@ -39,7 +41,7 @@ export function resolveCheck(input: CheckInput): CheckResult {
     if (!Number.isInteger(d) || d < 1 || d > 20) throw new Error(`invalid d20 roll: ${d}`);
   }
   const die = advantage === 'advantage' ? Math.max(...used) : advantage === 'disadvantage' ? Math.min(...used) : used[0];
-  const total = die + abilityModifier(ability) + (proficient ? proficiencyBonus(level) : 0);
+  const total = die + abilityModifier(ability) + (proficient ? proficiencyBonus(level) : 0) + bonus;
   if (die === 20) return { total, success: true, critical: 'success' };
   if (die === 1) return { total, success: false, critical: 'failure' };
   return { total, success: total >= dc, critical: null };

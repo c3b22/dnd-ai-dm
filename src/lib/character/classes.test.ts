@@ -109,3 +109,11 @@ describe('class starting abilities and skills', () => {
     expect(skillModifier({ ...base, skill: 'athletics' })).toBe(-1);
   });
 });
+
+describe('skillModifier with accessory bonuses (F5d)', () => {
+  const base = { abilities: CLASSES.rogue.abilities, classId: 'rogue' as const, level: 5 };
+  it('adds the bonus only to its own skill', () => {
+    expect(skillModifier({ ...base, skill: 'stealth', skillBonuses: { stealth: 2 } })).toBe(2 + 3 + 2);
+    expect(skillModifier({ ...base, skill: 'athletics', skillBonuses: { stealth: 2 } })).toBe(-1);
+  });
+});

@@ -1,6 +1,7 @@
 import type { DiceSpec } from '@/lib/character/constants';
+import type { SkillId } from '@/lib/character/classes';
 import {
-  CARRY_CAPACITY, MAX_STORY_TITLE, MAX_STORY_UNITS, STORY_ITEM_ID, catalogEntry, slotOf, type Slot,
+  CARRY_CAPACITY, MAX_STORY_TITLE, MAX_STORY_UNITS, SLOT_LIMIT, STORY_ITEM_ID, catalogEntry, slotOf, type Slot,
 } from './catalog';
 import type { InventoryItem } from './types';
 
@@ -84,8 +85,11 @@ export function equipItem(items: InventoryItem[], itemId: string): { items: Inve
   const row = items.find((i) => i.itemId === itemId);
   if (!row || row.slot === null) return { items, ok: false };
   if (row.equipped) return { items, ok: true };
+  // Wearing past the slot's limit swaps out the earliest-listed worn item(s) of that slot.
+  const worn = items.filter((i) => i.slot === row.slot && i.equipped);
+  const evict = new Set(worn.slice(0, Math.max(0, worn.length - (SLOT_LIMIT[row.slot] - 1))));
   return {
-    items: items.map((i) => (i === row ? { ...i, equipped: true } : i.slot === row.slot ? { ...i, equipped: false } : i)),
+    items: items.map((i) => (i === row ? { ...i, equipped: true } : evict.has(i) ? { ...i, equipped: false } : i)),
     ok: true,
   };
 }
@@ -104,6 +108,17 @@ export function armorReduction(items: InventoryItem[]): number {
   const id = equippedArmorId(items);
   const entry = id ? catalogEntry(id) : null;
   return entry?.kind === 'armor' ? entry.reduction : 0;
+}
+
+/** Check bonus per skill from worn accessories (F5d); empty when none are worn. */
+export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<SkillId, number>> {
+  const bonuses: Partial<Record<SkillId, number>> = {};
+  for (const i of items) {
+    if (!i.equipped || i.slot !== 'accessory') continue;
+    const entry = catalogEntry(i.itemId);
+    if (entry?.kind === 'accessory') bonuses[entry.skill] = (bonuses[entry.skill] ?? 0) + entry.skillBonus;
+  }
+  return bonuses;
 }
 
 export function useConsumable(
