@@ -88,7 +88,12 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
             >
               {ability.nameTh}
             </button>
-            {ability.cooldown > 0 && <span className="cd">อีก {ability.cooldown} รอบเหตุการณ์</span>}
+            {ability.cooldown > 0 && (
+              <>
+                <span className="cd">อีก {ability.cooldown} รอบเหตุการณ์</span>
+                <span className="cd">นับเฉพาะรอบที่มีเหตุการณ์เกิดขึ้น เช่น ถูกโจมตี ฟื้นฟู หรือได้ XP</span>
+              </>
+            )}
           </>
         )}
       </div>

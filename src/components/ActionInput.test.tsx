@@ -95,6 +95,7 @@ describe('ActionInput', () => {
 
       expect(screen.getByRole('button', { name: /ยิงแม่นยำ/ })).toBeDisabled();
       expect(screen.getByText('อีก 2 รอบเหตุการณ์')).toBeInTheDocument();
+      expect(screen.getByText(/นับเฉพาะรอบที่มีเหตุการณ์/)).toBeInTheDocument();
     });
 
     it('is locked when the player is downed or already acted', () => {
