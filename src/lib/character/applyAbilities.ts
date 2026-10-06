@@ -3,6 +3,7 @@ import { classOf } from './classes';
 import { TIERS, weaponFor } from './constants';
 import { rollDice } from './dice';
 import { levelDamageBonus, levelForXp } from './leveling';
+import type { CharacterTag } from './tags';
 import type { Character } from './types';
 
 export interface AbilityAction {
@@ -96,4 +97,26 @@ export function applyAbilityActions(
   }
 
   return { characters: next, notes, damage, guards, used, changes };
+}
+
+const EVENTFUL_KINDS: readonly CharacterTag['kind'][] = ['hurt', 'heal', 'revive', 'xp', 'milestone', 'give', 'take', 'gold', 'pay'];
+
+/** A round "counts" for cooldowns only if the narration produced a mechanical tag. */
+export function isEventfulRound(tags: CharacterTag[]): boolean {
+  return tags.some((tag) => EVENTFUL_KINDS.includes(tag.kind));
+}
+
+/**
+ * Cooldown bookkeeping after a round's tags: on an eventful round everyone's cooldown drops by one,
+ * then players who used their ability this round start the full cooldown (so the round of use
+ * never counts toward its own cooldown).
+ */
+export function tickCooldowns(characters: Character[], eventful: boolean, used: string[]): Character[] {
+  return characters.map((c) => {
+    let cooldown = c.abilityCooldown ?? 0;
+    if (eventful) cooldown = Math.max(0, cooldown - 1);
+    const cls = classOf(c.classId);
+    if (cls && used.includes(c.id)) cooldown = cls.ability.cooldown;
+    return { ...c, abilityCooldown: cooldown };
+  });
 }

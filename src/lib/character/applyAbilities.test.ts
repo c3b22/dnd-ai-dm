@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyAbilityActions } from './applyAbilities';
+import { applyAbilityActions, isEventfulRound, tickCooldowns } from './applyAbilities';
+import type { CharacterTag } from './tags';
 import type { Character } from './types';
 
 const four = () => 4;
@@ -113,5 +114,51 @@ describe('applyAbilityActions', () => {
     expect(party[1].hp).toBe(10);
     expect(result.characters[1].hp).toBe(15);
     expect(applyAbilityActions(party, [{ playerId: 'p1' }], four).used).toEqual([]);
+  });
+});
+
+describe('isEventfulRound', () => {
+  it('counts every mechanical tag kind', () => {
+    const counting: CharacterTag[] = [
+      { kind: 'hurt', name: 'A', tier: 'light' },
+      { kind: 'heal', name: 'A', tier: 'light' },
+      { kind: 'revive', name: 'A' },
+      { kind: 'xp', tier: 'small' },
+      { kind: 'milestone' },
+      { kind: 'give', name: 'A', itemId: 'potion_minor', customName: '' },
+      { kind: 'take', name: 'A', itemId: 'potion_minor', customName: '' },
+      { kind: 'gold', name: 'A', tier: 'small' },
+      { kind: 'pay', name: 'A', tier: 'small' },
+    ];
+    for (const tag of counting) expect(isEventfulRound([tag]), tag.kind).toBe(true);
+  });
+
+  it('does not count a silent round or story-only tags', () => {
+    expect(isEventfulRound([])).toBe(false);
+    expect(isEventfulRound([{ kind: 'sanctuary' }])).toBe(false);
+    expect(isEventfulRound([{ kind: 'shop', merchant: 'Mara', itemIds: ['potion_minor'] }, { kind: 'shop_close' }])).toBe(false);
+  });
+});
+
+describe('tickCooldowns', () => {
+  it('lowers every cooldown by one on an eventful round, never below zero', () => {
+    const result = tickCooldowns([char({ abilityCooldown: 2 }), char({ id: 'p2', abilityCooldown: 0 }), char({ id: 'p3' })], true, []);
+    expect(result.map((c) => c.abilityCooldown)).toEqual([1, 0, 0]);
+  });
+
+  it('leaves cooldowns alone on a quiet round', () => {
+    expect(tickCooldowns([char({ abilityCooldown: 2 })], false, [])[0].abilityCooldown).toBe(2);
+  });
+
+  it('gives a user the full cooldown, not the ticked one', () => {
+    const party = [char({ classId: 'archer' }), char({ id: 'p2', classId: 'rogue' })];
+    expect(tickCooldowns(party, true, ['p1', 'p2']).map((c) => c.abilityCooldown)).toEqual([3, 4]);
+    expect(tickCooldowns(party, false, ['p1'])[0].abilityCooldown).toBe(3);
+  });
+
+  it('does not mutate its input', () => {
+    const party = [char({ abilityCooldown: 2 })];
+    tickCooldowns(party, true, []);
+    expect(party[0].abilityCooldown).toBe(2);
   });
 });
