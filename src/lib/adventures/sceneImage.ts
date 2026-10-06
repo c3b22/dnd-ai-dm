@@ -1,5 +1,6 @@
 // Resizes an uploaded scene image and stores it in the adventure-scenes
-// bucket, then records the resulting public URL on the adventure's scenes.
+// bucket, then records the resulting public URL on the adventure's scenes
+// (via the update_custom_adventure_scene_image RPC).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
@@ -46,8 +47,17 @@ export async function uploadSceneImage(
   const {
     data: { publicUrl },
   } = supabase.storage.from('adventure-scenes').getPublicUrl(path);
-  const newScenes = scenes.map((s) => (s.key === key ? { ...s, imagePath: publicUrl } : s));
-  await supabase.from('custom_adventures').update({ scenes: newScenes }).eq('id', adventureId);
+  // The object path never changes on replace (upsert), so a version param keeps CDN and
+  // browser caches from serving the old image.
+  const bustedUrl = `${publicUrl}?v=${Date.now()}`;
+  // Atomic single-scene update in the database: a read-modify-write of the whole scenes
+  // array here would let two close-together uploads overwrite each other.
+  const { error: updateError } = await supabase.rpc('update_custom_adventure_scene_image', {
+    p_adventure_id: adventureId,
+    p_key: key,
+    p_image_path: bustedUrl,
+  });
+  if (updateError) throw updateError;
 
-  return publicUrl;
+  return bustedUrl;
 }
