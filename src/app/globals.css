@@ -236,7 +236,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   .log { scroll-behavior: auto; }
 }
 
-.wp-list { border: 0; padding: 0; margin: 12px 0; display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wp-list { border: 0; padding: 0; margin: 12px 0; display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .wp-item { text-align: left; padding: 10px 12px; }
 
 .hp { display: grid; gap: 3px; margin-top: 4px; }
