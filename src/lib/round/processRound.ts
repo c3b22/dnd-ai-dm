@@ -10,6 +10,7 @@ import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
 import { applyEnemyTags } from '@/lib/combat/encounter';
+import { applyAttackOutcomes, applyEnemyAttacks, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -55,6 +56,7 @@ export async function processRound(
   let context: Awaited<ReturnType<RoundRepository['getRoundContext']>>;
   let prompt: string;
   let rolled: RoundAction[];
+  let attackOutcomes: AttackOutcome[] = [];
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
@@ -115,12 +117,26 @@ export async function processRound(
       if (first.kind === 'narration' || first.kind === 'plain') {
         stream = single(first.text);
       } else {
-        const outcomes = first.kind === 'checks' ? runChecks(first.checks, abilities.characters, rollDie) : [];
-        if (outcomes.length > 0) {
+        // C8: attacks on enemies resolve first (their damage was already rolled above); a player
+        // who attacks does not also get a skill check this round.
+        const damageByName = new Map(rolled.map((a) => [a.playerDisplayName.toLowerCase(), a.damage]));
+        attackOutcomes =
+          first.kind === 'checks'
+            ? runAttacks(first.attacks, abilities.characters, context.currentEncounter ?? null, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
+            : [];
+        const attackers = new Set(attackOutcomes.map((o) => o.playerDisplayName.toLowerCase()));
+        const outcomes =
+          first.kind === 'checks'
+            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), abilities.characters, rollDie)
+            : [];
+        if (outcomes.length > 0 || attackOutcomes.length > 0) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
+          const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           rolled = rolled.map((a) => {
-            const check = byName.get(a.playerDisplayName.toLowerCase());
-            return check ? { ...a, check } : a;
+            const key = a.playerDisplayName.toLowerCase();
+            const check = byName.get(key);
+            const attack = attackByName.get(key);
+            return { ...a, ...(check ? { check } : {}), ...(attack ? { attack } : {}) };
           });
           prompt = build(rolled);
         }
@@ -143,6 +159,7 @@ export async function processRound(
         roundId,
         rolled.map((r): RollSummaryEntry => {
           const c = r.check;
+          if (r.attack) return { playerDisplayName: r.playerDisplayName, roll: r.attack.die };
           if (!c) return { playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 };
           return {
             playerDisplayName: r.playerDisplayName,
@@ -180,7 +197,11 @@ export async function processRound(
   // committed, even if that earlier attempt's own save was itself incomplete.
   if (context.characters.length > 0 && (await deps.repository.claimRoundTags(roundId))) {
     try {
-      const result = applyCharacterTags(abilities.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
+      // C8: enemy attacks land first so a wipe they cause is handled by applyCharacterTags below.
+      // An enemy that joins this very round may attack; one the players just downed still did.
+      const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
+      const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags);
+      const result = applyCharacterTags(enemyAttacks.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
       const inventoryResult = applyInventoryTags(result.characters, potions.inventories, tags);
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
@@ -190,7 +211,7 @@ export async function processRound(
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
       const finalCharacters = tickCooldowns(
         xpResult.characters,
-        eventfulRound({ character: result.changes, inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
+        eventfulRound({ character: [...enemyAttacks.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
         abilities.used
       );
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
@@ -232,7 +253,7 @@ export async function processRound(
       // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
       // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
       const before = context.currentEncounter ?? null;
-      const after = applyEnemyTags(sceneChanged ? null : before, tags);
+      const after = applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : before, attackOutcomes), tags);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         try {
           await deps.repository.setEncounter(context.campaignId, after);
@@ -252,6 +273,7 @@ export async function processRound(
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
         ...potions.changes,
         ...abilities.changes,
+        ...enemyAttacks.changes,
         ...result.changes,
         ...xpResult.changes,
         ...inventoryResult.changes,

@@ -11,7 +11,16 @@ describe('parseCheckPlan', () => {
         { player: 'Prem', skill: 'stealth', dc: 14, advantage: 'advantage' },
         { player: 'Nok', skill: 'athletics', dc: 30, advantage: 'none' },
       ],
+      attacks: [],
     });
+  });
+  it('reads attacks (alone or with checks) and drops malformed ones', () => {
+    expect(parseCheckPlan('{"attacks":[{"player":"Prem","target":"หมาป่า","advantage":"disadvantage"},{"player":"Nok"},{"target":"x"}]}')).toEqual({
+      kind: 'checks',
+      checks: [],
+      attacks: [{ player: 'Prem', target: 'หมาป่า', advantage: 'disadvantage' }],
+    });
+    expect(parseCheckPlan('{"attacks":[{"player":"Prem"}]}')).toEqual({ kind: 'invalid' });
   });
   it('reads a narration plan, also inside a code fence', () => {
     expect(parseCheckPlan('```json\n{"narration":"ประตูเปิดออก"}\n```')).toEqual({ kind: 'narration', text: 'ประตูเปิดออก' });

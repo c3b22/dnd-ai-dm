@@ -50,11 +50,19 @@ function uniqueName(name: string, taken: Set<string>): string {
 }
 
 // Exact name first, otherwise the first live enemy sharing the base name (`หมาป่า` -> `หมาป่า 2`).
-function findTarget(enemies: EncounterEnemy[], name: string): EncounterEnemy | undefined {
+export function findActiveEnemy(enemies: EncounterEnemy[], name: string): EncounterEnemy | undefined {
   const exact = enemies.find((e) => e.name === name);
   if (exact && isActive(exact)) return exact;
   const prefix = `${name} `;
   return enemies.find((e) => isActive(e) && e.name.startsWith(prefix) && /^\d+$/.test(e.name.slice(prefix.length)));
+}
+
+/** Removes pips in place. A boss cannot be killed by a single blow from full health. */
+export function damageEnemy(target: EncounterEnemy, pips: number): void {
+  const wasFull = target.pip === target.maxPip;
+  let next = Math.max(0, target.pip - pips);
+  if (target.tier === 'boss' && wasFull) next = Math.max(1, next);
+  target.pip = next;
 }
 
 // Pure: returns the new encounter, or null when there is none / it just ended.
@@ -70,15 +78,11 @@ export function applyEnemyTags(encounter: Encounter | null, tags: CharacterTag[]
       list.push({ name, tier: tag.tier, pip: TIER_PIPS[tag.tier], maxPip: TIER_PIPS[tag.tier], fled: false });
       enemies = list;
     } else if (tag.kind === 'enemy_hurt' && enemies) {
-      const target = findTarget(enemies, tag.name);
+      const target = findActiveEnemy(enemies, tag.name);
       if (!target) continue;
-      const wasFull = target.pip === target.maxPip;
-      let next = Math.max(0, target.pip - HURT_PIPS[tag.tier]);
-      // A boss cannot be killed by a single blow from full health.
-      if (target.tier === 'boss' && wasFull) next = Math.max(1, next);
-      target.pip = next;
+      damageEnemy(target, HURT_PIPS[tag.tier]);
     } else if (tag.kind === 'enemy_flee' && enemies) {
-      const target = findTarget(enemies, tag.name);
+      const target = findActiveEnemy(enemies, tag.name);
       if (target) target.fled = true;
     }
   }

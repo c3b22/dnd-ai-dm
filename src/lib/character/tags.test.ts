@@ -167,6 +167,15 @@ describe('gold, pay and shop tags', () => {
       expect(result.cleanText).toBe('Fight.');
     });
 
+    it('parses enemy_attack (enemy | player), strips it, and hides a malformed one', () => {
+      const ok = parseCharacterTags('หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
+      expect(ok.tags).toEqual([{ kind: 'enemy_attack', enemy: 'หมาป่า', player: 'Prem' }]);
+      expect(ok.cleanText).toBe('หมาป่ากัด');
+      const bad = parseCharacterTags('x\n[[enemy_attack: หมาป่า]]');
+      expect(bad.tags).toEqual([]);
+      expect(bad.cleanText).toBe('x');
+    });
+
     it('does not confuse enemy_hurt with hurt or enemy', () => {
       const { tags } = parseCharacterTags('[[hurt: Prem | light]][[enemy_hurt: Orc | medium]]');
       expect(tags).toEqual([

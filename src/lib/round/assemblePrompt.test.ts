@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { assemblePrompt, shouldRotateSummary, StoredMessage } from './assemblePrompt';
 import { getAdventure } from '@/lib/adventures/adventures';
 import { sceneInstruction } from '@/lib/scenes/scenes';
+import { DEFAULT_SETTINGS } from '@/lib/campaign/settings';
 
 describe('assemblePrompt', () => {
   it('includes the campaign summary, recent messages, and this round actions', () => {
@@ -185,8 +186,25 @@ describe('assemblePrompt combat', () => {
   it('includes the combat tags and the current enemies', () => {
     const prompt = assemblePrompt('', [], act, null, '', undefined,
       { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] } });
-    expect(prompt).toContain('[[enemy_hurt:');
+    expect(prompt).not.toContain('[[enemy_hurt:');
+    expect(prompt).toContain('[[enemy_attack: EnemyName | PlayerName]]');
     expect(prompt).toContain('- หมาป่า (normal): 1/2 pips');
+  });
+
+  it('keeps the enemy_hurt tag when dice are off (the server does not roll attacks)', () => {
+    const prompt = assemblePrompt('', [], act, null, '', { ...DEFAULT_SETTINGS, diceEnabled: false },
+      { characters: [prem], pendingWipe: false, inventories: {}, encounter: null });
+    expect(prompt).toContain('[[enemy_hurt:');
+  });
+
+  it('tells the DM the attack result and asks for attacks in the first call during a fight', () => {
+    const attack = { playerId: 'p1', playerDisplayName: 'Prem', target: 'หมาป่า', tier: 'normal' as const, dc: 9, advantage: 'none' as const, dice: [12], die: 12, hit: true, critical: null, pips: 2, defeated: true, damage: 6, maxDamage: 8 };
+    const state = { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false }] } };
+    const text = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'ฟัน', attack }], null, '', undefined, state);
+    expect(text).toContain('attack on หมาป่า: d20 12 vs 9 -> HEAVY HIT');
+    expect(text).toContain('the enemy is defeated');
+    expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('"attacks"');
+    expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('"attacks"');
   });
   it('says no fight is in progress without an encounter', () => {
     const prompt = assemblePrompt('', [], act, null, '', undefined, { characters: [prem], pendingWipe: false });

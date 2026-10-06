@@ -20,6 +20,7 @@ import { combatPrompt } from '@/lib/combat/prompt';
 import type { Encounter } from '@/lib/combat/encounter';
 import { isStoryRole, type MessageRole } from '@/lib/messages/roles';
 import { checkPlanInstructions, type CheckOutcome } from '@/lib/character/checkPlan';
+import type { AttackOutcome } from '@/lib/combat/attack';
 
 export interface StoredMessage {
   role: MessageRole;
@@ -45,11 +46,21 @@ export interface RoundAction {
   note?: string;
   /** Skill check the server rolled for this action; the narration must match its success or failure. */
   check?: CheckOutcome;
+  /** Attack on an enemy the server rolled for this action (C8); the narration must match it. */
+  attack?: AttackOutcome;
 }
 
 export interface AssembleOptions {
   /** First call of a dice round: the DM answers with a JSON check plan or the narration instead of narrating directly. */
   planChecks?: boolean;
+}
+
+function attackText(a: AttackOutcome): string {
+  const adv = a.advantage === 'none' ? '' : ` with ${a.advantage} (rolled ${a.dice.join(' and ')})`;
+  const crit = a.critical === 'success' ? ', natural 20' : a.critical === 'failure' ? ', natural 1' : '';
+  const after = a.defeated ? 'the enemy is defeated' : 'the enemy is still standing';
+  const result = !a.hit ? 'MISS, the enemy is unharmed' : `${a.pips >= 2 ? 'HEAVY HIT, a devastating blow' : 'HIT, a solid wound'}, ${after}`;
+  return ` (attack on ${a.target}${adv}: d20 ${a.die}${crit} vs ${a.dc} -> ${result})`;
 }
 
 function checkText(c: CheckOutcome): string {
@@ -80,7 +91,7 @@ export function assemblePrompt(
   const actionsText = actions
     .map((a, i) => {
       const damage = a.damage === undefined ? '' : `, ${a.weaponLabel ?? 'weapon'} damage roll ${a.damage}`;
-      const rolled = a.check ? checkText(a.check) + damage : a.roll === undefined ? '' : ` (rolled ${a.roll} on a d20${damage})`;
+      const rolled = a.attack ? attackText(a.attack) : a.check ? checkText(a.check) + damage : a.roll === undefined ? '' : ` (rolled ${a.roll} on a d20${damage})`;
       const note = a.note ? ` (server: ${a.note})` : '';
       return `${inOrder ? `${i + 1}. ` : ''}${a.playerDisplayName}${rolled}: ${a.actionText}${note}`;
     })
@@ -112,7 +123,7 @@ export function assemblePrompt(
           );
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
           const economy = economyPrompt(characterState.characters, characterState.shop ?? null);
-          const combat = combatPrompt(characterState.encounter ?? null);
+          const combat = combatPrompt(characterState.encounter ?? null, settings.diceEnabled && characterState.characters.length > 0);
           return [
             ...(block.length ? [...block, ''] : []),
             ...(inventory.length ? [...inventory, ''] : []),
@@ -134,10 +145,10 @@ export function assemblePrompt(
       const dice = diceInstructions(settings, actions.some((a) => a.roll !== undefined));
       return dice.length ? ['', ...dice] : [];
     })(),
-    ...(actions.some((a) => a.check)
-      ? ['', 'Skill checks above are final and decided by the server: narrate each SUCCESS as the player achieving what they tried and each FAILURE as it going wrong or falling short. Never re-roll or change them.']
+    ...(actions.some((a) => a.check || a.attack)
+      ? ['', 'Skill checks and attacks above are final and decided by the server: narrate each SUCCESS or HIT as the player achieving what they tried and each FAILURE or MISS as it going wrong or falling short. Never re-roll or change them.']
       : []),
-    ...(options.planChecks ? ['', ...checkPlanInstructions()] : []),
+    ...(options.planChecks ? ['', ...checkPlanInstructions(!!characterState?.encounter)] : []),
   ].join('\n');
 }
 

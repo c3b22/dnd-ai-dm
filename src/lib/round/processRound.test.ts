@@ -924,3 +924,51 @@ describe('processRound skill checks (two-call dice flow)', () => {
     expect(generate.mock.calls[0][0]).toContain('ONLY for actions whose result is truly uncertain');
   });
 });
+
+describe('processRound C8 attacks on enemies and from enemies', () => {
+  const prem = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 }, armorReduction: 1,
+  };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const repo = () =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'แทงหมาป่า' }],
+        characters: [prem], currentEncounter: { enemies: [wolf] },
+      }),
+    });
+  const go = async (repository: RoundRepository, rolls: number[], ...texts: string[]) => {
+    const generate = vi.fn();
+    texts.forEach((t) => generate.mockResolvedValueOnce(fakeStream([t])));
+    const queue = [...rolls];
+    await processRound({ claimRound: claim(), repository, generateNarration: generate, rollDie: () => queue.shift() ?? 10, rollSides: () => 4 }, 'round-1');
+    return generate;
+  };
+  const attackPlan = '{"attacks":[{"player":"Prem","target":"หมาป่า","advantage":"none"}]}';
+
+  it('a hit (d20 9 vs 9, dagger 4 of max 4 = heavy) removes 2 pips and ends the fight; the DM is told', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 9], attackPlan, 'หมาป่าล้มลง');
+    const second = generate.mock.calls[1][0] as string;
+    expect(second).toContain('attack on หมาป่า: d20 9 vs 9 -> HEAVY HIT');
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', null);
+    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 9 }]);
+  });
+
+  it('a miss (d20 8 vs 9) leaves the enemy untouched and the encounter is not rewritten', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 8], attackPlan, 'พลาด');
+    expect(generate.mock.calls[1][0]).toContain('MISS');
+    expect(repository.setEncounter).not.toHaveBeenCalled();
+  });
+
+  it('an enemy_attack tag hurts the player by the tier damage minus armor (4 - 1 = 3)', async () => {
+    const repository = repo();
+    await go(repository, [5, 8], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 17 })], false);
+  });
+});

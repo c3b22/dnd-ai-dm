@@ -13,6 +13,13 @@ describe('combatPrompt', () => {
     expect(text).toContain('No fight is in progress');
   });
 
+  it('with server attacks it drops enemy_hurt and teaches enemy_attack', () => {
+    const text = combatPrompt(null, true).join('\n');
+    expect(text).not.toContain('[[enemy_hurt:');
+    expect(text).toContain('[[enemy_attack: EnemyName | PlayerName]]');
+    expect(combatPrompt(null).join('\n')).toContain('[[enemy_attack:');
+  });
+
   it('lists each enemy with its pips and state', () => {
     const text = combatPrompt({
       enemies: [

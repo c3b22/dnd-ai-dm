@@ -11,8 +11,15 @@ export interface PlannedCheck {
   advantage: Advantage;
 }
 
+/** C8: a player attack on an enemy; the server rolls it against the enemy tier's hit threshold. */
+export interface PlannedAttack {
+  player: string;
+  target: string;
+  advantage: Advantage;
+}
+
 export type CheckPlan =
-  | { kind: 'checks'; checks: PlannedCheck[] }
+  | { kind: 'checks'; checks: PlannedCheck[]; attacks: PlannedAttack[] }
   | { kind: 'narration'; text: string }
   /** The model ignored the JSON format and just narrated: use it as the narration. */
   | { kind: 'plain'; text: string }
@@ -60,11 +67,24 @@ export function parseCheckPlan(raw: string): CheckPlan {
   const parsed = parseObject(text);
   if (parsed === undefined) return { kind: 'plain', text };
   if (!parsed || typeof parsed !== 'object') return { kind: 'invalid' };
-  const obj = parsed as { checks?: unknown; narration?: unknown };
+  const obj = parsed as { checks?: unknown; attacks?: unknown; narration?: unknown };
 
-  if (Array.isArray(obj.checks)) {
+  const attacks: PlannedAttack[] = [];
+  if (Array.isArray(obj.attacks)) {
+    for (const a of obj.attacks) {
+      if (!a || typeof a !== 'object') continue;
+      const { player, target, advantage } = a as Record<string, unknown>;
+      if (typeof player !== 'string' || !player.trim() || typeof target !== 'string' || !target.trim()) continue;
+      attacks.push({
+        player: player.trim(),
+        target: target.trim(),
+        advantage: advantage === 'advantage' || advantage === 'disadvantage' ? advantage : 'none',
+      });
+    }
+  }
+  if (Array.isArray(obj.checks) || attacks.length > 0) {
     const checks: PlannedCheck[] = [];
-    for (const c of obj.checks) {
+    for (const c of Array.isArray(obj.checks) ? obj.checks : []) {
       if (!c || typeof c !== 'object') continue;
       const { player, skill, dc, advantage } = c as Record<string, unknown>;
       if (typeof player !== 'string' || !player.trim() || !isSkill(skill)) continue;
@@ -76,7 +96,7 @@ export function parseCheckPlan(raw: string): CheckPlan {
         advantage: advantage === 'advantage' || advantage === 'disadvantage' ? advantage : 'none',
       });
     }
-    if (checks.length > 0) return { kind: 'checks', checks };
+    if (checks.length > 0 || attacks.length > 0) return { kind: 'checks', checks, attacks };
   }
   if (typeof obj.narration === 'string' && obj.narration.trim()) {
     return { kind: 'narration', text: obj.narration.trim() };
@@ -118,12 +138,17 @@ export function runChecks(planned: PlannedCheck[], characters: Character[], roll
 }
 
 /** Extra prompt section for the first call: answer with a check plan or the narration itself. */
-export function checkPlanInstructions(): string[] {
+export function checkPlanInstructions(fighting = false): string[] {
   return [
     'FORMAT OF YOUR ANSWER THIS TIME: reply with one JSON object and nothing else, in one of two shapes.',
     '1) {"checks":[{"player":"PlayerName","skill":"stealth","dc":14,"advantage":"none"}]} when at least one player action has a genuinely UNCERTAIN outcome where failure would be interesting (sneaking past a guard, forcing a lock, persuading a suspicious noble, climbing a slick wall). Do not narrate yet; the server will roll and then ask you to narrate.',
     `   skill must be one of: ${SKILL_IDS.join(', ')}. dc is 5 (easy) to 25 (very hard); use the ability modifiers above to keep it fair. advantage is "none", "advantage" or "disadvantage". At most one check per player.`,
     '2) {"narration":"..."} when no action has an uncertain outcome (routine actions, talking, travelling, anything that simply works, or combat handled by the dice above). Put the full narration, including any [[tags]], inside the narration string.',
+    ...(fighting
+      ? [
+          'A fight is in progress. When a player ATTACKS a listed enemy, do not use a skill check: add them to an "attacks" list instead, e.g. {"attacks":[{"player":"PlayerName","target":"EnemyName","advantage":"none"}],"checks":[]} (attacks and checks may be combined; a player gets either one attack or one check). The server rolls the hit and the damage and removes the enemy health itself, so never decide yourself whether an attack lands.',
+        ]
+      : []),
     'Set a check ONLY for actions whose result is truly uncertain, not for every action. Most rounds with routine actions should use shape 2.',
   ];
 }
