@@ -4,7 +4,7 @@ import { parseSceneTag } from '@/lib/scenes/scenes';
 import { normalizeSettings } from '@/lib/campaign/settings';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
-import { applyAbilityActions, isEventfulRound, tickCooldowns } from '@/lib/character/applyAbilities';
+import { applyAbilityActions, eventfulRound, tickCooldowns } from '@/lib/character/applyAbilities';
 import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/leveling';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
@@ -140,7 +140,11 @@ export async function processRound(
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
-      const finalCharacters = tickCooldowns(xpResult.characters, isEventfulRound(tags), abilities.used);
+      const finalCharacters = tickCooldowns(
+        xpResult.characters,
+        eventfulRound({ character: result.changes, inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
+        abilities.used
+      );
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
       const changedIds = [...new Set([...potions.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.

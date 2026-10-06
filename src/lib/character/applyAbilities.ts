@@ -3,7 +3,7 @@ import { classOf } from './classes';
 import { TIERS, weaponFor } from './constants';
 import { rollDice } from './dice';
 import { levelDamageBonus, levelForXp } from './leveling';
-import type { CharacterTag } from './tags';
+import { SANCTUARY_CHANGE } from './applyTags';
 import type { Character } from './types';
 
 export interface AbilityAction {
@@ -49,8 +49,8 @@ export function applyAbilityActions(
     const user = next.find((c) => c.id === action.playerId);
     if (!user) continue;
     const cls = classOf(user.classId);
-    const fail = () => {
-      notes[user.id] = `tried to use ${cls ? cls.ability.nameTh : 'a class ability'} but it was not ready`;
+    const fail = (reason = 'it was not ready') => {
+      notes[user.id] = `tried to use ${cls ? cls.ability.nameTh : 'a class ability'} but ${reason}`;
     };
     if (!cls || user.status !== 'active' || (user.abilityCooldown ?? 0) > 0) {
       fail();
@@ -70,10 +70,20 @@ export function applyAbilityActions(
     const level = levelForXp(user.xp ?? 0);
     const weapon = weaponFor(user.weaponId);
     if (cls.id === 'warrior' && target) {
-      if (!(target.id in guards)) guards[target.id] = user.id;
+      // Only one guard per ally; the later warrior keeps their cooldown.
+      if (target.id in guards) {
+        const guardian = next.find((c) => c.id === guards[target.id]);
+        fail(`${guardian?.displayName ?? 'someone'} is already shielding ${target.displayName}`);
+        continue;
+      }
+      guards[target.id] = user.id;
       notes[user.id] = `used ${ability.nameTh} to shield ${target.displayName} this round`;
       changes.push(`${user.displayName} ใช้${ability.nameTh} ปกป้อง ${target.displayName}`);
     } else if (cls.id === 'cleric' && target) {
+      if (target.hp >= target.maxHp) {
+        fail(`${target.displayName} is not hurt`);
+        continue;
+      }
       const gained = Math.min(target.maxHp - target.hp, rollDice(TIERS[clericHealTier(level)], rollDie));
       target.hp += gained;
       notes[user.id] = `used ${ability.nameTh} on ${target.displayName} and restored ${gained} HP`;
@@ -99,11 +109,18 @@ export function applyAbilityActions(
   return { characters: next, notes, damage, guards, used, changes };
 }
 
-const EVENTFUL_KINDS: readonly CharacterTag['kind'][] = ['hurt', 'heal', 'revive', 'xp', 'milestone', 'give', 'take', 'gold', 'pay'];
-
-/** A round "counts" for cooldowns only if the narration produced a mechanical tag. */
-export function isEventfulRound(tags: CharacterTag[]): boolean {
-  return tags.some((tag) => EVENTFUL_KINDS.includes(tag.kind));
+/**
+ * A round "counts" for cooldowns only if the narration's tags actually changed something: the log
+ * lines each tag-driven system produced (a sanctuary on its own does not count). A misspelled
+ * name, an unknown item or a downed target therefore never refreshes anyone's cooldown.
+ */
+export function eventfulRound(changes: { character: string[]; inventory: string[]; economy: string[]; xp: string[] }): boolean {
+  return (
+    changes.character.some((line) => line !== SANCTUARY_CHANGE) ||
+    changes.inventory.length > 0 ||
+    changes.economy.length > 0 ||
+    changes.xp.length > 0
+  );
 }
 
 /**

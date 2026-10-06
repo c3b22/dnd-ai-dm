@@ -19,6 +19,8 @@ export interface ActionInputProps {
     cooldown: number;
     /** Who can be picked as the target. */
     allies: { id: string; name: string }[];
+    /** Shown instead of the default when nobody can be picked. */
+    noTargetText?: string;
   };
   onUseAbility?: (targetId: string | null) => Promise<void>;
 }
@@ -100,7 +102,7 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
       {ability && picking && !locked && (
         <div className="hint-row" role="group" aria-label="เลือกเป้าหมาย">
           <span className="lbl">เลือกเป้าหมาย</span>
-          {ability.allies.length === 0 && <span className="cd">ไม่มีเพื่อนให้เลือก</span>}
+          {ability.allies.length === 0 && <span className="cd">{ability.noTargetText ?? 'ไม่มีเพื่อนให้เลือก'}</span>}
           {ability.allies.map((ally) => (
             <button key={ally.id} type="button" className="qa" onClick={() => useAbility(ally.id)}>
               {ally.name}

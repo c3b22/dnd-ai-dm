@@ -691,6 +691,18 @@ describe('processRound abilities', () => {
     expect(saved(silent)[0].abilityCooldown).toBe(2);
   });
 
+  it('does not tick on tags that changed nothing (unknown name, unknown item, a sanctuary alone)', async () => {
+    for (const narration of [
+      'Hm.\n[[hurt: Nobody | light]]',
+      'Hm.\n[[give: Prem | not_an_item]]',
+      'Safe.\n[[sanctuary]]',
+    ]) {
+      const repository = repoWith([{ ...archer, abilityCooldown: 2 }], []);
+      await processRound(deps(repository, [narration]), 'round-1');
+      expect(saved(repository)[0].abilityCooldown, narration).toBe(2);
+    }
+  });
+
   it('starts the full cooldown for the player who used it, even on an eventful round', async () => {
     const repository = repoWith([archer], [useAbility()]);
     await processRound(deps(repository, ['Hit!\n[[xp: small]]']), 'round-1');

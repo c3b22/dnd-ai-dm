@@ -110,6 +110,12 @@ describe('ActionInput', () => {
       expect(screen.queryByRole('button', { name: 'ยิงแม่นยำ' })).toBeNull();
     });
 
+    it('uses the custom empty-list message when one is given', async () => {
+      render(<ActionInput onSubmit={vi.fn()} ability={{ ...withTarget, allies: [], noTargetText: 'ไม่มีใครบาดเจ็บ' }} onUseAbility={vi.fn()} />);
+      await userEvent.click(screen.getByRole('button', { name: 'ยืนบัง' }));
+      expect(screen.getByText('ไม่มีใครบาดเจ็บ')).toBeInTheDocument();
+    });
+
     it('says so when there is nobody to target', async () => {
       render(<ActionInput onSubmit={vi.fn()} ability={{ ...withTarget, allies: [] }} onUseAbility={vi.fn()} />);
       await userEvent.click(screen.getByRole('button', { name: 'ยืนบัง' }));
