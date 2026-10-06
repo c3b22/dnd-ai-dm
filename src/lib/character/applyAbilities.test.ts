@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { applyAbilityActions, isEventfulRound, tickCooldowns } from './applyAbilities';
-import type { CharacterTag } from './tags';
+import { applyAbilityActions, eventfulRound, tickCooldowns } from './applyAbilities';
+import { SANCTUARY_CHANGE } from './applyTags';
 import type { Character } from './types';
 
 const four = () => 4;
@@ -27,11 +27,13 @@ describe('applyAbilityActions', () => {
     expect(result.notes.p1).toBe('tried to use ยืนบัง but it was not ready');
   });
 
-  it('keeps the first guard when two warriors guard the same ally', () => {
+  it('keeps the first guard, and the second warrior keeps their cooldown, when two warriors guard the same ally', () => {
     const party = [char(), char({ id: 'p3', displayName: 'Mila' }), char({ id: 'p2', displayName: 'Suki', classId: 'archer' })];
     const result = applyAbilityActions(party, [use('p1', 'p2'), use('p3', 'p2')], four);
     expect(result.guards).toEqual({ p2: 'p1' });
-    expect(result.used).toEqual(['p1', 'p3']);
+    expect(result.used).toEqual(['p1']);
+    expect(result.notes.p3).toBe('tried to use ยืนบัง but Prem is already shielding Suki');
+    expect(result.changes).toEqual(['Prem ใช้ยืนบัง ปกป้อง Suki']);
   });
 
   it('heals with the medium tier at level 1 (1d6+1) and caps at max HP', () => {
@@ -57,6 +59,19 @@ describe('applyAbilityActions', () => {
     expect(result.characters[1].hp).toBe(0);
     expect(result.used).toEqual([]);
     expect(result.notes.p1).toContain('not ready');
+  });
+
+  it('does not spend the cleric ability on someone who is not hurt', () => {
+    const cleric = char({ classId: 'cleric', weaponId: 'staff' });
+    const healthy = char({ id: 'p2', displayName: 'Suki' });
+    const other = applyAbilityActions([cleric, healthy], [use('p1', 'p2')], four);
+    expect(other.used).toEqual([]);
+    expect(other.notes.p1).toBe('tried to use อวยพรรักษา but Suki is not hurt');
+    expect(other.changes).toEqual([]);
+
+    const self = applyAbilityActions([char({ classId: 'cleric', hp: 20 })], [use('p1', 'p1')], four);
+    expect(self.used).toEqual([]);
+    expect(self.notes.p1).toContain('not hurt');
   });
 
   it('heals more at level 5 (2d6)', () => {
@@ -117,26 +132,20 @@ describe('applyAbilityActions', () => {
   });
 });
 
-describe('isEventfulRound', () => {
-  it('counts every mechanical tag kind', () => {
-    const counting: CharacterTag[] = [
-      { kind: 'hurt', name: 'A', tier: 'light' },
-      { kind: 'heal', name: 'A', tier: 'light' },
-      { kind: 'revive', name: 'A' },
-      { kind: 'xp', tier: 'small' },
-      { kind: 'milestone' },
-      { kind: 'give', name: 'A', itemId: 'potion_minor', customName: '' },
-      { kind: 'take', name: 'A', itemId: 'potion_minor', customName: '' },
-      { kind: 'gold', name: 'A', tier: 'small' },
-      { kind: 'pay', name: 'A', tier: 'small' },
-    ];
-    for (const tag of counting) expect(isEventfulRound([tag]), tag.kind).toBe(true);
+describe('eventfulRound', () => {
+  const none = { character: [], inventory: [], economy: [], xp: [] };
+
+  it('is true when any tag-driven system changed something', () => {
+    expect(eventfulRound({ ...none, character: ['Prem −5 HP'] })).toBe(true);
+    expect(eventfulRound({ ...none, inventory: ['Prem ได้รับ ยาฟื้นฟูเล็ก'] })).toBe(true);
+    expect(eventfulRound({ ...none, economy: ['Prem ได้รับ 5 ทอง'] })).toBe(true);
+    expect(eventfulRound({ ...none, xp: ['ทุกคนได้ +10 XP'] })).toBe(true);
   });
 
-  it('does not count a silent round or story-only tags', () => {
-    expect(isEventfulRound([])).toBe(false);
-    expect(isEventfulRound([{ kind: 'sanctuary' }])).toBe(false);
-    expect(isEventfulRound([{ kind: 'shop', merchant: 'Mara', itemIds: ['potion_minor'] }, { kind: 'shop_close' }])).toBe(false);
+  it('is false for a silent round, and for a sanctuary on its own', () => {
+    expect(eventfulRound(none)).toBe(false);
+    expect(eventfulRound({ ...none, character: [SANCTUARY_CHANGE] })).toBe(false);
+    expect(eventfulRound({ ...none, character: [SANCTUARY_CHANGE, 'Prem −5 HP'] })).toBe(true);
   });
 });
 
