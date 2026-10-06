@@ -24,6 +24,16 @@ describe('inventoryPrompt', () => {
     expect(text).toContain('[[take: PlayerName | item_id]]');
   });
 
+  it('teaches the [[magic]] tag and rarity rules without listing magic item ids', () => {
+    const text = inventoryPrompt([prem], {}).join(String.fromCharCode(10));
+    expect(text).toContain('[[magic: PlayerName | uncommon]]');
+    expect(text).toContain('weapon, armor, accessory, potion or scroll');
+    expect(text).toContain('legendary only when a whole story arc ends');
+    expect(text).toContain('Narrate the player receiving that item by name');
+    expect(text).not.toContain('dagger_tamarind');
+    expect(text).toContain('dagger');
+  });
+
   it('shows an empty pack as nothing', () => {
     expect(inventoryPrompt([prem], {}).join('\n')).toContain('Prem: nothing; weight 0/10');
   });

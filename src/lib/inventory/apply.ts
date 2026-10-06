@@ -4,22 +4,54 @@ import type { CharacterTag } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
 import { damageEnemy, findActiveEnemy, type Encounter } from '@/lib/combat/encounter';
 import { giveItem, takeItem, useConsumable, useScroll } from './rules';
+import { MAGIC_RARITY_TH } from './magicItems';
+import { pickMagicItem } from './magicGrant';
 import type { Inventories } from './types';
+
+/** F5f: what this room was already given. `given: null` = the table is unavailable, so [[magic]] tags are ignored. */
+export interface MagicGrantState {
+  given: readonly string[] | null;
+  rand?: () => number;
+}
 
 export function applyInventoryTags(
   characters: Pick<Character, 'id' | 'displayName'>[],
   inventories: Inventories,
-  tags: CharacterTag[]
-): { inventories: Inventories; changes: string[]; changedPlayerIds: string[] } {
+  tags: CharacterTag[],
+  magic: MagicGrantState = { given: null }
+): { inventories: Inventories; changes: string[]; changedPlayerIds: string[]; magicGiven: string[] } {
   const next: Inventories = { ...inventories };
   const changes: string[] = [];
   const changed = new Set<string>();
+  const given = new Set(magic.given ?? []);
+  const magicGiven: string[] = [];
 
   for (const tag of tags) {
-    if (tag.kind !== 'give' && tag.kind !== 'take') continue;
+    if (tag.kind !== 'give' && tag.kind !== 'take' && tag.kind !== 'magic') continue;
     const target = findByDisplayName(characters, tag.name);
     if (!target) continue;
     const items = next[target.id] ?? [];
+
+    if (tag.kind === 'magic') {
+      if (magic.given === null) continue;
+      const pick = pickMagicItem(tag.rarity, tag.itemType, given, magic.rand);
+      if (!pick.item) {
+        if (pick.reason === 'legendary_limit') changes.push(`${target.displayName} ไม่ได้รับไอเท็มระดับตำนาน: ห้องนี้ได้รับไปแล้ว 1 ชิ้น`);
+        continue;
+      }
+      const result = giveItem(items, pick.item.id);
+      if (result.result === 'unknown') continue;
+      if (result.result === 'full') {
+        changes.push(`${target.displayName} แบกไม่ไหว: ไม่ได้รับ ${result.label}`);
+        continue;
+      }
+      next[target.id] = result.items;
+      changed.add(target.id);
+      given.add(pick.item.id);
+      magicGiven.push(pick.item.id);
+      changes.push(`${target.displayName} ได้รับไอเท็มวิเศษ ${result.label} (${MAGIC_RARITY_TH[pick.item.rarity]})`);
+      continue;
+    }
 
     if (tag.kind === 'give') {
       const result = giveItem(items, tag.itemId, tag.customName);
@@ -39,7 +71,7 @@ export function applyInventoryTags(
       changes.push(`${target.displayName} เสียไป ${result.label}`);
     }
   }
-  return { inventories: next, changes, changedPlayerIds: [...changed] };
+  return { inventories: next, changes, changedPlayerIds: [...changed], magicGiven };
 }
 
 export interface PotionUse {

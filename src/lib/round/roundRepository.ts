@@ -10,6 +10,7 @@ import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
 import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
 import { persistFacts, loadFacts, type FactInput } from '@/lib/memory/facts';
+import { loadMagicGiven, persistMagicGiven } from '@/lib/inventory/magicGiven';
 import type { CampaignFact } from '@/lib/memory/types';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
@@ -40,6 +41,8 @@ export interface RoundContext {
   facts: CampaignFact[];
   /** True once an earlier attempt at this round already applied its HP/inventory/gold tags. */
   tagsApplied: boolean;
+  /** Magic item ids this room already received (F5f); null/absent when the table is missing. */
+  magicGiven?: string[] | null;
 }
 
 /** One line of the posted roll summary; `check` is present when the roll was a skill check. */
@@ -87,6 +90,8 @@ export interface RoundRepository {
   setEncounter(campaignId: string, encounter: Encounter | null): Promise<void>;
   /** Best-effort world-memory write (npc/quest/clue); never throws, tolerates a missing table. */
   saveFacts(campaignId: string, facts: FactInput[]): Promise<void>;
+  /** Records magic items handed out this round (F5f). Optional so older fakes keep working. */
+  saveMagicGiven?(campaignId: string, itemIds: string[]): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -246,6 +251,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         currentShop: normalizeShop(wipeRow?.current_shop),
         currentEncounter: normalizeEncounter(encounterRow?.current_encounter),
         facts: await loadFacts(supabase, campaignId),
+        magicGiven: await loadMagicGiven(supabase, campaignId),
         tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
@@ -369,6 +375,10 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
     async saveFacts(campaignId, facts) {
       await persistFacts(supabase, campaignId, facts);
+    },
+
+    async saveMagicGiven(campaignId, itemIds) {
+      await persistMagicGiven(supabase, campaignId, itemIds);
     },
 
     async insertStatsSummary(campaignId, roundId, changes) {

@@ -205,7 +205,7 @@ export async function processRound(
       const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
       const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags);
       const result = applyCharacterTags(enemyAttacks.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
-      const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags);
+      const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
@@ -234,6 +234,14 @@ export async function processRound(
           );
         } catch {
           /* best-effort, like the rest of the mechanics */
+        }
+      }
+      // F5f: remember which magic items were handed out. Best-effort: a missing table must not matter.
+      if (inventoryResult.magicGiven.length > 0 && deps.repository.saveMagicGiven) {
+        try {
+          await deps.repository.saveMagicGiven(context.campaignId, inventoryResult.magicGiven);
+        } catch {
+          /* best-effort, like the facts */
         }
       }
       const goldChanges = Object.entries(economy.goldDeltas)

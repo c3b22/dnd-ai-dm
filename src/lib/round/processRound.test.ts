@@ -33,6 +33,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
     setShop: vi.fn().mockResolvedValue(undefined),
     setEncounter: vi.fn().mockResolvedValue(undefined),
     saveFacts: vi.fn().mockResolvedValue(undefined),
+    saveMagicGiven: vi.fn().mockResolvedValue(undefined),
     insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
@@ -790,6 +791,43 @@ describe('processRound encounter', () => {
     const repository = one();
     vi.mocked(repository.setEncounter).mockRejectedValue(new Error('no column'));
     const result = await run(repository, '[[enemy: หมาป่า | normal]]');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
+});
+
+const NL = String.fromCharCode(10);
+describe('processRound magic items (F5f)', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const one = (magicGiven?: string[] | null) => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, magicGiven, actions: [{ playerDisplayName: 'Prem', actionText: 'open chest', playerId: 'p1', useItemId: null }] })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('hands out a server-picked item, saves it, records it as given and reports its name in the system message', async () => {
+    const repository = one([]);
+    await run(repository, 'Chest!'+NL+'[[magic: Prem | rare | scroll]]');
+    const saved = vi.mocked(repository.saveInventories).mock.calls[0][1][0];
+    const itemId = saved.items[0].itemId;
+    expect(repository.saveMagicGiven).toHaveBeenCalledWith('camp-1', [itemId]);
+    const changes = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(changes[0]).toMatch(/^Prem ได้รับไอเท็มวิเศษ .+ \(หายาก\)$/);
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'Chest!');
+  });
+
+  it('ignores [[magic]] when the given-table is unavailable (null or absent)', async () => {
+    for (const given of [null, undefined]) {
+      const repository = one(given);
+      await run(repository, '[[magic: Prem | rare]]');
+      expect(repository.saveMagicGiven).not.toHaveBeenCalled();
+      expect(repository.saveInventories).not.toHaveBeenCalled();
+    }
+  });
+
+  it('still closes the round when recording the given item fails', async () => {
+    const repository = one([]);
+    vi.mocked(repository.saveMagicGiven!).mockRejectedValue(new Error('no table'));
+    const result = await run(repository, '[[magic: Prem | uncommon]]');
     expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
   });
 });

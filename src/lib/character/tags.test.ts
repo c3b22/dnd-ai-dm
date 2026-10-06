@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseCharacterTags } from './tags';
 
+const NL = String.fromCharCode(10);
+
 describe('parseCharacterTags', () => {
   it('extracts tags in the order they appear and strips them from the text', () => {
     const text = 'The goblin slashes Prem.\n[[hurt: Prem | medium]]\n[[revive: Suki]]\n[[sanctuary]]';
@@ -172,6 +174,18 @@ describe('gold, pay and shop tags', () => {
       expect(ok.tags).toEqual([{ kind: 'enemy_attack', enemy: 'หมาป่า', player: 'Prem' }]);
       expect(ok.cleanText).toBe('หมาป่ากัด');
       const bad = parseCharacterTags('x\n[[enemy_attack: หมาป่า]]');
+      expect(bad.tags).toEqual([]);
+      expect(bad.cleanText).toBe('x');
+    });
+
+    it('parses magic (player | rarity [| type]) and hides a malformed one', () => {
+      const r = parseCharacterTags('พบหีบ'+NL+'[[magic: Prem | Rare]]'+NL+'[[magic: Suki | uncommon | potion]]');
+      expect(r.tags).toEqual([
+        { kind: 'magic', name: 'Prem', rarity: 'rare', itemType: null },
+        { kind: 'magic', name: 'Suki', rarity: 'uncommon', itemType: 'potion' },
+      ]);
+      expect(r.cleanText).toBe('พบหีบ');
+      const bad = parseCharacterTags('x'+NL+'[[magic: Prem | epic]]'+NL+'[[magic: Prem | rare | sword]]');
       expect(bad.tags).toEqual([]);
       expect(bad.cleanText).toBe('x');
     });

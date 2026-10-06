@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { magicPool } from './magicGrant';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from './apply';
 import type { Encounter } from '@/lib/combat/encounter';
 import type { Character } from '@/lib/character/types';
@@ -10,6 +11,66 @@ const person = (id: string, displayName: string, over: Partial<Character> = {}):
 });
 const potion = (quantity = 1): InventoryItem => ({ itemId: 'potion_minor', customName: '', quantity, slot: null, equipped: false });
 const party = [person('p1', 'Prem'), person('p2', 'Suki')];
+
+describe('applyInventoryTags [[magic]]', () => {
+  const magicTag = (name: string, rarity: 'uncommon' | 'rare' | 'legendary', itemType: 'weapon' | 'armor' | 'accessory' | 'potion' | 'scroll' | null = null) =>
+    ({ kind: 'magic' as const, name, rarity, itemType });
+
+  it('gives a server-picked item of that rarity and type, and reports its name and rarity', () => {
+    const r = applyInventoryTags(party, {}, [magicTag('prem', 'rare', 'scroll')], { given: [], rand: () => 0 });
+    const id = r.magicGiven[0];
+    expect(magicPool('rare', 'scroll').map((i) => i.id)).toContain(id);
+    expect(r.inventories.p1[0]).toMatchObject({ itemId: id, quantity: 1 });
+    expect(r.changes[0]).toMatch(/^Prem ได้รับไอเท็มวิเศษ .+ \(หายาก\)$/);
+    expect(r.changedPlayerIds).toEqual(['p1']);
+  });
+
+  it('never repeats within the room, across tags in one round or earlier rounds', () => {
+    const pool = magicPool('uncommon', 'potion').map((i) => i.id);
+    const r = applyInventoryTags(party, {}, [magicTag('Prem', 'uncommon', 'potion'), magicTag('Suki', 'uncommon', 'potion')], { given: [pool[0]], rand: () => 0 });
+    expect(r.magicGiven).toEqual([pool[1], pool[2]]);
+  });
+
+  it('starts repeating once the whole pool was given', () => {
+    const pool = magicPool('uncommon', 'potion').map((i) => i.id);
+    const r = applyInventoryTags(party, {}, [magicTag('Prem', 'uncommon', 'potion')], { given: pool, rand: () => 0 });
+    expect(pool).toContain(r.magicGiven[0]);
+  });
+
+  it('gives at most one legendary per campaign', () => {
+    const r = applyInventoryTags(party, {}, [magicTag('Prem', 'legendary'), magicTag('Suki', 'legendary')], { given: [], rand: () => 0 });
+    expect(r.magicGiven).toHaveLength(1);
+    expect(r.inventories.p2).toBeUndefined();
+    expect(r.changes[1]).toContain('ตำนาน');
+    const later = applyInventoryTags(party, {}, [magicTag('Prem', 'legendary')], { given: r.magicGiven });
+    expect(later.magicGiven).toEqual([]);
+    expect(later.changedPlayerIds).toEqual([]);
+  });
+
+  it('ignores an unknown player name', () => {
+    const r = applyInventoryTags(party, {}, [magicTag('Nobody', 'rare')], { given: [] });
+    expect(r).toMatchObject({ changes: [], changedPlayerIds: [], magicGiven: [] });
+  });
+
+  it('ignores the tag when the given-table is unavailable', () => {
+    const r = applyInventoryTags(party, {}, [magicTag('Prem', 'rare')]);
+    expect(r).toMatchObject({ changes: [], changedPlayerIds: [], magicGiven: [] });
+  });
+
+  it('a full pack gets the usual full message and the item is not recorded as given', () => {
+    const full: Inventories = { p1: [potion(10)] };
+    const r = applyInventoryTags(party, full, [magicTag('Prem', 'rare', 'scroll')], { given: [], rand: () => 0 });
+    expect(r.magicGiven).toEqual([]);
+    expect(r.changes[0]).toContain('แบกไม่ไหว');
+    expect(r.inventories.p1).toBe(full.p1);
+  });
+
+  it('plain [[give]] still works for ordinary items', () => {
+    const r = applyInventoryTags(party, {}, [{ kind: 'give', name: 'Prem', itemId: 'dagger', customName: '' }], { given: [] });
+    expect(r.inventories.p1[0].itemId).toBe('dagger');
+    expect(r.magicGiven).toEqual([]);
+  });
+});
 
 describe('applyInventoryTags', () => {
   it('gives a catalog item and a story item and reports them in the log', () => {
