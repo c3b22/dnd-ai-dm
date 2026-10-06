@@ -51,3 +51,12 @@ export function classOf(id: string | null | undefined): ClassDef | null {
 export function classForWeapon(weaponId: string | null | undefined): ClassId {
   return CLASS_IDS.find((id) => CLASSES[id].weaponId === weaponId) ?? DEFAULT_CLASS_ID;
 }
+
+/**
+ * The class a new player gets: a valid classId, else (for clients that predate classes) the class
+ * that starts with the weapon they sent, else the default.
+ */
+export function resolveClassId(params: { classId?: unknown; weaponId?: unknown }): ClassId {
+  if (isClassId(params.classId)) return params.classId;
+  return classForWeapon(typeof params.weaponId === 'string' ? params.weaponId : undefined);
+}

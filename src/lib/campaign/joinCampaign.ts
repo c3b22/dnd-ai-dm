@@ -1,10 +1,10 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { DEFAULT_WEAPON_ID, isStartingWeapon } from '@/lib/character/constants';
+import { CLASSES, resolveClassId } from '@/lib/character/classes';
 import { seedStartingKit } from '@/lib/inventory/startingKit';
 
 export async function joinCampaign(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  params: { campaignId: string; userId: string; displayName: string; weaponId?: string }
+  params: { campaignId: string; userId: string; displayName: string; classId?: string; weaponId?: string }
 ) {
   // A browser keeps one anonymous user across campaigns, so opening a friend's link twice
   // must land back on the same player instead of tripping the (campaign, user) unique key.
@@ -16,7 +16,8 @@ export async function joinCampaign(
     .maybeSingle();
   if (existing) return existing;
 
-  const weaponId = isStartingWeapon(params.weaponId) ? params.weaponId : DEFAULT_WEAPON_ID;
+  const classId = resolveClassId(params);
+  const weaponId = CLASSES[classId].weaponId;
   const { data, error } = await supabase
     .from('players')
     .insert({
@@ -24,6 +25,7 @@ export async function joinCampaign(
       user_id: params.userId,
       display_name: params.displayName,
       weapon_id: weaponId,
+      class_id: classId,
     })
     .select()
     .single();

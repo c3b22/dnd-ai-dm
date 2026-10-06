@@ -1,12 +1,12 @@
 import { openingSceneId } from '@/lib/scenes/scenes';
 import { generateJoinCode } from './joinCode';
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { DEFAULT_WEAPON_ID, isStartingWeapon } from '@/lib/character/constants';
+import { CLASSES, resolveClassId } from '@/lib/character/classes';
 import { seedStartingKit } from '@/lib/inventory/startingKit';
 
 export async function createCampaign(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  params: { name: string; userId: string; displayName: string; adventureId?: string | null; weaponId?: string }
+  params: { name: string; userId: string; displayName: string; adventureId?: string | null; classId?: string; weaponId?: string }
 ) {
   const { data: campaign, error: campaignError } = await supabase
     .from('campaigns')
@@ -15,7 +15,8 @@ export async function createCampaign(
     .single();
   if (campaignError) throw campaignError;
 
-  const weaponId = isStartingWeapon(params.weaponId) ? params.weaponId : DEFAULT_WEAPON_ID;
+  const classId = resolveClassId(params);
+  const weaponId = CLASSES[classId].weaponId;
   const { data: player, error: playerError } = await supabase
     .from('players')
     .insert({
@@ -23,6 +24,7 @@ export async function createCampaign(
       user_id: params.userId,
       display_name: params.displayName,
       weapon_id: weaponId,
+      class_id: classId,
     })
     .select()
     .single();

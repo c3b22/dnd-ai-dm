@@ -85,11 +85,16 @@ describe('createCampaign', () => {
       rounds: { id: 'round-1', campaign_id: 'camp-1', status: 'pending' },
     };
     const playerInsert = (calls: { table: string; action: string; payload?: unknown }[]) =>
-      calls.find((c) => c.action === 'insert' && c.table === 'players')?.payload as { weapon_id: string };
+      calls.find((c) => c.action === 'insert' && c.table === 'players')?.payload as { weapon_id: string; class_id: string };
 
     const chosen = createFakeSupabase(responses);
     await createCampaign(chosen.client, { name: 'Test', userId: 'user-1', displayName: 'Prem', weaponId: 'shortbow' });
     expect(playerInsert(chosen.calls).weapon_id).toBe('shortbow');
+    expect(playerInsert(chosen.calls).class_id).toBe('archer');
+
+    const byClass = createFakeSupabase(responses);
+    await createCampaign(byClass.client, { name: 'Test', userId: 'user-1', displayName: 'Prem', classId: 'rogue' });
+    expect(playerInsert(byClass.calls)).toMatchObject({ weapon_id: 'dagger', class_id: 'rogue' });
 
     const fallback = createFakeSupabase(responses);
     await createCampaign(fallback.client, { name: 'Test', userId: 'user-1', displayName: 'Prem' });

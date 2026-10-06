@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CLASSES, CLASS_IDS, DEFAULT_CLASS_ID, classForWeapon, classOf, isClassId } from './classes';
+import { CLASSES, CLASS_IDS, DEFAULT_CLASS_ID, classForWeapon, classOf, isClassId, resolveClassId } from './classes';
 import { WEAPONS } from './constants';
 
 describe('CLASSES', () => {
@@ -49,5 +49,16 @@ describe('classForWeapon', () => {
     expect(classForWeapon('shortsword')).toBe('warrior');
     expect(classForWeapon('lightsaber')).toBe('warrior');
     expect(classForWeapon(undefined)).toBe('warrior');
+  });
+});
+
+describe('resolveClassId', () => {
+  it('prefers a valid classId, then a legacy weaponId, then the default', () => {
+    expect(resolveClassId({ classId: 'rogue' })).toBe('rogue');
+    expect(resolveClassId({ classId: 'rogue', weaponId: 'staff' })).toBe('rogue');
+    expect(resolveClassId({ weaponId: 'shortbow' })).toBe('archer');
+    expect(resolveClassId({ classId: 'mage', weaponId: 'staff' })).toBe('cleric');
+    expect(resolveClassId({ classId: 'mage' })).toBe('warrior');
+    expect(resolveClassId({})).toBe('warrior');
   });
 });

@@ -39,7 +39,7 @@ describe('joinCampaign', () => {
     });
 
     expect(inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior' },
     ]);
     expect(player.id).toBe('new-player');
   });
@@ -63,14 +63,33 @@ describe('joinCampaign', () => {
     const chosen = fakeSupabase({ existing: null });
     await joinCampaign(chosen.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', weaponId: 'staff' });
     expect(chosen.inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'staff' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'staff', class_id: 'cleric' },
     ]);
 
     const invalid = fakeSupabase({ existing: null });
     await joinCampaign(invalid.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', weaponId: 'lightsaber' });
     expect(invalid.inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior' },
     ]);
+  });
+
+  it('stores the chosen class and its starting weapon, and seeds that weapon', async () => {
+    const rogue = fakeSupabase({ existing: null });
+    await joinCampaign(rogue.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', classId: 'rogue' });
+    expect(rogue.inserts).toEqual([
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'dagger', class_id: 'rogue' },
+    ]);
+    expect((rogue.kitInserts[0] as any[])[0]).toMatchObject({ item_id: 'dagger', equipped: true });
+
+    const wrong = fakeSupabase({ existing: null });
+    await joinCampaign(wrong.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', classId: 'mage' });
+    expect((wrong.inserts[0] as any).class_id).toBe('warrior');
+  });
+
+  it('maps an old client that only sends a starting weapon to its class', async () => {
+    const old = fakeSupabase({ existing: null });
+    await joinCampaign(old.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', weaponId: 'shortbow' });
+    expect(old.inserts[0]).toMatchObject({ weapon_id: 'shortbow', class_id: 'archer' });
   });
 
   it('returns the existing player instead of inserting a duplicate when the user already joined', async () => {
