@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { joinCampaign } from './joinCampaign';
+import { CLASSES } from '@/lib/character/classes';
 
-function fakeSupabase(options: { existing: unknown | null }) {
+function fakeSupabase(options: { existing: unknown | null; rejectAbilities?: boolean }) {
   const inserts: unknown[] = [];
   const kitInserts: unknown[] = [];
   const client: any = {
@@ -17,6 +18,9 @@ function fakeSupabase(options: { existing: unknown | null }) {
       }),
       insert: (payload: unknown) => {
         inserts.push(payload);
+        if (options.rejectAbilities && 'abilities' in (payload as object)) {
+          return { select: () => ({ single: () => Promise.resolve({ data: null, error: { message: "Could not find the 'abilities' column of 'players'" } }) }) };
+        }
         return {
           select: () => ({
             single: () => Promise.resolve({ data: { id: 'new-player', ...(payload as object) }, error: null }),
@@ -39,7 +43,7 @@ describe('joinCampaign', () => {
     });
 
     expect(inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior', abilities: CLASSES.warrior.abilities },
     ]);
     expect(player.id).toBe('new-player');
   });
@@ -63,13 +67,13 @@ describe('joinCampaign', () => {
     const chosen = fakeSupabase({ existing: null });
     await joinCampaign(chosen.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', weaponId: 'staff' });
     expect(chosen.inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'staff', class_id: 'cleric' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'staff', class_id: 'cleric', abilities: CLASSES.cleric.abilities },
     ]);
 
     const invalid = fakeSupabase({ existing: null });
     await joinCampaign(invalid.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', weaponId: 'lightsaber' });
     expect(invalid.inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior', abilities: CLASSES.warrior.abilities },
     ]);
   });
 
@@ -77,7 +81,7 @@ describe('joinCampaign', () => {
     const rogue = fakeSupabase({ existing: null });
     await joinCampaign(rogue.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', classId: 'rogue' });
     expect(rogue.inserts).toEqual([
-      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'dagger', class_id: 'rogue' },
+      { campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'dagger', class_id: 'rogue', abilities: CLASSES.rogue.abilities },
     ]);
     expect((rogue.kitInserts[0] as any[])[0]).toMatchObject({ item_id: 'dagger', equipped: true });
 
@@ -103,5 +107,13 @@ describe('joinCampaign', () => {
 
     expect(inserts).toEqual([]);
     expect(player.id).toBe('player-9');
+  });
+
+  it('retries without abilities when the column does not exist yet', async () => {
+    const { client, inserts } = fakeSupabase({ existing: null, rejectAbilities: true });
+    const player = await joinCampaign(client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem' });
+    expect(inserts).toHaveLength(2);
+    expect(inserts[1]).toEqual({ campaign_id: 'camp-1', user_id: 'user-1', display_name: 'Prem', weapon_id: 'shortsword', class_id: 'warrior' });
+    expect(player.id).toBe('new-player');
   });
 });

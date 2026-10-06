@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CLASSES, CLASS_IDS, DEFAULT_CLASS_ID, classForWeapon, classOf, isClassId, resolveClassId } from './classes';
-import { WEAPONS } from './constants';
+import { SKILL_ABILITIES, SKILL_IDS, proficiencyBonus, skillModifier, startingAbilities, CLASSES, CLASS_IDS, DEFAULT_CLASS_ID, classForWeapon, classOf, isClassId, resolveClassId } from './classes';
+import { ABILITY_KEYS, WEAPONS } from './constants';
 
 describe('CLASSES', () => {
   it('defines the four classes with a Thai name, an existing weapon and an ability', () => {
@@ -60,5 +60,52 @@ describe('resolveClassId', () => {
     expect(resolveClassId({ classId: 'mage', weaponId: 'staff' })).toBe('cleric');
     expect(resolveClassId({ classId: 'mage' })).toBe('warrior');
     expect(resolveClassId({})).toBe('warrior');
+  });
+});
+
+describe('class starting abilities and skills', () => {
+  it('gives every class the standard array, arranged differently', () => {
+    const seen = new Set<string>();
+    for (const id of CLASS_IDS) {
+      const scores = ABILITY_KEYS.map((k) => CLASSES[id].abilities[k]);
+      expect([...scores].sort((a, b) => b - a)).toEqual([15, 14, 13, 12, 10, 8]);
+      seen.add(scores.join('/'));
+    }
+    expect(seen.size).toBe(4);
+  });
+
+  it('puts each class best score where it leans', () => {
+    expect(CLASSES.warrior.abilities.STR).toBe(15);
+    expect(CLASSES.archer.abilities.DEX).toBe(15);
+    expect(CLASSES.cleric.abilities.WIS).toBe(15);
+    expect(CLASSES.rogue.abilities.DEX).toBe(15);
+  });
+
+  it('maps all 18 skills to an ability, and class skills are real skills', () => {
+    expect(SKILL_IDS).toHaveLength(18);
+    expect(SKILL_ABILITIES.athletics).toBe('STR');
+    expect(SKILL_ABILITIES.stealth).toBe('DEX');
+    for (const id of CLASS_IDS) {
+      expect(CLASSES[id].skills.length).toBeGreaterThan(0);
+      for (const s of CLASSES[id].skills) expect(SKILL_IDS).toContain(s);
+    }
+  });
+
+  it('startingAbilities returns a copy', () => {
+    const a = startingAbilities('rogue');
+    a.DEX = 1;
+    expect(CLASSES.rogue.abilities.DEX).toBe(15);
+  });
+
+  it('proficiency bonus follows 5e by level', () => {
+    expect([1, 4, 5, 8, 9, 10, 12, 13, 17].map(proficiencyBonus)).toEqual([2, 2, 3, 3, 4, 4, 4, 5, 6]);
+    expect(proficiencyBonus(0)).toBe(2);
+    expect(proficiencyBonus(NaN)).toBe(2);
+  });
+
+  it('skill modifier adds proficiency only for class skills', () => {
+    const base = { abilities: CLASSES.rogue.abilities, classId: 'rogue' as const, level: 5 };
+    expect(skillModifier({ ...base, skill: 'stealth' })).toBe(2 + 3);
+    expect(skillModifier({ ...base, skill: 'athletics' })).toBe(-1);
   });
 });

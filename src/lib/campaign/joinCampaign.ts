@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/lib/supabase/server';
-import { CLASSES, resolveClassId } from '@/lib/character/classes';
+import { CLASSES, resolveClassId, startingAbilities } from '@/lib/character/classes';
+import { insertPlayer } from './insertPlayer';
 import { seedStartingKit } from '@/lib/inventory/startingKit';
 
 export async function joinCampaign(
@@ -18,17 +19,17 @@ export async function joinCampaign(
 
   const classId = resolveClassId(params);
   const weaponId = CLASSES[classId].weaponId;
-  const { data, error } = await supabase
-    .from('players')
-    .insert({
+  const { data, error } = await insertPlayer(
+    supabase,
+    {
       campaign_id: params.campaignId,
       user_id: params.userId,
       display_name: params.displayName,
       weapon_id: weaponId,
       class_id: classId,
-    })
-    .select()
-    .single();
+    },
+    startingAbilities(classId)
+  );
   if (error) throw error;
   await seedStartingKit(supabase, { campaignId: params.campaignId, playerId: data.id, weaponId });
   return data;
