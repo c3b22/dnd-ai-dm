@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   deriveScenes, validateCustomAdventureInput, CustomAdventureError,
   createCustomAdventure, updateCustomAdventure, deleteCustomAdventure, listMyCustomAdventures,
+  enableSharing, disableSharing,
 } from './customAdventures';
 
 describe('deriveScenes', () => {
@@ -124,5 +125,95 @@ describe('listMyCustomAdventures', () => {
   it('returns an empty list when the caller owns nothing', async () => {
     const client: any = { from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
     expect(await listMyCustomAdventures(client, 'owner-1')).toEqual([]);
+  });
+});
+
+function sharingSupabase(row: Record<string, unknown> | null, updateResults: ({ code?: string } | null)[] = []) {
+  const updates: Record<string, unknown>[] = [];
+  let call = 0;
+  const client: any = {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: row, error: null }) }) }),
+      update: (payload: Record<string, unknown>) => {
+        updates.push(payload);
+        const failure = updateResults[call++] ?? null;
+        return {
+          eq: () => ({
+            select: () => ({
+              single: () => Promise.resolve(
+                failure
+                  ? { data: null, error: { code: failure.code } }
+                  : { data: { share_code: payload.share_code }, error: null }
+              ),
+            }),
+            then: (resolve: (v: unknown) => void) => resolve({ error: null }),
+          }),
+        };
+      },
+    }),
+  };
+  return { client, updates };
+}
+
+describe('enableSharing', () => {
+  it('throws 404 when the adventure does not exist', async () => {
+    const { client } = sharingSupabase(null);
+    await expect(enableSharing(client, 'c1', 'owner-1')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('throws 403 when the caller is not the owner', async () => {
+    const { client, updates } = sharingSupabase({ owner_id: 'owner-2', share_code: null });
+    await expect(enableSharing(client, 'c1', 'owner-1')).rejects.toMatchObject({ status: 403 });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('returns the existing code without writing (idempotent)', async () => {
+    const { client, updates } = sharingSupabase({ owner_id: 'owner-1', share_code: 'ABCD2345' });
+    expect(await enableSharing(client, 'c1', 'owner-1')).toBe('ABCD2345');
+    expect(updates).toHaveLength(0);
+  });
+
+  it('generates an 8-char unambiguous code when none exists', async () => {
+    const { client, updates } = sharingSupabase({ owner_id: 'owner-1', share_code: null });
+    const code = await enableSharing(client, 'c1', 'owner-1');
+    expect(code).toMatch(/^[A-HJKMNP-Z2-9]{8}$/);
+    expect(updates).toEqual([{ share_code: code }]);
+  });
+
+  it('retries with a new code when it collides with another adventure', async () => {
+    const { client, updates } = sharingSupabase(
+      { owner_id: 'owner-1', share_code: null },
+      [{ code: '23505' }, { code: '23505' }]
+    );
+    const code = await enableSharing(client, 'c1', 'owner-1');
+    expect(updates).toHaveLength(3);
+    expect(updates[2]).toEqual({ share_code: code });
+  });
+
+  it('gives up with an error after repeated collisions', async () => {
+    const collisions = Array.from({ length: 20 }, () => ({ code: '23505' }));
+    const { client } = sharingSupabase({ owner_id: 'owner-1', share_code: null }, collisions);
+    await expect(enableSharing(client, 'c1', 'owner-1')).rejects.toBeTruthy();
+  });
+
+  it('rethrows non-collision errors immediately', async () => {
+    const { client, updates } = sharingSupabase({ owner_id: 'owner-1', share_code: null }, [{ code: '42703' }]);
+    await expect(enableSharing(client, 'c1', 'owner-1')).rejects.toMatchObject({ code: '42703' });
+    expect(updates).toHaveLength(1);
+  });
+});
+
+describe('disableSharing', () => {
+  it('throws 404/403 for missing or foreign adventures', async () => {
+    await expect(disableSharing(sharingSupabase(null).client, 'c1', 'owner-1')).rejects.toMatchObject({ status: 404 });
+    await expect(
+      disableSharing(sharingSupabase({ owner_id: 'owner-2', share_code: 'X' }).client, 'c1', 'owner-1')
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('sets share_code to null for the owner', async () => {
+    const { client, updates } = sharingSupabase({ owner_id: 'owner-1', share_code: 'ABCD2345' });
+    await disableSharing(client, 'c1', 'owner-1');
+    expect(updates).toEqual([{ share_code: null }]);
   });
 });
