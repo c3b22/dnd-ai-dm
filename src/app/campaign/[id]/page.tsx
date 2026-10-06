@@ -11,6 +11,7 @@ import { PlayerOrder } from '@/components/PlayerOrder';
 import { Inventory } from '@/components/Inventory';
 import { Shop } from '@/components/Shop';
 import { Trades } from '@/components/Trades';
+import { QuestLog } from '@/components/QuestLog';
 import { CampaignLobby } from '@/components/CampaignLobby';
 import { D20Icon } from '@/components/D20Icon';
 import { RoundTimer } from '@/components/RoundTimer';
@@ -49,6 +50,8 @@ import { triggerRoundProcessing } from '@/lib/round/triggerRoundProcessing';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 import { fetchEncounter, subscribeToEncounter } from '@/lib/supabase/encounter';
 import type { Encounter } from '@/lib/combat/encounter';
+import { fetchCampaignFacts, subscribeToFacts } from '@/lib/supabase/factsRealtime';
+import type { CampaignFact } from '@/lib/memory/types';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
@@ -73,6 +76,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [shop, setShop] = useState<ShopState | null>(null);
   // Synced only; the combat tracker UI reads it later.
   const [, setEncounter] = useState<Encounter | null>(null);
+  const [facts, setFacts] = useState<CampaignFact[]>([]);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
@@ -195,6 +199,16 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshTrades();
     return subscribeToTrades(campaignId, refreshTrades);
   }, [campaignId, refreshTrades]);
+
+  const refreshFacts = useCallback(() => {
+    fetchCampaignFacts(campaignId)
+      .then(setFacts)
+      .catch(() => {});
+  }, [campaignId]);
+  useEffect(() => {
+    refreshFacts();
+    return subscribeToFacts(campaignId, refreshFacts);
+  }, [campaignId, refreshFacts]);
 
   const me = players.find((p) => p.id === playerId);
 
@@ -510,6 +524,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
             onSave={handleSaveSettings}
           />
+          <QuestLog facts={facts} />
           {adventure && (
             <section className="card" aria-label="เรื่องที่เล่น">
               <h3>เรื่องที่เล่น</h3>

@@ -55,6 +55,15 @@ vi.mock('@/lib/supabase/roundActionsRealtime', () => ({
   subscribeToCampaignStarted: () => () => {},
 }));
 vi.mock('@/lib/supabase/encounter', () => ({ fetchEncounter, subscribeToEncounter }));
+const { fetchCampaignFacts, subscribeToFacts, unsubscribeFacts } = vi.hoisted(() => {
+  const unsubscribeFacts = vi.fn();
+  return {
+    fetchCampaignFacts: vi.fn(() => Promise.resolve([] as unknown[])),
+    subscribeToFacts: vi.fn(() => unsubscribeFacts),
+    unsubscribeFacts,
+  };
+});
+vi.mock('@/lib/supabase/factsRealtime', () => ({ fetchCampaignFacts, subscribeToFacts }));
 vi.mock('@/lib/supabase/startCampaign', () => ({ startCampaignForClient: vi.fn() }));
 vi.mock('@/lib/round/triggerRoundProcessing', () => ({ triggerRoundProcessing: vi.fn() }));
 
@@ -140,5 +149,35 @@ describe('CampaignPage — encounter sync', () => {
     await renderPage();
     cleanup();
     expect(unsubscribeEncounter).toHaveBeenCalled();
+  });
+});
+
+describe('CampaignPage — quest log', () => {
+  const started = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: null, current_scene_id: null };
+
+  beforeEach(() => {
+    fetchCampaignFacts.mockReset();
+    fetchCampaignFacts.mockResolvedValue([]);
+    subscribeToFacts.mockClear();
+    unsubscribeFacts.mockClear();
+  });
+
+  it('loads facts, subscribes, and shows them in the notebook', async () => {
+    campaignRow.current = started;
+    fetchCampaignFacts.mockResolvedValue([
+      { id: 'f1', campaignId: 'c1', kind: 'npc', key: 'เกรตา', value: 'เป็นมิตร', updatedAt: '2026-10-06T00:00:00Z' },
+    ]);
+    await renderPage();
+    expect(fetchCampaignFacts).toHaveBeenCalledWith('c1');
+    expect(subscribeToFacts).toHaveBeenCalledWith('c1', expect.any(Function));
+    expect((await screen.findByLabelText('NPC ที่พบ')).textContent).toContain('เกรตา');
+  });
+
+  it('shows the empty state and unsubscribes on unmount', async () => {
+    campaignRow.current = started;
+    await renderPage();
+    expect(await screen.findByText(/ยังไม่มีบันทึก/)).toBeTruthy();
+    cleanup();
+    expect(unsubscribeFacts).toHaveBeenCalled();
   });
 });
