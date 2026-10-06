@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { supabaseBrowserClient } from '@/lib/supabase/client';
 
 // Duplicated from src/lib/adventures/customAdventures.ts: that module pulls in
 // server-only Supabase types, so this client component keeps its own copy.
@@ -32,7 +31,31 @@ export interface AdventureFormProps {
 
 const EMPTY_NPC = { name: '', role: '' };
 
+const UPLOAD_FAILED_TH = 'อัปโหลดภาพไม่สำเร็จ';
+
+// The image route answers with English messages; show the user a Thai one.
+const UPLOAD_ERRORS_TH: Record<string, string> = {
+  'file must be an image': 'ไฟล์ต้องเป็นรูปภาพ',
+  'file is too large (max 5MB)': 'ไฟล์ใหญ่เกินไป (สูงสุด 5MB)',
+  'invalid image data': 'ไฟล์ภาพไม่ถูกต้องหรือเสียหาย',
+  'file is required': 'กรุณาเลือกไฟล์ภาพ',
+  'unknown scene key': 'ไม่พบฉากนี้ในเนื้อเรื่อง',
+  'adventure not found': 'ไม่พบเนื้อเรื่องนี้',
+  'not the owner': 'คุณไม่ใช่เจ้าของเนื้อเรื่องนี้',
+  'sign in required': 'กรุณาเข้าสู่ระบบก่อน',
+};
+
+/** An error whose message is already user-facing Thai text. */
+class FormError extends Error {}
+
 async function authHeader(): Promise<Record<string, string>> {
+  // Loaded here, not at module scope: /adventures/new is statically prerendered at build
+  // time, and creating the Supabase client there would require its keys during `next build`.
+  const { supabaseBrowserClient } = await import('@/lib/supabase/client');
+  // A first-time visitor has no session yet; sign them in anonymously so the API accepts them.
+  const { ensureAnonymousUser } = await import('@/lib/supabase/ensureAnonymousUser');
+  const { error: authError } = await ensureAnonymousUser(supabaseBrowserClient);
+  if (authError) throw new FormError('เข้าสู่ระบบไม่สำเร็จ ลองอีกครั้ง');
   const { data } = await supabaseBrowserClient.auth.getSession();
   return { Authorization: `Bearer ${data.session?.access_token ?? ''}` };
 }
@@ -42,6 +65,7 @@ export function AdventureForm({ existing }: AdventureFormProps) {
   const [scenes, setScenes] = useState<CustomScene[]>(existing?.scenes ?? []);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Record<string, string>>({});
 
   const [title, setTitle] = useState(existing?.title ?? '');
   const [titleTh, setTitleTh] = useState(existing?.titleTh ?? '');
@@ -114,17 +138,31 @@ export function AdventureForm({ existing }: AdventureFormProps) {
 
   async function handleImageChange(key: string, file: File) {
     if (!adventureId) return;
-    const headers = await authHeader();
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(`/api/adventures/${adventureId}/scenes/${key}/image`, {
-      method: 'POST',
-      headers,
-      body: formData,
+    setImageErrors((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
     });
-    if (!response.ok) return;
-    const body = await response.json();
-    setScenes((prev) => prev.map((scene) => (scene.key === key ? { ...scene, imagePath: body.imageUrl } : scene)));
+    try {
+      const headers = await authHeader();
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch(`/api/adventures/${adventureId}/scenes/${key}/image`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new FormError(UPLOAD_ERRORS_TH[body.error] ?? UPLOAD_FAILED_TH);
+      }
+      const body = await response.json();
+      setScenes((prev) => prev.map((scene) => (scene.key === key ? { ...scene, imagePath: body.imageUrl } : scene)));
+    } catch (err) {
+      // A network failure (e.g. TypeError "Failed to fetch") gets the generic Thai message.
+      const message = err instanceof FormError ? err.message : UPLOAD_FAILED_TH;
+      setImageErrors((prev) => ({ ...prev, [key]: message }));
+    }
   }
 
   return (
@@ -213,6 +251,11 @@ export function AdventureForm({ existing }: AdventureFormProps) {
                   if (file) void handleImageChange(scene.key, file);
                 }}
               />
+              {imageErrors[scene.key] && (
+                <p role="alert" className="error">
+                  {imageErrors[scene.key]}
+                </p>
+              )}
             </div>
           ))}
         </fieldset>

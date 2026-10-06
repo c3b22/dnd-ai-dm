@@ -2,14 +2,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AdventureForm } from './AdventureForm';
 
-vi.mock('@/lib/supabase/client', () => ({
-  supabaseBrowserClient: {
-    auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'token-123' } } }) },
-  },
+const { getSession, signInAnonymously } = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  signInAnonymously: vi.fn(),
 }));
 
+vi.mock('@/lib/supabase/client', () => ({
+  supabaseBrowserClient: { auth: { getSession, signInAnonymously } },
+}));
+
+const existingSession = { data: { session: { access_token: 'token-123', user: { id: 'user-1' } } } };
+
 const originalFetch = global.fetch;
-beforeEach(() => { global.fetch = vi.fn(); });
+beforeEach(() => {
+  global.fetch = vi.fn();
+  getSession.mockReset().mockResolvedValue(existingSession);
+  signInAnonymously.mockReset();
+});
 afterEach(() => { global.fetch = originalFetch; });
 
 function fillRequiredFields() {
@@ -58,6 +67,38 @@ describe('AdventureForm — step 1, create', () => {
     fireEvent.click(screen.getByText('สร้างเนื้อเรื่อง'));
     await waitFor(() => expect(screen.getByText('ภาพเปิดเรื่อง')).toBeTruthy());
     expect(global.fetch).toHaveBeenCalledWith('/api/adventures', expect.objectContaining({ method: 'POST' }));
+    expect(signInAnonymously).not.toHaveBeenCalled();
+  });
+
+  it('signs a first-time visitor in anonymously before submitting, and sends their token', async () => {
+    const newSession = { access_token: 'anon-token', user: { id: 'anon-1' } };
+    getSession
+      .mockResolvedValueOnce({ data: { session: null } }) // ensureAnonymousUser: no session yet
+      .mockResolvedValue({ data: { session: newSession } }); // after anonymous sign-in
+    signInAnonymously.mockResolvedValue({ data: { user: newSession.user }, error: null });
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 'custom-1', scenes: [] }),
+    });
+    render(<AdventureForm />);
+    fillRequiredFields();
+    fireEvent.click(screen.getByText('สร้างเนื้อเรื่อง'));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(signInAnonymously).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/adventures',
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ Authorization: 'Bearer anon-token' }) })
+    );
+  });
+
+  it('shows a Thai error and does not submit when anonymous sign-in fails', async () => {
+    getSession.mockResolvedValue({ data: { session: null } });
+    signInAnonymously.mockResolvedValue({ data: { user: null }, error: new Error('auth down') });
+    render(<AdventureForm />);
+    fillRequiredFields();
+    fireEvent.click(screen.getByText('สร้างเนื้อเรื่อง'));
+    await waitFor(() => expect(screen.getByText('เข้าสู่ระบบไม่สำเร็จ ลองอีกครั้ง')).toBeTruthy());
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -98,5 +139,62 @@ describe('AdventureForm — step 2, image upload', () => {
     await waitFor(() =>
       expect(global.fetch).toHaveBeenLastCalledWith('/api/adventures/custom-1/scenes/opening/image', expect.objectContaining({ method: 'POST' }))
     );
+    await waitFor(() => expect((screen.getByAltText('ภาพเปิดเรื่อง') as HTMLImageElement).src).toBe('https://cdn/custom-1/opening.jpg'));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  const editing = {
+    id: 'custom-1', title: 'T', titleTh: 'TH', tagline: 'Tag', taglineTh: 'TagTH', tone: 'Tone', toneTh: 'ToneTH',
+    setting: 'S', hook: 'H', openingTh: 'O', secret: 'Sec', acts: ['Act 1'], npcs: [],
+    scenes: [
+      { key: 'opening', nameTh: 'ภาพเปิดเรื่อง', imagePath: null },
+      { key: 'act-1', nameTh: 'ภาพองก์ที่ 1', imagePath: null },
+    ],
+  };
+
+  function pickFile(label: string) {
+    fireEvent.change(screen.getByLabelText(label), { target: { files: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] } });
+  }
+
+  it('shows a Thai error next to the slot when the server rejects the file', async () => {
+    (global.fetch as any).mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'file is too large (max 5MB)' }) });
+    render(<AdventureForm existing={editing} />);
+    pickFile('ภาพเปิดเรื่อง');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
+    expect(alert.className).toBe('error');
+    // Rendered inside the rejected scene's own slot, not another one.
+    expect(alert.parentElement?.querySelector('#scene-image-opening')).not.toBeNull();
+  });
+
+  it('shows a generic Thai error for an unrecognised or unreadable error body', async () => {
+    (global.fetch as any).mockResolvedValueOnce({ ok: false, json: async () => { throw new Error('not json'); } });
+    render(<AdventureForm existing={editing} />);
+    pickFile('ภาพเปิดเรื่อง');
+    expect((await screen.findByRole('alert')).textContent).toBe('อัปโหลดภาพไม่สำเร็จ');
+  });
+
+  it('shows a generic Thai error on a network failure instead of an unhandled rejection', async () => {
+    (global.fetch as any).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    render(<AdventureForm existing={editing} />);
+    pickFile('ภาพเปิดเรื่อง');
+    expect((await screen.findByRole('alert')).textContent).toBe('อัปโหลดภาพไม่สำเร็จ');
+  });
+
+  it('clears a scene error when that scene is retried successfully, and keeps errors per scene', async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'file must be an image' }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'invalid image data' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ imageUrl: 'https://cdn/custom-1/opening.jpg?v=1' }) });
+    render(<AdventureForm existing={editing} />);
+    pickFile('ภาพเปิดเรื่อง');
+    await screen.findByText('ไฟล์ต้องเป็นรูปภาพ');
+    pickFile('ภาพองก์ที่ 1');
+    await screen.findByText('ไฟล์ภาพไม่ถูกต้องหรือเสียหาย');
+    expect(screen.getAllByRole('alert').length).toBe(2);
+    pickFile('ภาพเปิดเรื่อง');
+    await waitFor(() => expect(screen.queryByText('ไฟล์ต้องเป็นรูปภาพ')).toBeNull());
+    expect(screen.getByText('ไฟล์ภาพไม่ถูกต้องหรือเสียหาย')).toBeTruthy();
+    expect(screen.getAllByRole('alert').length).toBe(1);
   });
 });
