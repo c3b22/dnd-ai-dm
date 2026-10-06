@@ -8,6 +8,7 @@ import { equippedWeaponId, armorReduction } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
+import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 import type { Adventure } from '@/lib/adventures/adventures';
@@ -29,6 +30,8 @@ export interface RoundContext {
   inventories: Inventories;
   pendingWipe: boolean;
   currentShop: ShopState | null;
+  /** The fight in progress, or null. Null as well when the column does not exist yet. */
+  currentEncounter: Encounter | null;
   /** True once an earlier attempt at this round already applied its HP/inventory/gold tags. */
   tagsApplied: boolean;
 }
@@ -58,6 +61,7 @@ export interface RoundRepository {
   ): Promise<void>;
   applyGold(changes: { playerId: string; delta: number }[]): Promise<void>;
   setShop(campaignId: string, shop: ShopState | null): Promise<void>;
+  setEncounter(campaignId: string, encounter: Encounter | null): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -124,6 +128,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .eq('id', campaignId)
         .maybeSingle();
 
+      // Separate query: a database without the encounter column just plays without combat tracking.
+      const { data: encounterRow } = await supabase
+        .from('campaigns')
+        .select('current_encounter')
+        .eq('id', campaignId)
+        .maybeSingle();
+
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
         .select('action_text, use_item_id, use_ability, ability_target_id, player_id, players(display_name, turn_order, created_at)')
@@ -185,6 +196,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
         currentShop: normalizeShop(wipeRow?.current_shop),
+        currentEncounter: normalizeEncounter(encounterRow?.current_encounter),
         tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
@@ -297,6 +309,11 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
     async setShop(campaignId, shop) {
       const { error } = await supabase.from('campaigns').update({ current_shop: shop }).eq('id', campaignId);
+      if (error) throw error;
+    },
+
+    async setEncounter(campaignId, encounter) {
+      const { error } = await supabase.from('campaigns').update({ current_encounter: encounter }).eq('id', campaignId);
       if (error) throw error;
     },
 

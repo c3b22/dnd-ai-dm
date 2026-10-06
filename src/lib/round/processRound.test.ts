@@ -30,6 +30,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
     saveInventories: vi.fn().mockResolvedValue(undefined),
     applyGold: vi.fn().mockResolvedValue(undefined),
     setShop: vi.fn().mockResolvedValue(undefined),
+    setEncounter: vi.fn().mockResolvedValue(undefined),
     insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
@@ -719,5 +720,67 @@ describe('processRound abilities', () => {
     const repository = repoWith([archer], [useAbility()]);
     await processRound(deps(repository, ['Hit.']), 'round-1');
     expect((repository.insertStatsSummary as any).mock.calls[0][2]).toContain('Prem ใช้ยิงแม่นยำ');
+  });
+});
+
+describe('processRound encounter', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const one = (over: object = {}) => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('starts an encounter from an enemy tag and strips the tag', async () => {
+    const repository = one();
+    await run(repository, ['หมาป่าโผล่มา', '[[enemy: หมาป่า | normal]]'].join('\n'));
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [wolf] });
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'หมาป่าโผล่มา');
+  });
+
+  it('updates the stored encounter on a hurt tag and ends it when the last enemy falls', async () => {
+    const hurt = one({ currentEncounter: { enemies: [wolf] } });
+    await run(hurt, '[[enemy_hurt: หมาป่า | light]]');
+    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+
+    const dead = one({ currentEncounter: { enemies: [wolf] } });
+    await run(dead, '[[enemy_hurt: หมาป่า | heavy]]');
+    expect(dead.setEncounter).toHaveBeenCalledWith('camp-1', null);
+  });
+
+  it('does not write when nothing changed', async () => {
+    const quiet = one({ currentEncounter: { enemies: [wolf] } });
+    await run(quiet, 'เงียบสงบ');
+    expect(quiet.setEncounter).not.toHaveBeenCalled();
+    const none = one();
+    await run(none, 'เงียบสงบ');
+    expect(none.setEncounter).not.toHaveBeenCalled();
+  });
+
+  it('ends the fight when the scene changes, but not when the same scene repeats', async () => {
+    const moved = one({ currentEncounter: { enemies: [wolf] }, currentSceneId: 'crypt' });
+    await run(moved, ['หนีออกมา', '[[scene: tavern-interior]]'].join('\n'));
+    expect(moved.setEncounter).toHaveBeenCalledWith('camp-1', null);
+
+    const same = one({ currentEncounter: { enemies: [wolf] }, currentSceneId: 'tavern-interior' });
+    await run(same, ['ยังสู้อยู่', '[[scene: tavern-interior]]'].join('\n'));
+    expect(same.setEncounter).not.toHaveBeenCalled();
+  });
+
+  it('gives no automatic xp or gold when enemies fall', async () => {
+    const repository = one({ currentEncounter: { enemies: [wolf] } });
+    await run(repository, '[[enemy_hurt: หมาป่า | heavy]]');
+    expect(repository.applyGold).not.toHaveBeenCalled();
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', []);
+    const saved = vi.mocked(repository.saveCharacterState).mock.calls[0][1];
+    expect(saved[0].xp).toBe(0);
+  });
+
+  it('still closes the round when saving the encounter fails', async () => {
+    const repository = one();
+    vi.mocked(repository.setEncounter).mockRejectedValue(new Error('no column'));
+    const result = await run(repository, '[[enemy: หมาป่า | normal]]');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
   });
 });

@@ -16,6 +16,7 @@ function createFakeSupabase(options: {
   inventoryError?: Error;
   actionRows?: unknown[];
   currentShop?: unknown;
+  currentEncounter?: unknown;
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
 
@@ -43,6 +44,7 @@ function createFakeSupabase(options: {
                     adventure_id: 'test-adventure',
                     pending_wipe: options.pendingWipe ?? false,
                     current_shop: options.currentShop ?? null,
+                    current_encounter: options.currentEncounter ?? null,
                   },
                   error: null,
                 }),
@@ -588,6 +590,34 @@ describe('createSupabaseRoundRepository economy', () => {
     expect(updates).toEqual([
       { table: 'campaigns', payload: { current_shop: { name: 'Mara', itemIds: ['staff'] } }, id: 'c1' },
       { table: 'campaigns', payload: { current_shop: null }, id: 'c1' },
+    ]);
+  });
+});
+
+describe('createSupabaseRoundRepository encounter', () => {
+  const wolf = { name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false };
+
+  it('reads a valid stored encounter into the round context', async () => {
+    const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, currentEncounter: { enemies: [wolf] } });
+    expect((await createSupabaseRoundRepository(client).getRoundContext('r1')).currentEncounter).toEqual({ enemies: [wolf] });
+  });
+
+  it('has no encounter when none is stored or the value is invalid', async () => {
+    const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null });
+    expect((await createSupabaseRoundRepository(client).getRoundContext('r1')).currentEncounter).toBeNull();
+    const bad = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, currentEncounter: { enemies: 'x' } });
+    expect((await createSupabaseRoundRepository(bad.client).getRoundContext('r1')).currentEncounter).toBeNull();
+  });
+
+  it('sets and clears the encounter on the campaign', async () => {
+    const updates: unknown[] = [];
+    const client: any = { from: (table: string) => ({ update: (payload: unknown) => ({ eq: (_c: string, id: string) => { updates.push({ table, payload, id }); return Promise.resolve({ error: null }); } }) }) };
+    const repository = createSupabaseRoundRepository(client);
+    await repository.setEncounter('c1', { enemies: [wolf] } as any);
+    await repository.setEncounter('c1', null);
+    expect(updates).toEqual([
+      { table: 'campaigns', payload: { current_encounter: { enemies: [wolf] } }, id: 'c1' },
+      { table: 'campaigns', payload: { current_encounter: null }, id: 'c1' },
     ]);
   });
 });

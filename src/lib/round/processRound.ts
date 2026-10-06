@@ -9,6 +9,7 @@ import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/level
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
+import { applyEnemyTags } from '@/lib/combat/encounter';
 import { applyEconomyTags } from '@/lib/economy/apply';
 
 export interface ProcessRoundDeps {
@@ -117,7 +118,9 @@ export async function processRound(
   const { tags, cleanText: withoutCharacterTags } = parseCharacterTags(narration);
   const { sceneId, cleanText } = parseSceneTag(withoutCharacterTags);
   if (cleanText.trim()) await deps.repository.appendToMessage(messageId, cleanText);
+  let sceneChanged = false;
   if (sceneId && context.allowedSceneIds.includes(sceneId)) {
+    sceneChanged = sceneId !== context.currentSceneId;
     // A missing scene column or a bad tag must never fail the round.
     await deps.repository.setCurrentScene(context.campaignId, sceneId).catch(() => {});
     // The merchant stays put until the story actually moves on.
@@ -179,6 +182,17 @@ export async function processRound(
           await deps.repository.setShop(context.campaignId, economy.shop.action === 'open' ? economy.shop.shop : null);
         } catch {
           /* best-effort */
+        }
+      }
+      // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
+      // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
+      const before = context.currentEncounter ?? null;
+      const after = applyEnemyTags(sceneChanged ? null : before, tags);
+      if (JSON.stringify(after) !== JSON.stringify(before)) {
+        try {
+          await deps.repository.setEncounter(context.campaignId, after);
+        } catch {
+          /* best-effort, like the shop */
         }
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
