@@ -4,6 +4,8 @@ import { Suspense, use, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
+import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
+import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
 import { Inventory } from '@/components/Inventory';
@@ -75,6 +77,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
+  const [asksUsed, setAsksUsed] = useState(0);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
     setProcessing(true);
@@ -194,6 +197,31 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   }, [campaignId, refreshTrades]);
 
   const me = players.find((p) => p.id === playerId);
+
+  // Ask-the-DM quota resets every round. Count from messages when player_id exists, then follow local answers.
+  useEffect(() => {
+    setAsksUsed(0);
+    if (!roundId || !playerId) return;
+    let cancelled = false;
+    fetchAskCount(campaignId, playerId, roundId).then((n) => {
+      if (!cancelled) setAsksUsed((prev) => Math.max(prev, n));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, playerId, roundId]);
+
+  async function handleAsk(question: string) {
+    try {
+      await askDmForClient(campaignId, question);
+      setAsksUsed((n) => n + 1);
+    } catch (error) {
+      if ((error as { status?: number }).status === 429) setAsksUsed(ASK_LIMIT);
+      throw error;
+    }
+  }
+
+  const playerNames = Object.fromEntries(players.map((p) => [p.id, p.displayName]));
 
   function describeEconomyError(code: string): string {
     const known: Record<string, string> = {
@@ -402,6 +430,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             campaignId={campaignId}
             fetchInitialMessages={fetchInitialMessages}
             subscribeToNewMessages={subscribeToNewMessages}
+            playerNames={playerNames}
           />
           {processing && (
             <div className="thinking" role="status" aria-live="polite">
@@ -423,6 +452,13 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
                   : undefined
               }
               alreadyActed={me?.acted ?? false}
+            />
+          )}
+          {playerId && (
+            <ChatPanel
+              onSendChat={(content) => sendTeamChat(campaignId, content)}
+              onAsk={handleAsk}
+              asksUsed={asksUsed}
             />
           )}
         </div>

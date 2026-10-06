@@ -72,6 +72,8 @@ export interface MessageListProps {
     onMessage: (message: Message) => void
   ) => () => void;
   RollOverlay?: (props: DiceRollOverlayProps) => React.ReactNode;
+  /** playerId -> display name, used to label team chat and questions. Optional. */
+  playerNames?: Record<string, string>;
 }
 
 const ROLE_CLASS: Record<Message['role'], string> = {
@@ -83,11 +85,16 @@ const ROLE_CLASS: Record<Message['role'], string> = {
   ask_answer: 'msg ask-answer',
 };
 
+function speakerName(message: Message, names?: Record<string, string>): string {
+  return (message.player_id && names?.[message.player_id]) || '';
+}
+
 export function MessageList({
   campaignId,
   fetchInitialMessages,
   subscribeToNewMessages,
   RollOverlay = DiceRollOverlay,
+  playerNames,
 }: MessageListProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[] } | null>(
@@ -170,6 +177,17 @@ export function MessageList({
           return (
             <li key={message.id} className={ROLE_CLASS[message.role]} data-role={message.role}>
               {message.role === 'dm' && <span className="who">DM</span>}
+              {message.role === 'ooc' && (
+                <span className="who">
+                  แชททีม{speakerName(message, playerNames) ? ` · ${speakerName(message, playerNames)}` : ''}
+                </span>
+              )}
+              {message.role === 'ask' && (
+                <span className="who">
+                  ถาม DM{speakerName(message, playerNames) ? ` · ${speakerName(message, playerNames)}` : ''}
+                </span>
+              )}
+              {message.role === 'ask_answer' && <span className="who">DM ตอบ (นอกเนื้อเรื่อง)</span>}
               {rolls ? (
                 <RollSummary rolls={rolls} pending={pending} />
               ) : stats ? (

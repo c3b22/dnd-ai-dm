@@ -136,6 +136,13 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .msg.dm { font-family: var(--f-story); font-size: 16.5px; line-height: 1.95; max-width: 62ch; white-space: pre-wrap; }
 .msg.dm .who { font-family: var(--f-display); font-size: 11px; letter-spacing: 0.14em; color: var(--accent); display: block; margin-bottom: 2px; }
 .msg.pl { align-self: flex-end; max-width: 80%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px 12px 3px 12px; padding: 8px 12px; font-size: 14.5px; }
+.msg.ooc, .msg.ask, .msg.ask-answer { font-size: 13.5px; line-height: 1.5; max-width: 70%; padding: 6px 10px; border-radius: 8px; border: 1px dashed var(--line); background: var(--surface-2); color: var(--muted); }
+.msg.ooc { align-self: flex-start; }
+.msg.ask { align-self: flex-end; border-color: var(--teal); }
+.msg.ask-answer { align-self: flex-end; border-style: solid; border-color: var(--teal); font-style: italic; }
+.msg.ooc .who, .msg.ask .who, .msg.ask-answer .who { display: block; font-size: 11px; letter-spacing: 0.04em; color: var(--teal); margin-bottom: 2px; font-style: normal; }
+.chat-panel { border-top: 1px solid var(--line); padding: 10px 18px 12px; display: grid; gap: 8px; background: var(--surface); }
+.chat-tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .msg.system { align-self: center; color: var(--muted); font-size: 13px; }
 
 .roll-list { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 0; padding: 0; }
