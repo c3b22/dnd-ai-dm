@@ -1,7 +1,12 @@
 import { giveItem, takeItem } from '@/lib/inventory/rules';
+import { MAGIC_ITEMS, isSoldInShop } from '@/lib/inventory/magicItems';
 import type { InventoryItem } from '@/lib/inventory/types';
 import type { ShopState } from './apply';
 import { buyPrice, sellPrice } from './prices';
+
+const LEGENDARY_IDS: ReadonlySet<string> = new Set(MAGIC_ITEMS.filter((i) => !isSoldInShop(i)).map((i) => i.id));
+/** Legendary magic items are never sold in shops, whatever the AI or a stored shop says. */
+export const isShopStockable = (itemId: string): boolean => buyPrice(itemId) !== null && !LEGENDARY_IDS.has(itemId);
 
 export type ShopFailure = 'closed' | 'not_sold' | 'no_gold' | 'full' | 'not_sellable' | 'not_owned';
 export type ShopResult =
@@ -16,7 +21,7 @@ export function buyFromShop(
 ): ShopResult {
   if (!shop) return { ok: false, reason: 'closed' };
   const price = buyPrice(itemId);
-  if (price === null || !shop.itemIds.includes(itemId)) return { ok: false, reason: 'not_sold' };
+  if (price === null || !isShopStockable(itemId) || !shop.itemIds.includes(itemId)) return { ok: false, reason: 'not_sold' };
   if (gold < price) return { ok: false, reason: 'no_gold' };
   const given = giveItem(items, itemId);
   if (given.result === 'full') return { ok: false, reason: 'full' };
@@ -43,6 +48,6 @@ export function normalizeShop(raw: unknown): ShopState | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const { name, itemIds } = raw as { name?: unknown; itemIds?: unknown };
   if (typeof name !== 'string' || !name.trim() || !Array.isArray(itemIds)) return null;
-  const ids = itemIds.filter((id): id is string => typeof id === 'string' && buyPrice(id) !== null);
+  const ids = itemIds.filter((id): id is string => typeof id === 'string' && isShopStockable(id));
   return ids.length > 0 ? { name: name.trim(), itemIds: ids } : null;
 }

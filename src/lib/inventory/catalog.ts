@@ -1,4 +1,5 @@
 import { WEAPONS, type DiceSpec } from '@/lib/character/constants';
+import { MAGIC_ITEMS } from './magicItems';
 
 export const CARRY_CAPACITY = 10;
 export const MAX_STORY_UNITS = 5;
@@ -13,7 +14,7 @@ export type CatalogEntry =
   | { kind: 'consumable'; nameTh: string; weight: number; heal: DiceSpec };
 
 // Weapon dice live in character/constants WEAPONS (single source of truth); ids match its keys.
-export const CATALOG = {
+const BASE_CATALOG = {
   shortsword: { kind: 'weapon', nameTh: WEAPONS.shortsword.nameTh, weight: 2 },
   shortbow: { kind: 'weapon', nameTh: WEAPONS.shortbow.nameTh, weight: 2 },
   staff: { kind: 'weapon', nameTh: WEAPONS.staff.nameTh, weight: 2 },
@@ -24,7 +25,20 @@ export const CATALOG = {
   potion_minor: { kind: 'consumable', nameTh: 'ยาฟื้นฟูเล็ก', weight: 1, heal: { count: 1, sides: 6, bonus: 1 } },
   potion_major: { kind: 'consumable', nameTh: 'ยาฟื้นฟูใหญ่', weight: 1, heal: { count: 2, sides: 6, bonus: 0 } },
 } as const satisfies Record<string, CatalogEntry>;
-export type CatalogId = keyof typeof CATALOG;
+
+/** Magic weapons / armor / healing potions generated from magicItems.ts (F5c). Scrolls, accessories, charms come later. */
+const MAGIC_CATALOG: Record<string, CatalogEntry> = Object.fromEntries(
+  MAGIC_ITEMS.flatMap((item): [string, CatalogEntry][] => {
+    const m = item.mechanic;
+    if (m.kind === 'weapon') return [[item.id, { kind: 'weapon', nameTh: item.nameTh, weight: item.weight }]];
+    if (m.kind === 'armor') return [[item.id, { kind: 'armor', nameTh: item.nameTh, weight: item.weight, reduction: m.reduction }]];
+    if (m.kind === 'consumable') return [[item.id, { kind: 'consumable', nameTh: item.nameTh, weight: item.weight, heal: m.heal }]];
+    return [];
+  })
+);
+
+export const CATALOG: Readonly<Record<string, CatalogEntry>> & typeof BASE_CATALOG = { ...MAGIC_CATALOG, ...BASE_CATALOG };
+export type CatalogId = string;
 
 export function catalogEntry(id: string): CatalogEntry | null {
   return Object.prototype.hasOwnProperty.call(CATALOG, id) ? CATALOG[id as CatalogId] : null;

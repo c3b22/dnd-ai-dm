@@ -17,7 +17,13 @@ describe('magic item catalogue', () => {
   });
 
   it('does not collide with ordinary catalog ids', () => {
-    for (const i of MAGIC_ITEMS) expect(Object.keys(CATALOG)).not.toContain(i.id);
+    const magicIds = new Set(MAGIC_ITEMS.map((i) => i.id));
+    const ordinary = Object.keys(CATALOG).filter((id) => !magicIds.has(id));
+    expect(ordinary).toEqual(
+      expect.arrayContaining(['shortsword', 'dagger', 'armor_light', 'potion_minor'])
+    );
+    for (const id of ['shortsword', 'shortbow', 'staff', 'dagger', 'armor_light', 'armor_medium', 'armor_heavy', 'potion_minor', 'potion_major'])
+      expect(magicIds.has(id)).toBe(false);
   });
 
   it('gives every item a flavour sentence, a supported mechanic, a rarity, weight and positive integer price', () => {
