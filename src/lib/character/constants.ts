@@ -26,6 +26,7 @@ export const WEAPONS = {
   shortsword: { nameTh: 'ดาบสั้น', dice: { count: 1, sides: 8, bonus: 0 } },
   shortbow: { nameTh: 'ธนูสั้น', dice: { count: 1, sides: 6, bonus: 0 } },
   staff: { nameTh: 'ไม้เท้า', dice: { count: 1, sides: 4, bonus: 0 } },
+  dagger: { nameTh: 'กริช', dice: { count: 1, sides: 4, bonus: 0 } },
   fists: { nameTh: 'มือเปล่า', dice: { count: 1, sides: 2, bonus: 0 } },
 } as const satisfies Record<string, { nameTh: string; dice: DiceSpec }>;
 export type WeaponId = keyof typeof WEAPONS;

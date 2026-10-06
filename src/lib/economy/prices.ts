@@ -4,6 +4,7 @@ export const PRICES = {
   potion_minor: 10,
   potion_major: 25,
   staff: 20,
+  dagger: 20,
   shortsword: 30,
   shortbow: 30,
   armor_light: 25,

@@ -33,3 +33,9 @@ describe('diceLabel', () => {
     expect(diceLabel(TIERS.heavy)).toBe('2d6');
   });
 });
+
+describe('dagger', () => {
+  it('is a 1d4 weapon', () => {
+    expect(weaponFor('dagger')).toMatchObject({ id: 'dagger', nameTh: 'กริช', dice: { count: 1, sides: 4, bonus: 0 } });
+  });
+});
