@@ -9,6 +9,7 @@ import { D20Icon } from '@/components/D20Icon';
 import { MyCampaigns } from '@/components/MyCampaigns';
 import { ClassPicker } from '@/components/ClassPicker';
 import { DEFAULT_CLASS_ID } from '@/lib/character/classes';
+import { ShareCodeEntry } from '@/components/ShareCodeEntry';
 import { MyAdventures, type MyAdventureSummary } from '@/components/MyAdventures';
 import type { MyCampaignSummary } from '@/lib/campaign/myCampaigns';
 
@@ -288,6 +289,7 @@ export default function Home() {
           </p>
         )}
       </form>
+      <ShareCodeEntry />
     </main>
   );
 }
