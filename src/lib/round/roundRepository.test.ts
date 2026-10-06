@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createSupabaseRoundRepository } from './roundRepository';
 
 interface FakeRoundRow {
@@ -686,5 +686,27 @@ describe('createSupabaseRoundRepository encounter', () => {
       { table: 'campaigns', payload: { current_encounter: { enemies: [wolf] } }, id: 'c1' },
       { table: 'campaigns', payload: { current_encounter: null }, id: 'c1' },
     ]);
+  });
+
+  it('saveFacts writes to campaign_facts and swallows errors from a missing table', async () => {
+    const writes: { table: string; payload: unknown; options?: unknown }[] = [];
+    const client: any = {
+      from: (table: string) => ({
+        select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }),
+        upsert: (payload: unknown, options: unknown) => { writes.push({ table, payload, options }); return Promise.resolve({ error: null }); },
+        insert: (payload: unknown) => { writes.push({ table, payload }); return Promise.resolve({ error: null }); },
+      }),
+    };
+    await createSupabaseRoundRepository(client).saveFacts('c1', [
+      { kind: 'npc', key: 'Elara', value: 'friendly' },
+      { kind: 'clue', key: null, value: 'blood' },
+    ]);
+    expect(writes.map((w) => w.table)).toEqual(['campaign_facts', 'campaign_facts']);
+    expect(writes[0].options).toEqual({ onConflict: 'campaign_id,kind,key' });
+
+    const broken: any = { from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: null, error: { code: '42P01' } }) }) }) };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(createSupabaseRoundRepository(broken).saveFacts('c1', [{ kind: 'clue', key: null, value: 'x' }])).resolves.toBeUndefined();
+    spy.mockRestore();
   });
 });

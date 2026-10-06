@@ -31,6 +31,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
     applyGold: vi.fn().mockResolvedValue(undefined),
     setShop: vi.fn().mockResolvedValue(undefined),
     setEncounter: vi.fn().mockResolvedValue(undefined),
+    saveFacts: vi.fn().mockResolvedValue(undefined),
     insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
@@ -789,5 +790,39 @@ describe('processRound encounter', () => {
     vi.mocked(repository.setEncounter).mockRejectedValue(new Error('no column'));
     const result = await run(repository, '[[enemy: หมาป่า | normal]]');
     expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
+});
+
+describe('processRound world memory', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const one = () => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'talk', playerId: 'p1', useItemId: null }] })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('saves npc, quest and clue tags and strips them from the message', async () => {
+    const repository = one();
+    await run(repository, ['Elara smiles', '[[npc: Elara | friendly]]', '[[quest: Find ring | open]]', '[[clue: Blood on the door]]'].join('\n'));
+    expect(repository.saveFacts).toHaveBeenCalledWith('camp-1', [
+      { kind: 'npc', key: 'Elara', value: 'friendly' },
+      { kind: 'quest', key: 'Find ring', value: 'open' },
+      { kind: 'clue', key: null, value: 'Blood on the door' },
+    ]);
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'Elara smiles');
+  });
+
+  it('does not write when there are no memory tags', async () => {
+    const repository = one();
+    await run(repository, 'quiet');
+    expect(repository.saveFacts).not.toHaveBeenCalled();
+  });
+
+  it('still closes the round and posts stats when saving facts fails', async () => {
+    const repository = one();
+    vi.mocked(repository.saveFacts).mockRejectedValue(new Error('no table'));
+    const result = await run(repository, '[[clue: something]]');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+    expect(repository.insertStatsSummary).toHaveBeenCalled();
   });
 });

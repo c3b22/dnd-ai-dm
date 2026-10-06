@@ -10,6 +10,7 @@ import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions } from '@/lib/inventory/apply';
 import { applyEnemyTags } from '@/lib/combat/encounter';
+import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 
 export interface ProcessRoundDeps {
@@ -193,6 +194,15 @@ export async function processRound(
           await deps.repository.setEncounter(context.campaignId, after);
         } catch {
           /* best-effort, like the shop */
+        }
+      }
+      // World memory (npc/quest/clue). Best-effort: a missing campaign_facts table must not matter.
+      const facts = selectFacts(tags);
+      if (facts.length > 0) {
+        try {
+          await deps.repository.saveFacts(context.campaignId, facts);
+        } catch {
+          /* best-effort, like the encounter */
         }
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [

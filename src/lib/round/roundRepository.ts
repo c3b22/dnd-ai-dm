@@ -9,6 +9,7 @@ import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
 import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
+import { persistFacts, type FactInput } from '@/lib/memory/facts';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 import { normalizeAbilities } from '@/lib/character/constants';
@@ -64,6 +65,8 @@ export interface RoundRepository {
   applyGold(changes: { playerId: string; delta: number }[]): Promise<void>;
   setShop(campaignId: string, shop: ShopState | null): Promise<void>;
   setEncounter(campaignId: string, encounter: Encounter | null): Promise<void>;
+  /** Best-effort world-memory write (npc/quest/clue); never throws, tolerates a missing table. */
+  saveFacts(campaignId: string, facts: FactInput[]): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -332,6 +335,10 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     async setEncounter(campaignId, encounter) {
       const { error } = await supabase.from('campaigns').update({ current_encounter: encounter }).eq('id', campaignId);
       if (error) throw error;
+    },
+
+    async saveFacts(campaignId, facts) {
+      await persistFacts(supabase, campaignId, facts);
     },
 
     async insertStatsSummary(campaignId, roundId, changes) {
