@@ -126,6 +126,37 @@ describe('listMyCustomAdventures', () => {
     const client: any = { from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
     expect(await listMyCustomAdventures(client, 'owner-1')).toEqual([]);
   });
+
+  it('includes shareCode (null when not shared)', async () => {
+    const rows = [
+      { id: 'a', title_th: 't', tagline_th: 'g', scenes: [], share_code: 'ABCD2345' },
+      { id: 'b', title_th: 't', tagline_th: 'g', scenes: [], share_code: null },
+    ];
+    const client: any = { from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: rows, error: null }) }) }) };
+    const result = await listMyCustomAdventures(client, 'owner-1');
+    expect(result.map((r) => r.shareCode)).toEqual(['ABCD2345', null]);
+  });
+
+  it('falls back to listing without shareCode when the share_code column is missing', async () => {
+    const selects: string[] = [];
+    const client: any = {
+      from: () => ({
+        select: (cols: string) => {
+          selects.push(cols);
+          return {
+            eq: () => Promise.resolve(
+              cols.includes('share_code')
+                ? { data: null, error: { code: '42703', message: 'column share_code does not exist' } }
+                : { data: [{ id: 'a', title_th: 't', tagline_th: 'g', scenes: [] }], error: null }
+            ),
+          };
+        },
+      }),
+    };
+    const result = await listMyCustomAdventures(client, 'owner-1');
+    expect(result).toEqual([{ id: 'a', titleTh: 't', taglineTh: 'g', thumbnailUrl: null, shareCode: null }]);
+    expect(selects).toHaveLength(2);
+  });
 });
 
 function sharingSupabase(row: Record<string, unknown> | null, updateResults: ({ code?: string } | null)[] = []) {

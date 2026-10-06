@@ -12,6 +12,12 @@ import { DEFAULT_CLASS_ID } from '@/lib/character/classes';
 import { MyAdventures, type MyAdventureSummary } from '@/components/MyAdventures';
 import type { MyCampaignSummary } from '@/lib/campaign/myCampaigns';
 
+async function getAccessToken(): Promise<string | undefined> {
+  const { supabaseBrowserClient } = await import('@/lib/supabase/client');
+  const { data } = await supabaseBrowserClient.auth.getSession();
+  return data.session?.access_token;
+}
+
 function sceneUrl(adventureId: string) {
   return `/scenes/${openingSceneId(adventureId)}.jpg`;
 }
@@ -166,7 +172,7 @@ export default function Home() {
         </div>
       </div>
       <MyCampaigns campaigns={myCampaigns} />
-      <MyAdventures adventures={myAdventures} />
+      <MyAdventures adventures={myAdventures} getAccessToken={getAccessToken} />
       <Link href="/adventures/new" className="btn ghost">+ สร้างเนื้อเรื่องใหม่</Link>
       <div className="roll-row">
         <button type="button" className="btn ghost" onClick={rollForAdventure} disabled={rolling}>

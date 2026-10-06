@@ -186,14 +186,29 @@ export async function deleteCustomAdventure(
   if (error) throw error;
 }
 
+export interface MyCustomAdventure {
+  id: string;
+  titleTh: string;
+  taglineTh: string;
+  thumbnailUrl: string | null;
+  shareCode: string | null;
+}
+
 export async function listMyCustomAdventures(
   supabase: SupabaseClient,
   ownerId: string
-): Promise<{ id: string; titleTh: string; taglineTh: string; thumbnailUrl: string | null }[]> {
-  const { data, error } = await supabase
+): Promise<MyCustomAdventure[]> {
+  let { data, error }: { data: any[] | null; error: any } = await supabase
     .from('custom_adventures')
-    .select('id, title_th, tagline_th, scenes')
+    .select('id, title_th, tagline_th, scenes, share_code')
     .eq('owner_id', ownerId);
+  if (error) {
+    // share_code may not exist yet in production (migration not applied): list without it rather than failing.
+    ({ data, error } = await supabase
+      .from('custom_adventures')
+      .select('id, title_th, tagline_th, scenes')
+      .eq('owner_id', ownerId));
+  }
   if (error) throw error;
 
   return (data ?? []).map((row: any) => ({
@@ -201,6 +216,7 @@ export async function listMyCustomAdventures(
     titleTh: row.title_th,
     taglineTh: row.tagline_th,
     thumbnailUrl: row.scenes?.[0]?.imagePath ?? null,
+    shareCode: row.share_code ?? null,
   }));
 }
 

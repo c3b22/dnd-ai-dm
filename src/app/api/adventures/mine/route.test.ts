@@ -33,12 +33,12 @@ describe('GET /api/adventures/mine', () => {
 
   it('returns the list for the authenticated user', async () => {
     getUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    listMyCustomAdventures.mockResolvedValue([{ id: 'a1', titleTh: 't', taglineTh: 'tag', thumbnailUrl: null }]);
+    listMyCustomAdventures.mockResolvedValue([{ id: 'a1', titleTh: 't', taglineTh: 'tag', thumbnailUrl: null, shareCode: 'ABCD2345' }]);
 
     const response = await call('t');
 
     expect(listMyCustomAdventures).toHaveBeenCalledWith(expect.anything(), 'u1');
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ adventures: [{ id: 'a1', titleTh: 't', taglineTh: 'tag', thumbnailUrl: null }] });
+    expect(await response.json()).toEqual({ adventures: [{ id: 'a1', titleTh: 't', taglineTh: 'tag', thumbnailUrl: null, shareCode: 'ABCD2345' }] });
   });
 });
