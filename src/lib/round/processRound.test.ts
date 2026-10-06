@@ -629,6 +629,9 @@ describe('processRound abilities', () => {
         actions,
         characters,
         pendingWipe: false,
+        adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id),
+        sceneInstructionText: '',
         ...extra,
       }),
     });
