@@ -133,4 +133,46 @@ describe('gold, pay and shop tags', () => {
       ]);
     });
   });
+
+  describe('enemy tags', () => {
+    it('parses enemy, enemy_hurt, enemy_flee and combat_end in reading order', () => {
+      const text = 'หมาป่าโผล่มา\n[[enemy: หมาป่า | normal]]\n[[enemy_hurt: หมาป่า | heavy]]\n[[enemy_flee: หมาป่า]]\n[[combat_end]]';
+      expect(parseCharacterTags(text)).toEqual({
+        tags: [
+          { kind: 'enemy', name: 'หมาป่า', tier: 'normal' },
+          { kind: 'enemy_hurt', name: 'หมาป่า', tier: 'heavy' },
+          { kind: 'enemy_flee', name: 'หมาป่า' },
+          { kind: 'combat_end' },
+        ],
+        cleanText: 'หมาป่าโผล่มา',
+      });
+    });
+
+    it('tolerates case and spacing and accepts every enemy tier', () => {
+      const { tags } = parseCharacterTags(
+        '[[ ENEMY :  Goblin  |  Minion ]][[enemy: Orc | strong]][[enemy: Dragon | BOSS]]',
+      );
+      expect(tags).toEqual([
+        { kind: 'enemy', name: 'Goblin', tier: 'minion' },
+        { kind: 'enemy', name: 'Orc', tier: 'strong' },
+        { kind: 'enemy', name: 'Dragon', tier: 'boss' },
+      ]);
+    });
+
+    it('hides malformed enemy tags without applying them', () => {
+      const result = parseCharacterTags(
+        'Fight.\n[[enemy: Goblin | huge]]\n[[enemy_hurt: Goblin | full]]\n[[enemy_flee]]\n[[combat_ends]]',
+      );
+      expect(result.tags).toEqual([]);
+      expect(result.cleanText).toBe('Fight.');
+    });
+
+    it('does not confuse enemy_hurt with hurt or enemy', () => {
+      const { tags } = parseCharacterTags('[[hurt: Prem | light]][[enemy_hurt: Orc | medium]]');
+      expect(tags).toEqual([
+        { kind: 'hurt', name: 'Prem', tier: 'light' },
+        { kind: 'enemy_hurt', name: 'Orc', tier: 'medium' },
+      ]);
+    });
+  });
 });
