@@ -28,6 +28,7 @@ import {
 } from '@/lib/supabase/players';
 import { fetchInitialMessages, subscribeToNewMessages } from '@/lib/supabase/messagesRealtime';
 import { submitAction } from '@/lib/supabase/submitAction';
+import { classOf } from '@/lib/character/classes';
 import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
 import { itemLabel } from '@/lib/inventory/rules';
 import { fetchPendingTrades, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
@@ -245,6 +246,27 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  const myClass = classOf(me?.classId);
+  const abilityProp = myClass
+    ? {
+        nameTh: myClass.ability.nameTh,
+        target: myClass.ability.target,
+        cooldown: me?.abilityCooldown ?? 0,
+        allies: players
+          .filter((p) => p.status === 'active' && (p.id !== playerId || myClass.ability.target === 'ally_or_self'))
+          .map((p) => ({ id: p.id, name: p.displayName })),
+      }
+    : undefined;
+
+  async function handleUseAbility(targetId: string | null) {
+    if (!roundId || !myClass) return;
+    const targetName = players.find((p) => p.id === targetId)?.displayName;
+    const verb = myClass.id === 'warrior' ? 'ปกป้อง' : 'ให้';
+    const text = `ใช้${myClass.ability.nameTh}${targetName ? ` ${verb} ${targetName}` : ''}`;
+    await submitAction(roundId, playerId, text, undefined, { targetId });
+    refreshPlayers();
+  }
+
   async function applyOrder(reordered: RoundPlayer[]) {
     setPlayers(reordered);
     try {
@@ -364,6 +386,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             <ActionInput
               key={roundId}
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
+              ability={abilityProp}
+              onUseAbility={handleUseAbility}
               disabledReason={
                 players.find((p) => p.id === playerId)?.status === 'downed'
                   ? 'คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง'

@@ -62,4 +62,57 @@ describe('ActionInput', () => {
     expect(screen.getByLabelText('free text action')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'โจมตี' })).toBeDisabled();
   });
+
+  describe('class ability button', () => {
+    const allies = [{ id: 'p2', name: 'Suki' }, { id: 'p3', name: 'Mila' }];
+    const noTarget = { nameTh: 'ยิงแม่นยำ', target: null, cooldown: 0, allies: [] };
+    const withTarget = { nameTh: 'ยืนบัง', target: 'ally' as const, cooldown: 0, allies };
+
+    it('submits an ability that needs no target in one tap and then locks the dock', async () => {
+      const onUseAbility = vi.fn().mockResolvedValue(undefined);
+      render(<ActionInput onSubmit={vi.fn()} ability={noTarget} onUseAbility={onUseAbility} />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'ยิงแม่นยำ' }));
+
+      expect(onUseAbility).toHaveBeenCalledWith(null);
+      await waitFor(() => expect(screen.getByText(/รอเพื่อนร่วมโต๊ะ/)).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'โจมตี' })).toBeDisabled();
+    });
+
+    it('asks who to target and submits as soon as a name is tapped', async () => {
+      const onUseAbility = vi.fn().mockResolvedValue(undefined);
+      render(<ActionInput onSubmit={vi.fn()} ability={withTarget} onUseAbility={onUseAbility} />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'ยืนบัง' }));
+      expect(onUseAbility).not.toHaveBeenCalled();
+      await userEvent.click(screen.getByRole('button', { name: 'Mila' }));
+
+      expect(onUseAbility).toHaveBeenCalledWith('p3');
+    });
+
+    it('is disabled with the eventful-rounds hint while cooling down', () => {
+      render(<ActionInput onSubmit={vi.fn()} ability={{ ...noTarget, cooldown: 2 }} onUseAbility={vi.fn()} />);
+
+      expect(screen.getByRole('button', { name: /ยิงแม่นยำ/ })).toBeDisabled();
+      expect(screen.getByText('อีก 2 รอบเหตุการณ์')).toBeInTheDocument();
+    });
+
+    it('is locked when the player is downed or already acted', () => {
+      const { rerender } = render(<ActionInput onSubmit={vi.fn()} ability={noTarget} onUseAbility={vi.fn()} disabledReason="ล้มลง" />);
+      expect(screen.getByRole('button', { name: 'ยิงแม่นยำ' })).toBeDisabled();
+      rerender(<ActionInput onSubmit={vi.fn()} ability={noTarget} onUseAbility={vi.fn()} alreadyActed />);
+      expect(screen.getByRole('button', { name: 'ยิงแม่นยำ' })).toBeDisabled();
+    });
+
+    it('shows no ability button without an ability', () => {
+      render(<ActionInput onSubmit={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: 'ยิงแม่นยำ' })).toBeNull();
+    });
+
+    it('says so when there is nobody to target', async () => {
+      render(<ActionInput onSubmit={vi.fn()} ability={{ ...withTarget, allies: [] }} onUseAbility={vi.fn()} />);
+      await userEvent.click(screen.getByRole('button', { name: 'ยืนบัง' }));
+      expect(screen.getByText('ไม่มีเพื่อนให้เลือก')).toBeInTheDocument();
+    });
+  });
 });

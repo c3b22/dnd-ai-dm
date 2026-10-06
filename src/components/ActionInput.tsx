@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { AbilityTarget } from '@/lib/character/classes';
 
 const QUICK_ACTIONS = ['โจมตี', 'เคลื่อนที่', 'พูดคุย', 'สำรวจรอบๆ'];
 
@@ -10,13 +11,24 @@ export interface ActionInputProps {
   disabledReason?: string;
   /** True when this player already has an action in this round (for example a potion drunk from the inventory). */
   alreadyActed?: boolean;
+  /** The player's class ability; absent for classless players. */
+  ability?: {
+    nameTh: string;
+    target: AbilityTarget;
+    /** Eventful rounds left before it is ready; 0 means ready. */
+    cooldown: number;
+    /** Who can be picked as the target. */
+    allies: { id: string; name: string }[];
+  };
+  onUseAbility?: (targetId: string | null) => Promise<void>;
 }
 
-export function ActionInput({ onSubmit, disabledReason, alreadyActed }: ActionInputProps) {
+export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, onUseAbility }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
 
   async function handleSubmit(actionText: string) {
     if (!actionText.trim() || submitted || submitting || disabledReason || alreadyActed) return;
@@ -26,6 +38,21 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed }: ActionIn
       await onSubmit(actionText.trim());
       setSubmitted(true);
       setFreeText('');
+    } catch {
+      setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function useAbility(targetId: string | null) {
+    if (!onUseAbility || submitted || submitting || disabledReason || alreadyActed) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onUseAbility(targetId);
+      setSubmitted(true);
+      setPicking(false);
     } catch {
       setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
     } finally {
@@ -51,7 +78,31 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed }: ActionIn
             {action}
           </button>
         ))}
+        {ability && (
+          <>
+            <button
+              type="button"
+              className="qa ability"
+              disabled={locked || ability.cooldown > 0}
+              onClick={() => (ability.target ? setPicking((p) => !p) : useAbility(null))}
+            >
+              {ability.nameTh}
+            </button>
+            {ability.cooldown > 0 && <span className="cd">อีก {ability.cooldown} รอบเหตุการณ์</span>}
+          </>
+        )}
       </div>
+      {ability && picking && !locked && (
+        <div className="hint-row" role="group" aria-label="เลือกเป้าหมาย">
+          <span className="lbl">เลือกเป้าหมาย</span>
+          {ability.allies.length === 0 && <span className="cd">ไม่มีเพื่อนให้เลือก</span>}
+          {ability.allies.map((ally) => (
+            <button key={ally.id} type="button" className="qa" onClick={() => useAbility(ally.id)}>
+              {ally.name}
+            </button>
+          ))}
+        </div>
+      )}
       <form
         className="compose"
         onSubmit={(e) => {
