@@ -1,5 +1,6 @@
 import type { AbilityScores } from './constants';
 import type { SkillId } from './classes';
+import type { ItemEffects } from '@/lib/inventory/effects';
 
 export type CharacterStatus = 'active' | 'downed';
 
@@ -15,6 +16,8 @@ export interface Character {
   armorReduction?: number;
   /** Check bonus per skill from the worn accessory (see equippedSkillBonuses); absent means none. */
   skillBonuses?: Partial<Record<SkillId, number>>;
+  /** Combined special effects of the worn items (F5j0); absent means none. */
+  itemEffects?: ItemEffects;
   /** Personal gold; absent means 0. */
   gold?: number;
   /** Experience points; absent means 0. Level is always derived from this. */

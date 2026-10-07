@@ -4,6 +4,8 @@ import {
   CARRY_CAPACITY, MAX_STORY_TITLE, MAX_STORY_UNITS, SLOT_LIMIT, STORY_ITEM_ID, catalogEntry, slotOf, type Slot,
 } from './catalog';
 import type { InventoryItem } from './types';
+import { aggregateEffects, type EquippedEffectItem, type ItemEffects } from './effects';
+import { MAGIC_ITEMS } from './magicItems';
 
 const isStory = (item: { itemId: string }) => item.itemId === STORY_ITEM_ID;
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -119,6 +121,17 @@ export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<Ski
     if (entry?.kind === 'accessory') bonuses[entry.skill] = (bonuses[entry.skill] ?? 0) + entry.skillBonus;
   }
   return bonuses;
+}
+
+/** Special effects and set bonus from worn magic items (F5j0). */
+export function equippedItemEffects(items: InventoryItem[]): ItemEffects {
+  const worn: EquippedEffectItem[] = [];
+  for (const i of items) {
+    if (!i.equipped || !i.slot) continue;
+    const magic = MAGIC_ITEMS.find((m) => m.id === i.itemId);
+    worn.push({ slot: i.slot, effect: magic?.effect, theme: magic?.theme });
+  }
+  return aggregateEffects(worn);
 }
 
 /** Spends one scroll (F5e); null when it is not a scroll or the player does not have it. */

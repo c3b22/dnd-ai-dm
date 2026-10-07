@@ -156,3 +156,14 @@ describe('accessory slot (F5d)', () => {
     expect(equippedSkillBonuses([])).toEqual({});
   });
 });
+
+describe('equippedItemEffects (F5j0)', () => {
+  it('ignores unequipped items and items without effect data', async () => {
+    const { equippedItemEffects } = await import('./rules');
+    const items = [
+      { itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon' as const, equipped: true },
+      { itemId: 'armor_light', customName: '', quantity: 1, slot: 'armor' as const, equipped: false },
+    ];
+    expect(equippedItemEffects(items)).toEqual({ effects: [], setTheme: null, setSkillBonus: 0 });
+  });
+});

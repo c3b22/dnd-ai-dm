@@ -1,5 +1,6 @@
 import type { DiceSpec } from '@/lib/character/constants';
 import type { SkillId } from '@/lib/character/classes';
+import type { ItemEffectId } from './effects';
 
 /**
  * Magic item catalogue (F5b). Pure data with 6 mechanic kinds only. Variety comes from names, numbers,
@@ -30,6 +31,10 @@ export interface MagicItem {
   weight: number;
   price: number;
   mechanic: MagicMechanic;
+  /** Optional special mechanic (F5j0); at most one. */
+  effect?: ItemEffectId;
+  /** Optional set theme, e.g. 'เงา'; a matching weapon + armor + accessory gives the set bonus. */
+  theme?: string;
 }
 
 export const magicSellPrice = (item: Pick<MagicItem, 'price'>): number => Math.floor(item.price / 2);

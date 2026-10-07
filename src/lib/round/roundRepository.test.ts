@@ -379,7 +379,7 @@ describe('createSupabaseRoundRepository character state', () => {
     expect(context.pendingWipe).toBe(true);
     expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, skillBonuses: {}, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, backstory: null, personality: null, goal: null },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, skillBonuses: {}, itemEffects: { effects: [], setTheme: null, setSkillBonus: 0 }, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, backstory: null, personality: null, goal: null },
     ]);
   });
 
@@ -560,6 +560,17 @@ describe('createSupabaseRoundRepository inventory', () => {
     });
     const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
     expect(context.characters[0].skillBonuses).toEqual({ stealth: 2 });
+  });
+
+  it('exposes combined item effects on the character (F5j0), empty for items without effects', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      players: [premRow],
+      inventoryRows: [{ player_id: 'p1', item_id: 'shortbow', custom_name: '', quantity: 1, slot: 'weapon', equipped: true }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.characters[0].itemEffects).toEqual({ effects: [], setTheme: null, setSkillBonus: 0 });
   });
 
   it('treats a player with nothing equipped as bare-handed (the old weapon_id column is ignored)', async () => {
