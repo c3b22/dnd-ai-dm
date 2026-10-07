@@ -1,7 +1,11 @@
+// E1 audit (docs/audit-chat-history-e1.md): ooc (team chat), ask and ask_answer (player <-> DM Q&A)
+// messages must NEVER reach the AI prompt. The query in roundRepository filters them before the
+// 40-row limit; assemblePrompt filters again defensively (tested below).
 import { describe, it, expect } from 'vitest';
 import { assemblePrompt, shouldRotateSummary, StoredMessage } from './assemblePrompt';
 import { getAdventure } from '@/lib/adventures/adventures';
 import { sceneInstruction } from '@/lib/scenes/scenes';
+import { DEFAULT_SETTINGS } from '@/lib/campaign/settings';
 
 describe('assemblePrompt', () => {
   it('includes the campaign summary, recent messages, and this round actions', () => {
@@ -21,6 +25,27 @@ describe('assemblePrompt', () => {
       { playerDisplayName: 'Prem', actionText: 'Look around' },
     ]);
     expect(prompt).toContain('(campaign just started)');
+  });
+});
+
+describe('assemblePrompt role filtering', () => {
+  it('never includes ooc, ask or ask_answer messages in the prompt', () => {
+    const prompt = assemblePrompt(
+      '',
+      [
+        { role: 'dm', content: 'The door creaks open.' },
+        { role: 'ooc', content: 'SECRET-OOC-CHAT' },
+        { role: 'ask', content: 'SECRET-ASK-QUESTION' },
+        { role: 'ask_answer', content: 'SECRET-ASK-ANSWER' },
+        { role: 'player', content: 'I step inside.' },
+      ],
+      [{ playerDisplayName: 'Prem', actionText: 'Look around' }]
+    );
+    expect(prompt).toContain('The door creaks open.');
+    expect(prompt).toContain('I step inside.');
+    expect(prompt).not.toContain('SECRET-OOC-CHAT');
+    expect(prompt).not.toContain('SECRET-ASK-QUESTION');
+    expect(prompt).not.toContain('SECRET-ASK-ANSWER');
   });
 });
 
@@ -152,5 +177,67 @@ describe('assemblePrompt economy', () => {
       { characters: [prem], pendingWipe: false, inventories: {}, shop: { name: 'Old Mara', itemIds: ['staff'] } });
     expect(prompt).toContain('Prem: 14 gold');
     expect(prompt).toContain('Old Mara');
+  });
+});
+
+describe('assemblePrompt combat', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0 };
+  const act = [{ playerDisplayName: 'Prem', actionText: 'Look' }];
+  it('includes the combat tags and the current enemies', () => {
+    const prompt = assemblePrompt('', [], act, null, '', undefined,
+      { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] } });
+    expect(prompt).not.toContain('[[enemy_hurt:');
+    expect(prompt).toContain('[[enemy_attack: EnemyName | PlayerName]]');
+    expect(prompt).toContain('- หมาป่า (normal): 1/2 pips');
+  });
+
+  it('keeps the enemy_hurt tag when dice are off (the server does not roll attacks)', () => {
+    const prompt = assemblePrompt('', [], act, null, '', { ...DEFAULT_SETTINGS, diceEnabled: false },
+      { characters: [prem], pendingWipe: false, inventories: {}, encounter: null });
+    expect(prompt).toContain('[[enemy_hurt:');
+  });
+
+  it('tells the DM the attack result and asks for attacks in the first call during a fight', () => {
+    const attack = { playerId: 'p1', playerDisplayName: 'Prem', target: 'หมาป่า', tier: 'normal' as const, dc: 9, advantage: 'none' as const, dice: [12], die: 12, hit: true, critical: null, pips: 2, defeated: true, damage: 6, maxDamage: 8 };
+    const state = { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false }] } };
+    const text = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'ฟัน', attack }], null, '', undefined, state);
+    expect(text).toContain('attack on หมาป่า: d20 12 vs 9 -> HEAVY HIT');
+    expect(text).toContain('the enemy is defeated');
+    expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('"attacks"');
+    expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('"attacks"');
+  });
+  it('says no fight is in progress without an encounter', () => {
+    const prompt = assemblePrompt('', [], act, null, '', undefined, { characters: [prem], pendingWipe: false });
+    expect(prompt).toContain('No fight is in progress');
+  });
+});
+
+describe('assemblePrompt world memory', () => {
+  const actions = [{ playerDisplayName: 'Prem', actionText: 'Look' }];
+  const facts = [
+    { id: 'f1', campaignId: 'c', kind: 'npc' as const, key: 'Elara', value: 'friendly', updatedAt: 't' },
+    { id: 'f2', campaignId: 'c', kind: 'quest' as const, key: 'Find ring', value: 'open', updatedAt: 't' },
+    { id: 'f3', campaignId: 'c', kind: 'clue' as const, key: null, value: 'Blood on the door', updatedAt: 't' },
+  ];
+
+  it('always explains the memory tags, even with no facts', () => {
+    const prompt = assemblePrompt('', [], actions);
+    expect(prompt).toContain('[[npc: Name | attitude]]');
+    expect(prompt).not.toContain('Known NPCs');
+  });
+
+  it('lists facts as a section separate from the story summary', () => {
+    const prompt = assemblePrompt('SUMMARY-TEXT', [], actions, null, '', undefined, undefined, facts);
+    expect(prompt).toContain('- Elara: friendly');
+    expect(prompt).toContain('- Find ring');
+    expect(prompt).toContain('- Blood on the door');
+    const summaryAt = prompt.indexOf('SUMMARY-TEXT');
+    const npcAt = prompt.indexOf('- Elara: friendly');
+    expect(npcAt).toBeGreaterThan(summaryAt);
+    expect(prompt.slice(summaryAt, npcAt)).toContain('Story memory');
+  });
+
+  it('stays free of blank-line pairs from the memory section', () => {
+    expect(assemblePrompt('', [], actions).includes('\n\n\n')).toBe(false);
   });
 });

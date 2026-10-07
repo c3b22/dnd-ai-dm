@@ -56,3 +56,24 @@ describe('equipForUser', () => {
     await expect(equipForUser(client, { ...params, itemId: 'potion_minor', action: 'unequip' })).rejects.toBeInstanceOf(EquipError);
   });
 });
+
+describe('equipForUser accessories (F5d)', () => {
+  const ring = { player_id: 'p1', item_id: 'acc_acrobat', custom_name: '', quantity: 1, slot: 'accessory', equipped: true };
+  const shawl = { ...ring, item_id: 'acc_silentshawl', equipped: false };
+
+  it('swaps the worn accessory, unequipping first, and leaves the weapon alone', async () => {
+    const { client, updates } = fakeSupabase({ player: { id: 'p1' }, rows: [sword, ring, shawl] });
+    const items = await equipForUser(client, { ...params, itemId: 'acc_silentshawl', action: 'equip' });
+    expect(updates.map((u) => [u.filters.item_id, (u.patch as any).equipped])).toEqual([['acc_acrobat', false], ['acc_silentshawl', true]]);
+    expect(items.find((i) => i.itemId === 'shortsword')!.equipped).toBe(true);
+  });
+
+  it('equips into an empty accessory slot and unequips it', async () => {
+    const a = fakeSupabase({ player: { id: 'p1' }, rows: [{ ...ring, equipped: false }] });
+    await equipForUser(a.client, { ...params, itemId: 'acc_acrobat', action: 'equip' });
+    expect(a.updates.map((u) => (u.patch as any).equipped)).toEqual([true]);
+    const b = fakeSupabase({ player: { id: 'p1' }, rows: [ring] });
+    await equipForUser(b.client, { ...params, itemId: 'acc_acrobat', action: 'unequip' });
+    expect(b.updates.map((u) => (u.patch as any).equipped)).toEqual([false]);
+  });
+});

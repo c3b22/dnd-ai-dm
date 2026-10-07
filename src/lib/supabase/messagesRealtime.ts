@@ -2,15 +2,19 @@ import { supabaseBrowserClient } from './client';
 import type { Message } from '@/components/MessageList';
 
 export async function fetchInitialMessages(campaignId: string): Promise<Message[]> {
-  const { data, error } = await supabaseBrowserClient
-    .from('messages')
-    .select('id, role, content')
-    .eq('campaign_id', campaignId)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const query = (columns: string) =>
+    supabaseBrowserClient
+      .from('messages')
+      .select(columns)
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+  // player_id is newer than the rest; a database without it falls back to the old column list.
+  let { data, error } = await query('id, role, content, player_id');
+  if (error) ({ data, error } = await query('id, role, content'));
   if (error) throw error;
   // Newest 50, flipped back to chronological order for display.
-  return (data as Message[]).reverse();
+  return (data as unknown as Message[]).reverse();
 }
 
 export function subscribeToNewMessages(

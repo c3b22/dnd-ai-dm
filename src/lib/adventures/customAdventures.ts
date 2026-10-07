@@ -4,6 +4,7 @@
 // storage folder's deletion on adventure delete.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { generateJoinCode } from '../campaign/joinCode';
 import { mapCustomAdventureRow, type Adventure } from './adventures';
 
 export class CustomAdventureError extends Error {
@@ -185,14 +186,29 @@ export async function deleteCustomAdventure(
   if (error) throw error;
 }
 
+export interface MyCustomAdventure {
+  id: string;
+  titleTh: string;
+  taglineTh: string;
+  thumbnailUrl: string | null;
+  shareCode: string | null;
+}
+
 export async function listMyCustomAdventures(
   supabase: SupabaseClient,
   ownerId: string
-): Promise<{ id: string; titleTh: string; taglineTh: string; thumbnailUrl: string | null }[]> {
-  const { data, error } = await supabase
+): Promise<MyCustomAdventure[]> {
+  let { data, error }: { data: any[] | null; error: any } = await supabase
     .from('custom_adventures')
-    .select('id, title_th, tagline_th, scenes')
+    .select('id, title_th, tagline_th, scenes, share_code')
     .eq('owner_id', ownerId);
+  if (error) {
+    // share_code may not exist yet in production (migration not applied): list without it rather than failing.
+    ({ data, error } = await supabase
+      .from('custom_adventures')
+      .select('id, title_th, tagline_th, scenes')
+      .eq('owner_id', ownerId));
+  }
   if (error) throw error;
 
   return (data ?? []).map((row: any) => ({
@@ -200,5 +216,70 @@ export async function listMyCustomAdventures(
     titleTh: row.title_th,
     taglineTh: row.tagline_th,
     thumbnailUrl: row.scenes?.[0]?.imagePath ?? null,
+    shareCode: row.share_code ?? null,
   }));
+}
+
+const SHARE_CODE_LENGTH = 8;
+const SHARE_CODE_MAX_ATTEMPTS = 10;
+const UNIQUE_VIOLATION = '23505';
+
+async function getOwnedShareRowOrThrow(
+  supabase: SupabaseClient,
+  id: string,
+  ownerId: string
+): Promise<{ owner_id: string; share_code: string | null }> {
+  const { data: row, error } = await supabase
+    .from('custom_adventures')
+    .select('owner_id, share_code')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+
+  if (!row) {
+    throw new CustomAdventureError('adventure not found', 404);
+  }
+  if (row.owner_id !== ownerId) {
+    throw new CustomAdventureError('not the owner', 403);
+  }
+  return row;
+}
+
+/** Owner-only. Returns the adventure's share code, creating one if needed.
+ * Idempotent: an existing code is returned unchanged. A collision with
+ * another adventure's code (unique index) re-rolls a new code. */
+export async function enableSharing(
+  supabase: SupabaseClient,
+  id: string,
+  ownerId: string
+): Promise<string> {
+  const row = await getOwnedShareRowOrThrow(supabase, id, ownerId);
+  if (row.share_code) return row.share_code;
+
+  for (let attempt = 0; attempt < SHARE_CODE_MAX_ATTEMPTS; attempt++) {
+    const code = generateJoinCode(SHARE_CODE_LENGTH);
+    const { data, error } = await supabase
+      .from('custom_adventures')
+      .update({ share_code: code })
+      .eq('id', id)
+      .select('share_code')
+      .single();
+    if (!error) return data?.share_code ?? code;
+    if (error.code !== UNIQUE_VIOLATION) throw error;
+  }
+  throw new Error('could not generate a unique share code');
+}
+
+/** Owner-only. Clears the share code so the old link stops working. */
+export async function disableSharing(
+  supabase: SupabaseClient,
+  id: string,
+  ownerId: string
+): Promise<void> {
+  await getOwnedShareRowOrThrow(supabase, id, ownerId);
+  const { error } = await supabase
+    .from('custom_adventures')
+    .update({ share_code: null })
+    .eq('id', id);
+  if (error) throw error;
 }

@@ -28,23 +28,23 @@ describe('fetchMyCampaigns', () => {
       {
         id: 'player-1',
         campaign_id: 'camp-1',
-        campaigns: { name: 'ห้องเก่า', adventure_id: 'sunken-bell', started_at: null, created_at: '2026-01-01T00:00:00Z' },
+        campaigns: { name: 'ห้องเก่า', adventure_id: 'sunken-bell', started_at: null, created_at: '2026-01-01T00:00:00Z', players: [{ id: 'player-1', created_at: '2026-01-01T00:00:00Z' }, { id: 'other-1', created_at: '2026-01-01T01:00:00Z' }] },
       },
       {
         id: 'player-2',
         campaign_id: 'camp-2',
-        campaigns: { name: 'ห้องใหม่', adventure_id: 'orc-castle', started_at: '2026-01-02T00:00:00Z', created_at: '2026-01-02T00:00:00Z' },
+        campaigns: { name: 'ห้องใหม่', adventure_id: 'orc-castle', started_at: '2026-01-02T00:00:00Z', created_at: '2026-01-02T00:00:00Z', players: [{ id: 'other-2', created_at: '2026-01-02T00:00:00Z' }, { id: 'player-2', created_at: '2026-01-02T00:05:00Z' }] },
       },
     ]);
 
     const result = await fetchMyCampaigns(client, 'user-1');
 
     expect(result).toEqual([
-      { id: 'camp-2', playerId: 'player-2', name: 'ห้องใหม่', adventureId: 'orc-castle', started: true },
-      { id: 'camp-1', playerId: 'player-1', name: 'ห้องเก่า', adventureId: 'sunken-bell', started: false },
+      { id: 'camp-2', playerId: 'player-2', name: 'ห้องใหม่', adventureId: 'orc-castle', started: true, isOwner: false },
+      { id: 'camp-1', playerId: 'player-1', name: 'ห้องเก่า', adventureId: 'sunken-bell', started: false, isOwner: true },
     ]);
     expect(calls).toEqual([
-      { columns: 'id, campaign_id, campaigns(name, adventure_id, started_at, created_at)' },
+      { columns: 'id, campaign_id, campaigns(name, adventure_id, started_at, created_at, players(id, created_at))' },
       { column: 'user_id', value: 'user-1' },
     ]);
   });
@@ -57,5 +57,12 @@ describe('fetchMyCampaigns', () => {
   it('skips a row whose campaign was deleted', async () => {
     const { client } = fakeSupabase([{ id: 'player-1', campaign_id: 'camp-1', campaigns: null }]);
     expect(await fetchMyCampaigns(client, 'user-1')).toEqual([]);
+  });
+
+  it('is not the owner when the players list is missing', async () => {
+    const { client } = fakeSupabase([
+      { id: 'player-1', campaign_id: 'camp-1', campaigns: { name: 'x', adventure_id: null, started_at: null, created_at: '2026-01-01T00:00:00Z' } },
+    ]);
+    expect((await fetchMyCampaigns(client, 'user-1'))[0].isOwner).toBe(false);
   });
 });

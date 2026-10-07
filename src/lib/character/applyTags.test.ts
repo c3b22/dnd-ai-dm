@@ -232,3 +232,29 @@ describe('applyCharacterTags', () => {
     });
   });
 });
+
+describe('ward (F5j4) on hurt tags', () => {
+  const ward = { effects: ['ward' as const], setTheme: null, setSkillBonus: 0, ward: 2 };
+  const hurt = { kind: 'hurt' as const, name: 'Prem', tier: 'medium' as const };
+
+  it('first hurt is reduced by ward on top of armor, the second is not', () => {
+    const result = applyCharacterTags([char({ armorReduction: 1, itemEffects: ward })], [hurt, hurt], four);
+    expect(byName(result, 'Prem').hp).toBe(20 - 2 - 4); // 5-1-2=2, then 5-1=4
+    expect(result.changes[0]).toBe('Prem −2 HP (เกราะกัน 3)');
+  });
+
+  it('shares the used set with enemy attacks: already spent means no ward here', () => {
+    const used = new Set(['p1']);
+    const result = applyCharacterTags([char({ itemEffects: ward })], [hurt], four, {}, used);
+    expect(byName(result, 'Prem').hp).toBe(15);
+  });
+
+  it('spends the shared set when it applies, and no item means no ward', () => {
+    const used = new Set<string>();
+    applyCharacterTags([char({ itemEffects: ward })], [hurt], four, {}, used);
+    expect(used.has('p1')).toBe(true);
+    const none = new Set<string>();
+    expect(byName(applyCharacterTags([char()], [hurt], four, {}, none), 'Prem').hp).toBe(15);
+    expect(none.size).toBe(0);
+  });
+});

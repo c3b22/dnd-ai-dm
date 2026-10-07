@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PlayerOrder } from './PlayerOrder';
 
 const gear = (itemId: string) => ({ itemId, customName: '', quantity: 1, slot: 'weapon' as const, equipped: true });
@@ -104,5 +104,32 @@ describe('PlayerOrder', () => {
   it('shows each player\'s level', () => {
     render(<PlayerOrder players={[{ ...players[0], xp: 60, maxHp: 25 }]} currentPlayerId="p1" locked={false} onMove={() => {}} />);
     expect(screen.getByText('Lv 2')).toBeTruthy();
+  });
+
+  it('shows the ability point badge only on the current player and only when points are left', () => {
+    const abilities = { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 };
+    const withPoints = players.map((p) => ({ ...p, abilities, abilityChoicesLeft: p.id === 'p1' ? 1 : 0 }));
+    const { rerender } = render(
+      <PlayerOrder players={withPoints} currentPlayerId="p1" locked={false} onMove={() => {}} onAbilityChoice={vi.fn()} />
+    );
+    expect(screen.getAllByRole('button', { name: /มีแต้มเพิ่มค่าความสามารถ 1 ครั้ง/ })).toHaveLength(1);
+
+    rerender(
+      <PlayerOrder players={withPoints} currentPlayerId="p2" locked={false} onMove={() => {}} onAbilityChoice={vi.fn()} />
+    );
+    expect(screen.queryByRole('button', { name: /มีแต้มเพิ่มค่าความสามารถ/ })).toBeNull();
+  });
+
+  it('passes the chosen +2 to onAbilityChoice', async () => {
+    const abilities = { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 };
+    const onAbilityChoice = vi.fn().mockResolvedValue(undefined);
+    const list = [{ ...players[0], abilities, abilityChoicesLeft: 1 }];
+    render(
+      <PlayerOrder players={list} currentPlayerId="p1" locked={false} onMove={() => {}} onAbilityChoice={onAbilityChoice} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /มีแต้มเพิ่มค่าความสามารถ/ }));
+    fireEvent.click(screen.getByLabelText('CON'));
+    fireEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }));
+    await waitFor(() => expect(onAbilityChoice).toHaveBeenCalledWith({ kind: 'double', ability: 'CON' }));
   });
 });

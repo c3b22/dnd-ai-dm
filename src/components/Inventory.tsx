@@ -1,5 +1,6 @@
-import { CARRY_CAPACITY, catalogEntry } from '@/lib/inventory/catalog';
-import { itemLabel, weightOf } from '@/lib/inventory/rules';
+import { catalogEntry } from '@/lib/inventory/catalog';
+import { magicInfo } from '@/lib/inventory/magicDescribe';
+import { carryCapacityOf, itemLabel, weightOf } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
 
 export interface InventoryProps {
@@ -13,8 +14,8 @@ export interface InventoryProps {
   onDrink: (itemId: string) => void;
 }
 
-const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, consumable: 2 };
-const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 3;
+const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, accessory: 2, consumable: 3 };
+const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 4;
 
 export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDrink }: InventoryProps) {
   // The database returns rows in no particular order, so the list would jump around after every change.
@@ -22,14 +23,15 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
   );
   const weight = weightOf(items);
+  const capacity = carryCapacityOf(items);
   return (
     <section className="card" aria-label="กระเป๋า">
       <h3>กระเป๋า</h3>
       <div className="inv-weight">
         <div className="hp-track" aria-hidden="true">
-          <i className="hp-fill" style={{ width: `${Math.min(100, (weight / CARRY_CAPACITY) * 100)}%` }} />
+          <i className="hp-fill" style={{ width: `${Math.min(100, (weight / capacity) * 100)}%` }} />
         </div>
-        <span className="hp-num">น้ำหนัก {weight}/{CARRY_CAPACITY}</span>
+        <span className="hp-num">น้ำหนัก {weight}/{capacity}</span>
       </div>
       <p className="inv-gold">ทอง {gold}</p>
       {items.length === 0 ? (
@@ -39,14 +41,22 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
           {items.map((item) => {
             const label = itemLabel(item);
             const kind = catalogEntry(item.itemId)?.kind;
+            const magic = magicInfo(item.itemId);
             return (
               <li key={`${item.itemId}|${item.customName}`} className="inv-row">
                 <span className="inv-name">
                   {label}
                   {item.quantity > 1 ? ` ×${item.quantity}` : ''}
                   {item.equipped && <b className="badge-worn">สวมอยู่</b>}
+                  {magic && <b className={`badge-rarity rarity-${magic.rarity}`}>{magic.rarityTh}</b>}
+                  {magic && (
+                    <span className="inv-effect">
+                      {magic.effectTh}
+                      <small>{magic.flavorTh}</small>
+                    </span>
+                  )}
                 </span>
-                {(kind === 'weapon' || kind === 'armor') && (
+                {(kind === 'weapon' || kind === 'armor' || kind === 'accessory') && (
                   <button
                     type="button"
                     className="qa"

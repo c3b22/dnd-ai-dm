@@ -250,4 +250,32 @@ describe('MessageList', () => {
 
     await waitFor(() => expect(screen.getByText('ห้องถูกสร้างแล้ว')).toBeInTheDocument());
   });
+
+  it('renders ooc / ask / ask_answer visibly different from DM narration, with speaker names', async () => {
+    const fetchInitialMessages = vi.fn().mockResolvedValue([
+      { id: 'a', role: 'dm', content: 'เรื่องเล่าของ DM' },
+      { id: 'b', role: 'ooc', player_id: 'p1', content: 'ไปทางซ้ายดีไหม' },
+      { id: 'c', role: 'ask', player_id: 'p1', content: 'ประตูล็อกไหม' },
+      { id: 'd', role: 'ask_answer', player_id: 'p1', content: 'ยังไม่รู้' },
+      { id: 'e', role: 'ooc', player_id: 'zz', content: 'ไม่รู้จักคนนี้' },
+    ]);
+    render(
+      <MessageList
+        campaignId="camp-1"
+        fetchInitialMessages={fetchInitialMessages}
+        subscribeToNewMessages={() => () => {}}
+        playerNames={{ p1: 'อารีย์' }}
+      />
+    );
+    await waitFor(() => expect(screen.getByText('ไปทางซ้ายดีไหม')).toBeInTheDocument());
+    const roleOf = (text: string) => screen.getByText(text).closest('li')!;
+    expect(roleOf('เรื่องเล่าของ DM').className).toBe('msg dm');
+    expect(roleOf('ไปทางซ้ายดีไหม').className).toBe('msg ooc');
+    expect(roleOf('ประตูล็อกไหม').className).toBe('msg ask');
+    expect(roleOf('ยังไม่รู้').className).toBe('msg ask-answer');
+    expect(roleOf('ไปทางซ้ายดีไหม')).toHaveTextContent('แชททีม · อารีย์');
+    expect(roleOf('ประตูล็อกไหม')).toHaveTextContent('ถาม DM · อารีย์');
+    expect(roleOf('ยังไม่รู้')).toHaveTextContent('DM ตอบ');
+    expect(roleOf('ไม่รู้จักคนนี้')).toHaveTextContent(/^แชททีมไม่รู้จักคนนี้$/);
+  });
 });

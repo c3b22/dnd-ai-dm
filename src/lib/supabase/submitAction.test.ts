@@ -39,3 +39,12 @@ describe('submitAction', () => {
     await expect(submitAction('r1', 'p1', 'x')).rejects.toThrow('nope');
   });
 });
+
+describe('submitAction item target (F5e)', () => {
+  it('sends the enemy a scroll is aimed at', async () => {
+    insert.mockReset();
+    insert.mockResolvedValue({ error: null });
+    await submitAction('r1', 'p1', 'ใช้ม้วนคัมภีร์', 'scroll_spark', undefined, 'หมาป่า');
+    expect(insert).toHaveBeenCalledWith({ round_id: 'r1', player_id: 'p1', action_text: 'ใช้ม้วนคัมภีร์', use_item_id: 'scroll_spark', item_target: 'หมาป่า' });
+  });
+});

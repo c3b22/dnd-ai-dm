@@ -101,6 +101,9 @@ export function subscribeToRoundActionCount(
       { event: 'INSERT', schema: 'public', table: 'round_actions', filter: `round_id=eq.${roundId}` },
       refreshCounts
     )
+    // Realtime cannot filter DELETEs by campaign; an extra recount for another table is cheap.
+    // Without it, when the last player who had not acted leaves, nobody triggers the round.
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'players' }, refreshCounts)
     .subscribe();
 
   refreshCounts();

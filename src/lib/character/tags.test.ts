@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseCharacterTags } from './tags';
 
+const NL = String.fromCharCode(10);
+
 describe('parseCharacterTags', () => {
   it('extracts tags in the order they appear and strips them from the text', () => {
     const text = 'The goblin slashes Prem.\n[[hurt: Prem | medium]]\n[[revive: Suki]]\n[[sanctuary]]';
@@ -131,6 +133,101 @@ describe('gold, pay and shop tags', () => {
         { kind: 'xp', tier: 'large' },
         { kind: 'milestone' },
       ]);
+    });
+  });
+
+  describe('enemy tags', () => {
+    it('parses enemy, enemy_hurt, enemy_flee and combat_end in reading order', () => {
+      const text = 'หมาป่าโผล่มา\n[[enemy: หมาป่า | normal]]\n[[enemy_hurt: หมาป่า | heavy]]\n[[enemy_flee: หมาป่า]]\n[[combat_end]]';
+      expect(parseCharacterTags(text)).toEqual({
+        tags: [
+          { kind: 'enemy', name: 'หมาป่า', tier: 'normal' },
+          { kind: 'enemy_hurt', name: 'หมาป่า', tier: 'heavy' },
+          { kind: 'enemy_flee', name: 'หมาป่า' },
+          { kind: 'combat_end' },
+        ],
+        cleanText: 'หมาป่าโผล่มา',
+      });
+    });
+
+    it('tolerates case and spacing and accepts every enemy tier', () => {
+      const { tags } = parseCharacterTags(
+        '[[ ENEMY :  Goblin  |  Minion ]][[enemy: Orc | strong]][[enemy: Dragon | BOSS]]',
+      );
+      expect(tags).toEqual([
+        { kind: 'enemy', name: 'Goblin', tier: 'minion' },
+        { kind: 'enemy', name: 'Orc', tier: 'strong' },
+        { kind: 'enemy', name: 'Dragon', tier: 'boss' },
+      ]);
+    });
+
+    it('hides malformed enemy tags without applying them', () => {
+      const result = parseCharacterTags(
+        'Fight.\n[[enemy: Goblin | huge]]\n[[enemy_hurt: Goblin | full]]\n[[enemy_flee]]\n[[combat_ends]]',
+      );
+      expect(result.tags).toEqual([]);
+      expect(result.cleanText).toBe('Fight.');
+    });
+
+    it('parses enemy_attack (enemy | player), strips it, and hides a malformed one', () => {
+      const ok = parseCharacterTags('หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
+      expect(ok.tags).toEqual([{ kind: 'enemy_attack', enemy: 'หมาป่า', player: 'Prem' }]);
+      expect(ok.cleanText).toBe('หมาป่ากัด');
+      const bad = parseCharacterTags('x\n[[enemy_attack: หมาป่า]]');
+      expect(bad.tags).toEqual([]);
+      expect(bad.cleanText).toBe('x');
+    });
+
+    it('parses magic (player | rarity [| type]) and hides a malformed one', () => {
+      const r = parseCharacterTags('พบหีบ'+NL+'[[magic: Prem | Rare]]'+NL+'[[magic: Suki | uncommon | potion]]');
+      expect(r.tags).toEqual([
+        { kind: 'magic', name: 'Prem', rarity: 'rare', itemType: null },
+        { kind: 'magic', name: 'Suki', rarity: 'uncommon', itemType: 'potion' },
+      ]);
+      expect(r.cleanText).toBe('พบหีบ');
+      const bad = parseCharacterTags('x'+NL+'[[magic: Prem | epic]]'+NL+'[[magic: Prem | rare | sword]]');
+      expect(bad.tags).toEqual([]);
+      expect(bad.cleanText).toBe('x');
+    });
+
+    it('does not confuse enemy_hurt with hurt or enemy', () => {
+      const { tags } = parseCharacterTags('[[hurt: Prem | light]][[enemy_hurt: Orc | medium]]');
+      expect(tags).toEqual([
+        { kind: 'hurt', name: 'Prem', tier: 'light' },
+        { kind: 'enemy_hurt', name: 'Orc', tier: 'medium' },
+      ]);
+    });
+  });
+
+  describe('memory fact tags (npc / quest / clue)', () => {
+    it('parses npc, quest and clue tags and strips them from the narration', () => {
+      const result = parseCharacterTags(
+        'เสียงลม [[npc: ลุงบอบ | เป็นมิตร]] [[quest: ตามหาแหวน | open]] [[clue: ประตูลับอยู่หลังหิ้ง]] จบ',
+      );
+      expect(result.tags).toEqual([
+        { kind: 'npc', key: 'ลุงบอบ', value: 'เป็นมิตร' },
+        { kind: 'quest', key: 'ตามหาแหวน', value: 'open' },
+        { kind: 'clue', key: null, value: 'ประตูลับอยู่หลังหิ้ง' },
+      ]);
+      expect(result.cleanText).toBe('เสียงลม    จบ');
+    });
+
+    it('tolerates case and spacing, normalizes quest status', () => {
+      const { tags } = parseCharacterTags('[[ QUEST :  A  |  DONE ]]');
+      expect(tags).toEqual([{ kind: 'quest', key: 'A', value: 'done' }]);
+    });
+
+    it('hides malformed fact tags without applying them', () => {
+      const result = parseCharacterTags(
+        ['Hi.', '[[quest: A | maybe]]', '[[quest: A]]', '[[npc: Bob]]', '[[clue:]]', '[[clues: x]]'].join('\n'),
+      );
+      expect(result.tags).toEqual([]);
+      expect(result.cleanText).toBe('Hi.');
+    });
+
+    it('does not swallow a following real tag', () => {
+      const { tags } = parseCharacterTags(['[[npc: Bob', '[[clue: real]]'].join('\n'));
+      expect(tags).toEqual([{ kind: 'clue', key: null, value: 'real' }]);
     });
   });
 });

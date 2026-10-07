@@ -26,3 +26,11 @@ describe('inventory rows', () => {
     ]);
   });
 });
+
+describe('rowsToItems accessory slot (F5d)', () => {
+  it('reads the accessory slot and ignores unknown slots', () => {
+    const row = { player_id: 'p', item_id: 'acc_acrobat', custom_name: '', quantity: 1, slot: 'accessory', equipped: true };
+    expect(rowsToItems([row])[0].slot).toBe('accessory');
+    expect(rowsToItems([{ ...row, slot: 'hat' }])[0].slot).toBeNull();
+  });
+});

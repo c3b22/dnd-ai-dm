@@ -4,6 +4,8 @@ import { useState } from 'react';
 import type { RoundPlayer } from '@/lib/supabase/players';
 import { weaponFor } from '@/lib/character/constants';
 import { HpBar } from './HpBar';
+import { AbilityChoice } from './AbilityChoice';
+import type { AbilityChoice as Choice } from '@/lib/character/leveling';
 import { catalogEntry } from '@/lib/inventory/catalog';
 import { equippedArmorId, equippedWeaponId } from '@/lib/inventory/rules';
 
@@ -17,11 +19,13 @@ export interface PlayerOrderProps {
   onReorder?: (draggedId: string, targetId: string) => void;
   /** Table rule: 'owner' means only the owner arranges the order. */
   reorderPolicy?: 'owner' | 'self';
+  /** Spend an unspent ability score improvement; the badge shows only on the current player's own row. */
+  onAbilityChoice?: (choice: Choice) => Promise<void>;
 }
 
 const AVATAR_COLORS = ['#e0a94a', '#5fb3a5', '#d46a5a', '#8a7fd6', '#6fa8dc'];
 
-export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder, reorderPolicy = 'self' }: PlayerOrderProps) {
+export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder, reorderPolicy = 'self', onAbilityChoice }: PlayerOrderProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const currentIsOwner = players.find((p) => p.id === currentPlayerId)?.isOwner ?? false;
@@ -88,6 +92,13 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                 </span>
               </span>
               <HpBar hp={player.hp} maxHp={player.maxHp} xp={player.xp} />
+              {player.id === currentPlayerId && onAbilityChoice && player.abilities && (
+                <AbilityChoice
+                  abilities={player.abilities}
+                  remaining={player.abilityChoicesLeft ?? 0}
+                  onConfirm={onAbilityChoice}
+                />
+              )}
             </span>
             <span className="mv">
               <button

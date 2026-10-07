@@ -1,18 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { MessageRole } from '@/lib/messages/roles';
 import { D20Icon } from './D20Icon';
-import { DiceRollOverlay, type DiceRollOverlayProps } from './DiceRollOverlay';
+import { DiceRollOverlay, checkFormula, type DiceCheckView, type DiceRollOverlayProps } from './DiceRollOverlay';
+import { skillLabel } from '@/lib/character/skillLabels';
 
 export interface Message {
   id: string;
-  role: 'dm' | 'player' | 'system';
+  role: MessageRole;
+  player_id?: string | null;
   content: string;
 }
 
 interface RollEntry {
   playerDisplayName: string;
   roll: number;
+  check?: { skill: string; dc: number; modifier: number; proficiency: number; total: number; success: boolean };
+}
+
+function checkViews(rolls: RollEntry[]): DiceCheckView[] {
+  return rolls.flatMap((r) => (r.check ? [{ playerDisplayName: r.playerDisplayName, die: r.roll, ...r.check }] : []));
 }
 
 function parseRollMessage(content: string): RollEntry[] | null {
@@ -56,6 +64,12 @@ function RollSummary({ rolls, pending }: { rolls: RollEntry[]; pending: boolean 
           </span>
           <span className="who">{r.playerDisplayName}</span>
           <span className="num">{pending ? '?' : r.roll}</span>
+          {r.check && !pending && (
+            <span className={`check-detail ${r.check.success ? 'pass' : 'fail'}`}>
+              {skillLabel(r.check.skill)} DC {r.check.dc} · {checkFormula({ die: r.roll, ...r.check })} ·{' '}
+              {r.check.success ? 'ผ่าน' : 'ไม่ผ่าน'}
+            </span>
+          )}
         </li>
       ))}
     </ul>
@@ -70,22 +84,32 @@ export interface MessageListProps {
     onMessage: (message: Message) => void
   ) => () => void;
   RollOverlay?: (props: DiceRollOverlayProps) => React.ReactNode;
+  /** playerId -> display name, used to label team chat and questions. Optional. */
+  playerNames?: Record<string, string>;
 }
 
 const ROLE_CLASS: Record<Message['role'], string> = {
   dm: 'msg dm',
   player: 'msg pl',
   system: 'msg system',
+  ooc: 'msg ooc',
+  ask: 'msg ask',
+  ask_answer: 'msg ask-answer',
 };
+
+function speakerName(message: Message, names?: Record<string, string>): string {
+  return (message.player_id && names?.[message.player_id]) || '';
+}
 
 export function MessageList({
   campaignId,
   fetchInitialMessages,
   subscribeToNewMessages,
   RollOverlay = DiceRollOverlay,
+  playerNames,
 }: MessageListProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[] } | null>(
+  const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[]; checks: DiceCheckView[] } | null>(
     null
   );
   const listRef = useRef<HTMLUListElement>(null);
@@ -126,7 +150,7 @@ export function MessageList({
         const rolls = parseRollMessage(message.content);
         if (rolls && rolls.length > 0) {
           pendingRollIdRef.current = message.id;
-          setPendingRoll({ messageId: message.id, values: rolls.map((r) => r.roll) });
+          setPendingRoll({ messageId: message.id, values: rolls.map((r) => r.roll), checks: checkViews(rolls) });
         }
       }
 
@@ -155,7 +179,7 @@ export function MessageList({
   return (
     <>
       {pendingRoll && (
-        <RollOverlay values={pendingRoll.values} onComplete={handleRollOverlayComplete} />
+        <RollOverlay values={pendingRoll.values} checks={pendingRoll.checks} onComplete={handleRollOverlayComplete} />
       )}
       <ul className="log" aria-label="session log" ref={listRef}>
         {messages.map((message) => {
@@ -165,6 +189,17 @@ export function MessageList({
           return (
             <li key={message.id} className={ROLE_CLASS[message.role]} data-role={message.role}>
               {message.role === 'dm' && <span className="who">DM</span>}
+              {message.role === 'ooc' && (
+                <span className="who">
+                  แชททีม{speakerName(message, playerNames) ? ` · ${speakerName(message, playerNames)}` : ''}
+                </span>
+              )}
+              {message.role === 'ask' && (
+                <span className="who">
+                  ถาม DM{speakerName(message, playerNames) ? ` · ${speakerName(message, playerNames)}` : ''}
+                </span>
+              )}
+              {message.role === 'ask_answer' && <span className="who">DM ตอบ (นอกเนื้อเรื่อง)</span>}
               {rolls ? (
                 <RollSummary rolls={rolls} pending={pending} />
               ) : stats ? (

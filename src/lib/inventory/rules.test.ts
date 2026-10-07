@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  armorReduction, equipItem, equippedArmorId, equippedWeaponId, giveItem, itemLabel,
+  armorReduction, equipItem, equippedArmorId, equippedSkillBonuses, equippedWeaponId, giveItem, itemLabel,
   takeItem, unequipSlot, useConsumable, weightOf,
 } from './rules';
 import type { InventoryItem } from './types';
@@ -126,5 +126,82 @@ describe('itemLabel', () => {
   it('uses the Thai catalog name or the story title', () => {
     expect(itemLabel(item({ itemId: 'staff' }))).toBe('ไม้เท้า');
     expect(itemLabel(item({ itemId: 'story', customName: 'Rusty Key' }))).toBe('Rusty Key');
+  });
+});
+
+describe('accessory slot (F5d)', () => {
+  const ring = item({ itemId: 'acc_acrobat', slot: 'accessory', equipped: true });
+  const shawl = item({ itemId: 'acc_silentshawl', slot: 'accessory' });
+  const anklet = item({ itemId: 'acc_soundlessanklet', slot: 'accessory' });
+
+  it('auto-equips a first accessory but leaves a second in the pack', () => {
+    const first = giveItem([], 'acc_acrobat').items;
+    expect(first[0]).toMatchObject({ slot: 'accessory', equipped: true });
+    expect(giveItem(first, 'acc_silentshawl').items[1]).toMatchObject({ slot: 'accessory', equipped: false });
+  });
+
+  it('wears only 1 accessory: equipping another swaps, and weapon/armor are untouched', () => {
+    const next = equipItem([sword, ring, shawl], 'acc_silentshawl').items;
+    expect(next.map((i) => i.equipped)).toEqual([true, false, true]);
+  });
+
+  it('unequips the accessory slot', () => {
+    expect(unequipSlot([sword, ring], 'accessory').map((i) => i.equipped)).toEqual([true, false]);
+  });
+
+  it('equippedSkillBonuses counts only worn accessories', () => {
+    expect(equippedSkillBonuses([sword, ring, shawl])).toEqual({ acrobatics: 1 });
+    expect(equippedSkillBonuses([sword, shawl, anklet])).toEqual({});
+    expect(equippedSkillBonuses([{ ...anklet, equipped: true }])).toEqual({ stealth: 2 });
+    expect(equippedSkillBonuses([])).toEqual({});
+  });
+});
+
+describe('equippedItemEffects (F5j0)', () => {
+  it('ignores unequipped items and items without effect data', async () => {
+    const { equippedItemEffects } = await import('./rules');
+    const items = [
+      { itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon' as const, equipped: true },
+      { itemId: 'armor_light', customName: '', quantity: 1, slot: 'armor' as const, equipped: false },
+    ];
+    expect(equippedItemEffects(items)).toEqual({ effects: [], setTheme: null, setSkillBonus: 0 });
+  });
+});
+
+describe('per-player carry capacity (F5j5)', () => {
+  it('is 10 without deep_pack and 10 + value with it', async () => {
+    const { carryCapacity, carryCapacityOf } = await import('./rules');
+    expect(carryCapacity()).toBe(10);
+    expect(carryCapacity({ effects: [], setTheme: null, setSkillBonus: 0 })).toBe(10);
+    expect(carryCapacity({ effects: ['deep_pack'], setTheme: null, setSkillBonus: 0, deepPack: 3 })).toBe(13);
+    expect(carryCapacityOf([sword])).toBe(10);
+    expect(carryCapacityOf([])).toBe(10);
+  });
+
+  it('giveItem uses the capacity parameter and defaults to the old limit', () => {
+    // Fill to exactly the default limit with potions, then one more only fits with a larger capacity.
+    let items: InventoryItem[] = [];
+    for (let n = 0; n < 200; n++) {
+      const r = giveItem(items, 'potion_minor');
+      if (r.result === 'full') break;
+      items = r.items;
+    }
+    expect(weightOf(items)).toBeLessThanOrEqual(10);
+    expect(giveItem(items, 'potion_minor').result).toBe('full');
+    expect(giveItem(items, 'potion_minor', '', 13).result).toBe('added');
+  });
+
+  it('after losing capacity the pack keeps its items but accepts nothing new', () => {
+    let items: InventoryItem[] = [];
+    for (let n = 0; n < 200; n++) {
+      const r = giveItem(items, 'potion_minor', '', 13);
+      if (r.result === 'full') break;
+      items = r.items;
+    }
+    expect(weightOf(items)).toBeGreaterThan(10);
+    const r = giveItem(items, 'potion_minor');
+    expect(r.result).toBe('full');
+    expect(r.items).toBe(items);
+    expect(takeItem(items, 'potion_minor').taken).toBe(true);
   });
 });
