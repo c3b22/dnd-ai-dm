@@ -17,6 +17,7 @@ import type { CampaignFact } from '@/lib/memory/types';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 import { normalizeAbilities } from '@/lib/character/constants';
+import { normalizeRestVote, type RestVote } from '@/lib/campaign/restVote';
 import { normalizeDeathSaves } from '@/lib/character/deathSaves';
 import { STORY_MESSAGE_ROLES } from '@/lib/messages/roles';
 import type { Adventure } from '@/lib/adventures/adventures';
@@ -48,6 +49,8 @@ export interface RoundContext {
   magicGiven?: string[] | null;
   /** H3c: corpses in this room that still hold something; [] / absent when the table is missing. */
   corpses?: LootableCorpse[];
+  /** J3: the team's rest vote when it passed in this very round; null/absent when none (or the column is missing). */
+  restVote?: RestVote | null;
 }
 
 /** One line of the posted roll summary; `check` is present when the roll was a skill check. */
@@ -108,6 +111,10 @@ export interface RoundRepository {
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
   /** H1: persists the death save tally. Optional so older fakes keep working; tolerates a missing column. */
   saveDeathSaves?(characters: Character[]): Promise<void>;
+  /** J3: persists players.short_rests_used. Optional so older fakes keep working; tolerates a missing column. */
+  saveShortRestsUsed?(characters: Character[]): Promise<void>;
+  /** J3: consumes the rest vote (campaigns.rest_vote = null). Optional so older fakes keep working; tolerates a missing column. */
+  clearRestVote?(campaignId: string): Promise<void>;
   /** H3a: stores the corpses (pack + gold) of permanently dead characters. Optional so older fakes keep working; throws when the table is missing. */
   saveCorpses?(campaignId: string, corpses: Corpse[]): Promise<void>;
   /** H3c: writes back what is left on looted corpses (an emptied one is deleted). Optional so older fakes keep working; throws on failure. */
@@ -199,6 +206,14 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // Death saves (H1) in their own query: players.death_saves may not exist yet; unreadable means none.
       const { data: deathRows } = await supabase.from('players').select('id, death_saves').eq('campaign_id', campaignId);
       const deathSavesById = new Map<string, unknown>((deathRows ?? []).map((row: any) => [row.id as string, row.death_saves]));
+
+      // Short rests used (J2/J3) in their own query: players.short_rests_used may not exist yet; unreadable means 0.
+      const { data: restRows } = await supabase.from('players').select('id, short_rests_used').eq('campaign_id', campaignId);
+      const shortRestsById = new Map<string, number>((restRows ?? []).map((row: any) => [row.id as string, Number(row.short_rests_used ?? 0)]));
+
+      // The rest vote (J3) in its own query too: campaigns.rest_vote may not exist yet; unreadable means no vote.
+      const { data: voteRow } = await supabase.from('campaigns').select('rest_vote').eq('id', campaignId).maybeSingle();
+      const restVote = normalizeRestVote((voteRow as any)?.rest_vote, roundId);
 
       // Identity text in its own query for the same reason: unreadable means no identity, not no characters.
       const { data: identityRows } = await supabase.from('players').select('id, backstory, personality, goal').eq('campaign_id', campaignId);
@@ -297,6 +312,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           classId: (row.class_id ?? null) as string | null,
           abilityCooldown: Number(row.ability_cooldown ?? 0),
           abilities: normalizeAbilities(abilitiesById.get(row.id as string)),
+          shortRestsUsed: shortRestsById.get(row.id as string) ?? 0,
           ...(deathSavesById.get(row.id as string) ? { deathSaves: normalizeDeathSaves(deathSavesById.get(row.id as string)) } : {}),
           backstory: (identityById.get(row.id as string)?.backstory ?? null) as string | null,
           personality: (identityById.get(row.id as string)?.personality ?? null) as string | null,
@@ -309,6 +325,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         facts: await loadFacts(supabase, campaignId),
         magicGiven: await loadMagicGiven(supabase, campaignId),
         corpses: await loadCorpses(supabase, campaignId),
+        restVote,
         tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
@@ -402,6 +419,18 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         const { error } = await supabase.from('players').update({ death_saves: c.deathSaves ?? null }).eq('id', c.id);
         if (error) throw error;
       }
+    },
+
+    async saveShortRestsUsed(characters) {
+      for (const c of characters) {
+        const { error } = await supabase.from('players').update({ short_rests_used: c.shortRestsUsed ?? 0 }).eq('id', c.id);
+        if (error) throw error;
+      }
+    },
+
+    async clearRestVote(campaignId) {
+      const { error } = await supabase.from('campaigns').update({ rest_vote: null }).eq('id', campaignId);
+      if (error) throw error;
     },
 
     async saveCorpses(campaignId, corpses) {

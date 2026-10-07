@@ -133,3 +133,13 @@ describe('runChecks with a complete set bonus (F5j8 X9)', () => {
     expect(r).toMatchObject({ itemBonus: 0, total: 13 });
   });
 });
+
+describe('parseCheckPlan rest answer (J3)', () => {
+  it('reads rest ok / interrupted next to narration or checks, and ignores other values', () => {
+    expect(parseCheckPlan('{"narration":"x","rest":"ok"}')).toEqual({ kind: 'narration', text: 'x', rest: 'ok' });
+    expect(parseCheckPlan('{"narration":"x"}')).toEqual({ kind: 'narration', text: 'x' });
+    expect(parseCheckPlan('{"narration":"x","rest":"maybe"}')).toEqual({ kind: 'narration', text: 'x' });
+    expect(parseCheckPlan('{"checks":[],"rest":"interrupted"}')).toMatchObject({ kind: 'checks', checks: [], rest: 'interrupted' });
+    expect(parseCheckPlan('{"checks":[{"player":"A","skill":"stealth","dc":10}],"rest":"ok"}')).toMatchObject({ kind: 'checks', rest: 'ok' });
+  });
+});

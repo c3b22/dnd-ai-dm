@@ -21,6 +21,8 @@ import type { RollSummaryEntry } from './roundRepository';
 import { applyPermadeath, type Corpse } from '@/lib/character/permadeath';
 import { applyLootTags } from '@/lib/character/loot';
 import type { Character } from '@/lib/character/types';
+import { applyTeamRest } from '@/lib/character/applyRest';
+import type { RestAnswer } from '@/lib/character/checkPlan';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
   let text = '';
@@ -90,6 +92,9 @@ export async function processRound(
   let venomChanges: string[] = [];
   let corpses: Corpse[] = [];
   let diceEnabled = true;
+  // J3: the passed rest vote for this round (not while a fight is on) and the DM's verdict on it.
+  let restRequest: { kind: 'short' | 'long' } | null = null;
+  let restAnswer: RestAnswer | undefined;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
   let abilities: ReturnType<typeof applyAbilityActions>;
@@ -122,6 +127,8 @@ export async function processRound(
     const settings = normalizeSettings(context.settings);
     diceEnabled = settings.diceEnabled;
     const rollSides = deps.rollSides ?? randomDie;
+    const vote = context.restVote;
+    if (vote && vote.status === 'passed' && vote.roundId === roundId && !context.currentEncounter) restRequest = { kind: vote.kind };
     // Potions resolve before narration so the DM sees the real HP; nothing is saved until the end,
     // so a failed generation leaves the potion untouched for the retry.
     potions = applyPotionActions(context.characters, context.inventories, context.actions, rollSides);
@@ -177,7 +184,7 @@ export async function processRound(
         settings,
         { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter, corpses: context.corpses ?? [] },
         context.facts ?? [],
-        { planChecks, enemyAttacks: enemyAttackResults }
+        { planChecks, enemyAttacks: enemyAttackResults, ...(restRequest ? { rest: { kind: restRequest.kind, answer: restAnswer } } : {}) }
       );
     prompt = build(rolled);
     // Generate before writing anything: the real adapter resolves only once Gemini has
@@ -187,6 +194,7 @@ export async function processRound(
       // Dice tables: the first call either asks for skill checks or narrates outright. Only a
       // round with checks costs a second call; anything unusable falls back to a plain narration.
       const first = parseCheckPlan(await collect(await deps.generateNarration(build(rolled, true))));
+      if (first.kind !== 'plain' && first.kind !== 'invalid') restAnswer = first.rest;
       if (first.kind === 'narration' || first.kind === 'plain') {
         stream = single(first.text);
       } else {
@@ -204,7 +212,7 @@ export async function processRound(
             : [];
         // I2: enemy attacks roll against the players' AC before the narration, then the DM narrates the real result.
         enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, scrolls.encounter, rollDie, rollSides, applyAttackOutcomes(scrolls.encounter, attackOutcomes)) : [];
-        if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0) {
+        if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0 || restAnswer) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           rolled = rolled.map((a) => {
@@ -300,15 +308,39 @@ export async function processRound(
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
+      // J3: only an "ok" from the DM rests the team (and never after a wipe); "interrupted" or no field means no rest.
+      const rest = restRequest && restAnswer === 'ok' && !result.wiped
+        ? applyTeamRest(xpResult.characters, restRequest.kind, deps.rollSides ?? randomDie)
+        : { characters: xpResult.characters, changes: [] as string[], shortRestChanged: [] as Character[] };
+      const restChanges = restRequest && restAnswer === 'ok' && !result.wiped
+        ? [`ทีมพัก${restRequest.kind === 'long' ? 'ยาว' : 'สั้น'}`, ...rest.changes]
+        : restRequest && restAnswer === 'interrupted'
+          ? [`การพัก${restRequest.kind === 'long' ? 'ยาว' : 'สั้น'}ของทีมถูกขัดจังหวะ`]
+          : [];
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
       const finalCharacters = settleDeathSaves(tickCooldowns(
-        xpResult.characters,
+        rest.characters,
         eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
         abilities.used
       ));
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
+      // J3: best-effort; a missing short_rests_used / rest_vote column just means nothing carries over.
+      if (rest.shortRestChanged.length > 0 && deps.repository.saveShortRestsUsed) {
+        try {
+          await deps.repository.saveShortRestsUsed(rest.shortRestChanged);
+        } catch {
+          /* best-effort */
+        }
+      }
+      if (context.restVote && deps.repository.clearRestVote) {
+        try {
+          await deps.repository.clearRestVote(context.campaignId);
+        } catch {
+          /* best-effort */
+        }
+      }
       // H1: best-effort like the rest; a missing death_saves column just means no tally carries over.
       const deathSaveWrites = changedDeathSaves(context.characters, finalCharacters);
       if (deathSaveWrites.length > 0 && deps.repository.saveDeathSaves) {
@@ -430,6 +462,7 @@ export async function processRound(
         ...inventoryResult.changes,
         ...(lootResult?.changes ?? []),
         ...economy.changes,
+        ...restChanges,
       ]);
     } catch {
       /* the narration is already posted; the next round reads whatever state was saved */

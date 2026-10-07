@@ -1397,3 +1397,100 @@ describe('processRound looting corpses (H3c)', () => {
     expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
   });
 });
+
+describe('processRound team rest (J3)', () => {
+  const hurt = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 5, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilityCooldown: 2, shortRestsUsed: 0,
+    abilities: { STR: 8, DEX: 16, CON: 14, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const downed = { ...hurt, id: 'p2', displayName: 'Nok', status: 'downed' as const, hp: 0 };
+  const vote = (kind: 'short' | 'long') => ({ kind, proposerId: 'p1', agree: ['p1'], roundId: 'round-1', status: 'passed' as const });
+  const make = (restVote: unknown, extra: object = {}) =>
+    createFakeRepository({
+      saveShortRestsUsed: vi.fn().mockResolvedValue(undefined),
+      clearRestVote: vi.fn().mockResolvedValue(undefined),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'พักผ่อน', playerId: 'p1' }],
+        characters: [hurt, downed], restVote, ...extra,
+      }),
+    });
+  const run = async (repository: RoundRepository, ...texts: string[]) => {
+    const generate = vi.fn();
+    texts.forEach((t) => generate.mockResolvedValueOnce(fakeStream([t])));
+    await processRound({ claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration: generate, rollDie: () => 10, rollSides: () => 4 }, 'round-1');
+    return generate;
+  };
+  const savedState = (r: RoundRepository) => vi.mocked(r.saveCharacterState).mock.calls[0][1];
+  const stats = (r: RoundRepository) => vi.mocked(r.insertStatsSummary).mock.calls[0]?.[2] ?? [];
+
+  it('asks the DM about the rest only when a passed vote exists', async () => {
+    const withVote = await run(make(vote('short')), '{"narration":"x"}');
+    expect(withVote.mock.calls[0][0]).toContain('"rest": "ok"');
+    const without = await run(make(null), '{"narration":"x"}');
+    expect(without.mock.calls[0][0]).not.toContain('"rest"');
+    const open = await run(make({ ...vote('short'), status: 'open' }), '{"narration":"x"}');
+    expect(open.mock.calls[0][0]).not.toContain('"rest"');
+  });
+
+  it('ok short rest: heals active characters only, counts the rest, posts it and consumes the vote', async () => {
+    const repo = make(vote('short'));
+    await run(repo, '{"narration":"พักริมกองไฟ","rest":"ok"}');
+    const [prem, nok] = savedState(repo);
+    expect(prem.hp).toBe(11);
+    expect(prem.abilityCooldown).toBe(0);
+    expect(nok).toMatchObject({ hp: 0, status: 'downed' });
+    expect(vi.mocked(repo.saveShortRestsUsed!).mock.calls[0][0].map((c) => [c.id, c.shortRestsUsed])).toEqual([['p1', 1]]);
+    expect(repo.clearRestVote).toHaveBeenCalledWith('camp-1');
+    expect(stats(repo).join(' ')).toContain('พักสั้น');
+  });
+
+  it('ok long rest: full HP, cooldown cleared, short rests reset, only for active characters', async () => {
+    const repo = make(vote('long'), { characters: [{ ...hurt, shortRestsUsed: 2 }, downed] });
+    await run(repo, '{"narration":"นอนหลับ","rest":"ok"}');
+    const [prem, nok] = savedState(repo);
+    expect(prem).toMatchObject({ hp: 20, abilityCooldown: 0, shortRestsUsed: 0 });
+    expect(nok).toMatchObject({ hp: 0, status: 'downed' });
+    expect(vi.mocked(repo.saveShortRestsUsed!).mock.calls[0][0][0]).toMatchObject({ id: 'p1', shortRestsUsed: 0 });
+    expect(stats(repo).join(' ')).toContain('พักยาว');
+  });
+
+  it('ok with checks in the JSON: the rest still applies and the second call tells the DM it was approved', async () => {
+    const repo = make(vote('long'));
+    const generate = await run(repo, '{"checks":[],"rest":"ok"}', 'พักสงบ');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0]).toContain('approved');
+    expect(savedState(repo)[0].hp).toBe(20);
+  });
+
+  it('interrupted: nobody recovers, the vote is consumed, the DM is told and it is logged', async () => {
+    const repo = make(vote('long'));
+    const generate = await run(repo, '{"checks":[],"rest":"interrupted"}', 'หมาป่าบุก [[enemy: หมาป่า | normal]]');
+    expect(generate.mock.calls[1][0]).toContain('INTERRUPTED');
+    expect(savedState(repo)[0]).toMatchObject({ hp: 5, shortRestsUsed: 0 });
+    expect(repo.saveShortRestsUsed).not.toHaveBeenCalled();
+    expect(repo.clearRestVote).toHaveBeenCalledWith('camp-1');
+    expect(stats(repo).join(' ')).toContain('ขัดจังหวะ');
+  });
+
+  it('JSON without the rest field: no rest, but the vote is still consumed', async () => {
+    const repo = make(vote('long'));
+    await run(repo, '{"narration":"เดินทางต่อ"}');
+    expect(savedState(repo)[0]).toMatchObject({ hp: 5, abilityCooldown: 2 });
+    expect(repo.saveShortRestsUsed).not.toHaveBeenCalled();
+    expect(repo.clearRestVote).toHaveBeenCalledWith('camp-1');
+  });
+
+  it('ignores a vote that belongs to another round, and never rests during an encounter', async () => {
+    const other = make({ ...vote('long'), roundId: 'round-0' });
+    const g1 = await run(other, '{"narration":"x","rest":"ok"}');
+    expect(g1.mock.calls[0][0]).not.toContain('"rest": "ok"');
+    expect(savedState(other)[0].hp).toBe(5);
+    const fight = make(vote('long'), { currentEncounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pips: 3, maxPips: 3 }], round: 1 } });
+    await run(fight, '{"narration":"x","rest":"ok"}');
+    expect(savedState(fight)[0].hp).toBe(5);
+  });
+});

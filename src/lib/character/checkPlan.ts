@@ -24,9 +24,12 @@ export interface PlannedEnemyAttack {
   player: string;
 }
 
+/** J3: the DM's verdict on the team's rest vote; absent = no rest (also when the model left the field out). */
+export type RestAnswer = 'ok' | 'interrupted';
+
 export type CheckPlan =
-  | { kind: 'checks'; checks: PlannedCheck[]; attacks: PlannedAttack[]; enemyAttacks: PlannedEnemyAttack[] }
-  | { kind: 'narration'; text: string }
+  | { kind: 'checks'; checks: PlannedCheck[]; attacks: PlannedAttack[]; enemyAttacks: PlannedEnemyAttack[]; rest?: RestAnswer }
+  | { kind: 'narration'; text: string; rest?: RestAnswer }
   /** The model ignored the JSON format and just narrated: use it as the narration. */
   | { kind: 'plain'; text: string }
   /** Looked like JSON but unusable: the caller falls back to an ordinary narration call. */
@@ -75,7 +78,8 @@ export function parseCheckPlan(raw: string): CheckPlan {
   const parsed = parseObject(text);
   if (parsed === undefined) return { kind: 'plain', text };
   if (!parsed || typeof parsed !== 'object') return { kind: 'invalid' };
-  const obj = parsed as { checks?: unknown; attacks?: unknown; enemyAttacks?: unknown; narration?: unknown };
+  const obj = parsed as { checks?: unknown; attacks?: unknown; enemyAttacks?: unknown; narration?: unknown; rest?: unknown };
+  const rest: { rest?: RestAnswer } = obj.rest === 'ok' || obj.rest === 'interrupted' ? { rest: obj.rest } : {};
 
   const attacks: PlannedAttack[] = [];
   if (Array.isArray(obj.attacks)) {
@@ -99,7 +103,7 @@ export function parseCheckPlan(raw: string): CheckPlan {
       enemyAttacks.push({ enemy: enemy.trim(), player: player.trim() });
     }
   }
-  if (Array.isArray(obj.checks) || attacks.length > 0 || enemyAttacks.length > 0) {
+  if (Array.isArray(obj.checks) || attacks.length > 0 || enemyAttacks.length > 0 || rest.rest) {
     const checks: PlannedCheck[] = [];
     for (const c of Array.isArray(obj.checks) ? obj.checks : []) {
       if (!c || typeof c !== 'object') continue;
@@ -113,10 +117,10 @@ export function parseCheckPlan(raw: string): CheckPlan {
         advantage: advantage === 'advantage' || advantage === 'disadvantage' ? advantage : 'none',
       });
     }
-    if (checks.length > 0 || attacks.length > 0 || enemyAttacks.length > 0) return { kind: 'checks', checks, attacks, enemyAttacks };
+    if (checks.length > 0 || attacks.length > 0 || enemyAttacks.length > 0 || (rest.rest && !(typeof obj.narration === 'string' && obj.narration.trim()))) return { kind: 'checks', checks, attacks, enemyAttacks, ...rest };
   }
   if (typeof obj.narration === 'string' && obj.narration.trim()) {
-    return { kind: 'narration', text: obj.narration.trim() };
+    return { kind: 'narration', text: obj.narration.trim(), ...rest };
   }
   return { kind: 'invalid' };
 }

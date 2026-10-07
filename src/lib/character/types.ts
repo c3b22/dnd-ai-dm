@@ -40,4 +40,6 @@ export interface Character {
   reviveCharm?: { itemId: string; reviveHp: number } | null;
   /** H1 death save tally while downed; null/absent = none. */
   deathSaves?: DeathSaves | null;
+  /** J2/J3: short rests taken since the last long rest; absent = 0. */
+  shortRestsUsed?: number;
 }

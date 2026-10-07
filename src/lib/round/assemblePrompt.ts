@@ -58,6 +58,23 @@ export interface AssembleOptions {
   planChecks?: boolean;
   /** I2: enemy attacks the server already rolled this round; the narration must match them. */
   enemyAttacks?: EnemyAttackOutcome[];
+  /** J3: the team's passed rest vote. With `planChecks` the DM must answer `rest`; `answer` is set on the narration call. */
+  rest?: { kind: 'short' | 'long'; answer?: 'ok' | 'interrupted' };
+}
+
+function restLines(rest: NonNullable<AssembleOptions['rest']>, planChecks: boolean): string[] {
+  const label = rest.kind === 'long' ? 'long rest (a night of sleep)' : 'short rest (about an hour)';
+  if (rest.answer === 'ok') {
+    return ['', `The team's ${label} was approved and the server has restored them; narrate a quiet, undisturbed rest.`];
+  }
+  if (rest.answer === 'interrupted') {
+    return ['', `The team tried to take a ${label} but it was INTERRUPTED; narrate the event that cuts the rest short (you may start an encounter with an enemy tag). Nobody recovers anything.`];
+  }
+  if (!planChecks) return [];
+  return [
+    '',
+    `The team voted to take a ${label} this round. In your JSON answer (either shape) add "rest": "ok" if nothing prevents it${rest.kind === 'long' ? ' and the place is safe enough to sleep' : ''}, or "rest": "interrupted" if an event interrupts it (you may then open an encounter with an enemy tag in your narration). Only the server restores HP and abilities, so never say numbers yourself. Leave "rest" out and the team does not rest.`,
+  ];
 }
 
 function attackText(a: AttackOutcome): string {
@@ -165,6 +182,7 @@ export function assemblePrompt(
     ...(options.enemyAttacks && options.enemyAttacks.length > 0
       ? ['', 'Enemy attacks this round, rolled and final (decided by the server; narrate each HIT as the enemy landing the blow and each MISS as it failing; never state damage numbers, never use an enemy_attack tag for them):', ...options.enemyAttacks.map(enemyAttackText)]
       : []),
+    ...(options.rest ? restLines(options.rest, !!options.planChecks) : []),
     ...(options.planChecks ? ['', ...checkPlanInstructions(!!characterState?.encounter)] : []),
   ].join('\n');
 }
