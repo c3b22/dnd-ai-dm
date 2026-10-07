@@ -10,7 +10,7 @@ import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { applyEnemyTags } from '@/lib/combat/encounter';
-import { applyAttackOutcomes, applyEnemyAttacks, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
+import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -204,7 +204,9 @@ export async function processRound(
       // An enemy that joins this very round may attack; one the players just downed still did.
       const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
       const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags);
-      const result = applyCharacterTags(enemyAttacks.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
+      // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
+      const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
+      const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
       const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
@@ -214,7 +216,7 @@ export async function processRound(
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
       const finalCharacters = tickCooldowns(
         xpResult.characters,
-        eventfulRound({ character: [...enemyAttacks.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
+        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
         abilities.used
       );
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
@@ -286,6 +288,7 @@ export async function processRound(
         ...scrolls.changes,
         ...abilities.changes,
         ...enemyAttacks.changes,
+        ...lifesteal.changes,
         ...result.changes,
         ...xpResult.changes,
         ...inventoryResult.changes,

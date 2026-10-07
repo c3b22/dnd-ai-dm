@@ -11,6 +11,8 @@ export const HIT_PIPS = 1;
 export const HEAVY_PIPS = 2;
 /** Extra pips a natural 20 removes for a wearer of a crit_surge item. */
 export const CRIT_SURGE_EXTRA_PIPS = 1;
+/** HP a lifesteal wearer heals when a hit removes a pip (once per round per wearer). */
+export const LIFESTEAL_HEAL = 1;
 /** A damage roll at or above this share of the weapon's maximum dice damage is a heavy blow. */
 export const HEAVY_DAMAGE_RATIO = 0.75;
 

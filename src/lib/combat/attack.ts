@@ -4,7 +4,7 @@ import { findByDisplayName } from '@/lib/character/names';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { CRIT_SURGE_EXTRA_PIPS, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE } from './constants';
+import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE } from './constants';
 import { damageEnemy, findActiveEnemy, type Encounter } from './encounter';
 
 export interface AttackOutcome {
@@ -112,6 +112,38 @@ export function applyAttackOutcomes(encounter: Encounter | null, outcomes: Attac
     if (target) damageEnemy(target, o.pips);
   }
   return { enemies };
+}
+
+/**
+ * F5j2 X2 lifesteal: a wearer whose hit really removed a pip heals LIFESTEAL_HEAL HP, at most once per
+ * round per wearer, never above max HP, and never a downed/dead character. Pips are replayed the same
+ * way applyAttackOutcomes does, so a boss held at 1 pip by the full-health rule gives nothing.
+ */
+export function applyLifesteal(
+  characters: Character[],
+  encounter: Encounter | null,
+  outcomes: AttackOutcome[]
+): { characters: Character[]; changes: string[] } {
+  const next = characters.map((c) => ({ ...c }));
+  const changes: string[] = [];
+  if (!encounter) return { characters: next, changes };
+  const enemies = encounter.enemies.map((e) => ({ ...e }));
+  const healed = new Set<string>();
+  for (const o of outcomes) {
+    if (!o.hit) continue;
+    const target = findActiveEnemy(enemies, o.target);
+    if (!target) continue;
+    const before = target.pip;
+    damageEnemy(target, o.pips);
+    if (target.pip >= before || healed.has(o.playerId)) continue;
+    const wearer = next.find((c) => c.id === o.playerId);
+    if (!wearer || wearer.status !== 'active' || wearer.hp <= 0 || wearer.hp >= wearer.maxHp) continue;
+    if (!wearer.itemEffects?.effects.includes('lifesteal')) continue;
+    healed.add(wearer.id);
+    wearer.hp = Math.min(wearer.maxHp, wearer.hp + LIFESTEAL_HEAL);
+    changes.push(`${wearer.displayName} +${LIFESTEAL_HEAL} HP ดูดชีวิต`);
+  }
+  return { characters: next, changes };
 }
 
 /**

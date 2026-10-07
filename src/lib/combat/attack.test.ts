@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CharacterTag } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { applyAttackOutcomes, applyEnemyAttacks, resolveAttack, runAttacks } from './attack';
+import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, resolveAttack, runAttacks } from './attack';
 import type { Encounter } from './encounter';
 
 const tiers = ['minion', 'normal', 'strong', 'boss'] as const;
@@ -72,6 +72,56 @@ describe('crit_surge (F5j1)', () => {
     const [o] = runAttacks(plan, [hero({ itemEffects: surge })], enc(small), () => 1, () => 20);
     expect(o).toMatchObject({ pips: 3, defeated: false });
     expect(applyAttackOutcomes(enc(small), [o])?.enemies[0].pip).toBe(1);
+  });
+});
+
+describe('lifesteal (F5j2)', () => {
+  const ls = { effects: ['lifesteal' as const], setTheme: null, setSkillBonus: 0 };
+  const plan = [{ player: 'Prem', target: 'หมาป่า', advantage: 'none' as const }];
+  const hit = (c: Character, e = enc(wolf)) => runAttacks(plan, [c], e, () => 1, () => 15);
+
+  it('heals 1 HP when a hit removes a pip, without lifesteal nothing', () => {
+    const w = hero({ hp: 3, maxHp: 10, itemEffects: ls });
+    const r = applyLifesteal([w], enc(wolf), hit(w));
+    expect(r.characters[0].hp).toBe(4);
+    expect(r.changes).toHaveLength(1);
+    const plain = hero({ hp: 3, maxHp: 10 });
+    expect(applyLifesteal([plain], enc(wolf), hit(plain)).characters[0].hp).toBe(3);
+  });
+
+  it('a miss heals nothing', () => {
+    const w = hero({ hp: 3, maxHp: 10, itemEffects: ls });
+    const o = runAttacks(plan, [w], enc(wolf), () => 1, () => 2);
+    expect(applyLifesteal([w], enc(wolf), o).characters[0].hp).toBe(3);
+  });
+
+  it('never exceeds max HP', () => {
+    const w = hero({ hp: 10, maxHp: 10, itemEffects: ls });
+    expect(applyLifesteal([w], enc(wolf), hit(w)).characters[0].hp).toBe(10);
+  });
+
+  it('a downed wearer is not revived', () => {
+    const w = hero({ hp: 0, maxHp: 10, status: 'downed', itemEffects: ls });
+    expect(applyLifesteal([w], enc(wolf), hit(w)).characters[0]).toMatchObject({ hp: 0, status: 'downed' });
+  });
+
+  it('at most once per round per wearer', () => {
+    const w = hero({ hp: 3, maxHp: 10, itemEffects: ls });
+    const [o] = hit(w, enc({ ...wolf, pip: 5, maxPip: 5 }));
+    expect(applyLifesteal([w], enc({ ...wolf, pip: 5, maxPip: 5 }), [o, o]).characters[0].hp).toBe(4);
+  });
+
+  it('a boss held at 1 pip by the full-health rule gives no heal', () => {
+    const w = hero({ hp: 3, maxHp: 10, itemEffects: ls });
+    const small = { ...boss, pip: 1, maxPip: 1 } as Encounter['enemies'][number];
+    const o = { ...hit(w, enc(wolf))[0], target: 'มังกร', pips: 2 };
+    expect(applyLifesteal([w], enc(small), [o]).characters[0].hp).toBe(3);
+  });
+
+  it('does not mutate inputs', () => {
+    const w = hero({ hp: 3, maxHp: 10, itemEffects: ls });
+    applyLifesteal([w], enc(wolf), hit(w));
+    expect(w.hp).toBe(3);
   });
 });
 
