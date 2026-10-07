@@ -95,7 +95,8 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
 .field { display: grid; gap: 4px; }
 .field label { font-size: 13px; color: var(--muted); }
-.field input, .compose input { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; min-width: 0; }
+.field input, .field textarea, .compose input { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; min-width: 0; }
+.field textarea { width: 100%; max-width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px; max-height: 240px; line-height: 1.5; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; box-shadow: var(--shadow); }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
