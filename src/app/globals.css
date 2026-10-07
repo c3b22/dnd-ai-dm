@@ -333,3 +333,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .ability-opt { display: flex; align-items: center; gap: 6px; }
 .ability-actions { display: flex; gap: 8px; }
 .ability-error { color: var(--danger); font-size: 12px; }
+
+/* J4 rest panel */
+.rest-panel .rest-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rest-panel .rest-votes { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.rest-panel .rest-left, .rest-panel .rest-reason { font-size: 12px; color: var(--muted); margin: 0; }
+.rest-panel .rest-error { font-size: 12px; color: var(--danger, #e5484d); margin: 0; }

@@ -55,6 +55,15 @@ vi.mock('@/lib/supabase/roundActionsRealtime', () => ({
   subscribeToCampaignStarted: () => () => {},
 }));
 vi.mock('@/lib/supabase/encounter', () => ({ fetchEncounter, subscribeToEncounter }));
+const { fetchRestState, subscribeToRestVote, unsubscribeRest } = vi.hoisted(() => {
+  const unsubscribeRest = vi.fn();
+  return {
+    fetchRestState: vi.fn((_c: string, _p: string) => Promise.resolve({ vote: null as unknown, shortRestsUsed: 0 })),
+    subscribeToRestVote: vi.fn((_c: string, _cb: () => void) => unsubscribeRest),
+    unsubscribeRest,
+  };
+});
+vi.mock('@/lib/supabase/restVoteClient', () => ({ fetchRestState, subscribeToRestVote, requestRest: vi.fn() }));
 const { fetchCampaignFacts, subscribeToFacts, unsubscribeFacts } = vi.hoisted(() => {
   const unsubscribeFacts = vi.fn();
   return {
@@ -159,6 +168,17 @@ describe('CampaignPage — encounter sync', () => {
     await renderPage();
     cleanup();
     expect(unsubscribeEncounter).toHaveBeenCalled();
+  });
+});
+
+describe('CampaignPage — rest vote sync', () => {
+  it('loads the rest state, subscribes to realtime updates and unsubscribes on unmount', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: null, adventure_id: null, current_scene_id: null };
+    await renderPage();
+    expect(fetchRestState).toHaveBeenCalledWith('c1', 'p1');
+    expect(subscribeToRestVote).toHaveBeenCalledWith('c1', expect.any(Function));
+    cleanup();
+    expect(unsubscribeRest).toHaveBeenCalled();
   });
 });
 

@@ -12,6 +12,9 @@ import { RespawnForm } from '@/components/RespawnForm';
 import { respawnLevel } from '@/lib/character/respawnLevel';
 import type { AbilityChoice } from '@/lib/character/leveling';
 import { EncounterPanel } from '@/components/EncounterPanel';
+import { RestPanel } from '@/components/RestPanel';
+import { fetchRestState, requestRest, subscribeToRestVote } from '@/lib/supabase/restVoteClient';
+import type { RestKind, RestVote } from '@/lib/campaign/restVote';
 import { Inventory } from '@/components/Inventory';
 import { Shop } from '@/components/Shop';
 import { Trades } from '@/components/Trades';
@@ -83,6 +86,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [shop, setShop] = useState<ShopState | null>(null);
   // Synced only; the combat tracker UI reads it later.
   const [encounter, setEncounter] = useState<Encounter | null>(null);
+  const [restVote, setRestVote] = useState<RestVote | null>(null);
+  const [shortRestsUsed, setShortRestsUsed] = useState(0);
   const [facts, setFacts] = useState<CampaignFact[]>([]);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
@@ -134,6 +139,15 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     fetchEncounter(campaignId).then(setEncounter);
     const unsubscribeEncounter = subscribeToEncounter(campaignId, setEncounter);
 
+    const refreshRest = () =>
+      fetchRestState(campaignId, playerId).then((r) => {
+        setRestVote(r.vote);
+        setShortRestsUsed(r.shortRestsUsed);
+      });
+    refreshRest();
+    const unsubscribeRest = subscribeToRestVote(campaignId, refreshRest);
+    const unsubscribeRestPlayers = subscribeToPlayers(campaignId, refreshRest);
+
     fetchCampaignSettings(campaignId).then(setSettings);
     const unsubscribeSettings = subscribeToCampaignSettings(campaignId, setSettings);
 
@@ -149,10 +163,12 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       unsubscribeScene();
       unsubscribeShop();
       unsubscribeEncounter();
+      unsubscribeRest();
+      unsubscribeRestPlayers();
       unsubscribeSettings();
       unsubscribeStarted();
     };
-  }, [campaignId]);
+  }, [campaignId, playerId]);
 
   // Built-in adventures resolve locally; a custom one is read from custom_adventures.
   useEffect(() => {
@@ -489,6 +505,19 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
                   : undefined
               }
               alreadyActed={me?.acted ?? false}
+            />
+          )}
+          {roundId && me && me.status !== 'dead' && (
+            <RestPanel
+              vote={restVote}
+              players={players}
+              currentPlayerId={playerId}
+              encounterActive={encounter !== null}
+              shortRestsUsed={shortRestsUsed}
+              isOwner={me.isOwner}
+              onPropose={(kind: RestKind) => requestRest(campaignId, 'propose', kind)}
+              onAgree={() => requestRest(campaignId, 'agree')}
+              onCancel={() => requestRest(campaignId, 'cancel')}
             />
           )}
           {playerId && (
