@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CLASSES, resolveClassId, startingAbilities } from '@/lib/character/classes';
 import { BASE_MAX_HP, LEVEL_XP_THRESHOLDS } from '@/lib/character/constants';
-import { levelForXp, levelHpBonus } from '@/lib/character/leveling';
+import { levelHpBonus } from '@/lib/character/leveling';
+import { respawnLevel } from '@/lib/character/respawnLevel';
 import { normalizeIdentityFields, type IdentityFields } from '@/lib/character/identity';
 import { seedStartingKit } from '@/lib/inventory/startingKit';
 
@@ -15,12 +16,7 @@ export class RespawnError extends Error {
   }
 }
 
-/** Level a respawned character starts at: average level of friends who are not dead, rounded down, min 1. */
-export function respawnLevel(livingFriends: { xp: number | null }[]): number {
-  if (livingFriends.length === 0) return 1;
-  const total = livingFriends.reduce((sum, p) => sum + levelForXp(Number(p.xp ?? 0)), 0);
-  return Math.max(1, Math.floor(total / livingFriends.length));
-}
+export { respawnLevel };
 
 // Columns that may not exist in production yet (migrations 0018, 0020, 0022, 0026); dropped when the error names them.
 const OPTIONAL_COLUMNS = ['abilities', 'backstory', 'personality', 'goal', 'ability_choices_used', 'death_saves'];

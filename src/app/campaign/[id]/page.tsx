@@ -8,6 +8,8 @@ import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
 import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import { RespawnForm } from '@/components/RespawnForm';
+import { respawnLevel } from '@/lib/character/respawnLevel';
 import type { AbilityChoice } from '@/lib/character/leveling';
 import { EncounterPanel } from '@/components/EncounterPanel';
 import { Inventory } from '@/components/Inventory';
@@ -28,6 +30,8 @@ import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
   requestAbilityChoice,
+  requestRespawn,
+  type RespawnRequest,
   saveTurnOrder,
   subscribeToPlayers,
   type RoundPlayer,
@@ -313,6 +317,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  async function handleRespawn(request: RespawnRequest) {
+    await requestRespawn(campaignId, request);
+    refreshPlayers();
+  }
+
   async function handleDrink(itemId: string) {
     if (!roundId) return;
     const item = me?.items.find((i) => i.itemId === itemId);
@@ -462,7 +471,13 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               <span>DM กำลังเรียบเรียงเรื่องราว… อาจใช้เวลาสักครู่ (ยังไม่ค้าง)</span>
             </div>
           )}
-          {roundId && (
+          {me?.status === 'dead' && (
+            <RespawnForm
+              startLevel={respawnLevel(players.filter((p) => p.id !== playerId && p.status !== 'dead'))}
+              onSubmit={handleRespawn}
+            />
+          )}
+          {roundId && me?.status !== 'dead' && (
             <ActionInput
               key={roundId}
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}

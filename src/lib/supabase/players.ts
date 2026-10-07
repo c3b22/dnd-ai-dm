@@ -136,3 +136,32 @@ export async function requestAbilityChoice(campaignId: string, choice: AbilityCh
   });
   if (!response.ok) throw new Error('could not save the ability choice');
 }
+
+export interface RespawnRequest {
+  displayName: string;
+  classId: string;
+  backstory?: string;
+  personality?: string;
+  goal?: string;
+}
+
+/** Replaces the caller's permanently dead character; throws an Error whose message is the API error code. */
+export async function requestRespawn(
+  campaignId: string,
+  request: RespawnRequest
+): Promise<{ playerId: string; level: number }> {
+  const { data } = await supabaseBrowserClient.auth.getSession();
+  const response = await fetch(`/api/campaigns/${campaignId}/respawn`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(typeof body?.error === 'string' ? body.error : 'failed');
+  }
+  return response.json();
+}

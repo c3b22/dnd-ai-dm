@@ -40,6 +40,14 @@ describe('PlayerOrder', () => {
     expect(screen.getByText(/เฉพาะลำดับของตัวเอง/)).toBeTruthy();
   });
 
+  it('marks a permanently dead player and says they are creating a new character', () => {
+    const party = [players[0], { ...players[1], hp: 0, status: 'dead' as const }, players[2]];
+    render(<PlayerOrder players={party} currentPlayerId="p1" locked={false} onMove={() => {}} />);
+
+    expect(screen.getByText('ตายถาวร')).toBeInTheDocument();
+    expect(screen.getByText(/Mila กำลังสร้างตัวละครใหม่/)).toBeInTheDocument();
+  });
+
   it('locks every button once the current player has submitted', () => {
     render(<PlayerOrder players={players} currentPlayerId="p1" locked onMove={() => {}} />);
 
