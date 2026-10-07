@@ -1043,3 +1043,74 @@ describe('processRound scrolls (F5e)', () => {
     }
   });
 });
+
+describe('processRound death saves (H1)', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+  const aria = { id: 'p2', displayName: 'Aria', weaponId: null, hp: 0, maxHp: 10, status: 'downed' as const, revivesSinceSanctuary: 0 };
+
+  function setup(characters: unknown[], die: number, extra: Record<string, unknown> = {}, saveDeathSaves = vi.fn().mockResolvedValue(undefined)) {
+    const repository = createFakeRepository({
+      saveDeathSaves,
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], actions: [{ playerDisplayName: 'Prem', actionText: 'Guard Aria' }],
+        characters, pendingWipe: false, adventure: null, allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '', ...extra,
+      }),
+    });
+    const d: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi.fn().mockImplementation(async () => fakeStream(['Quiet.'])),
+      rollDie: () => die,
+      rollSides: () => 4,
+    };
+    return { repository, d };
+  }
+
+  it('rolls a death save for a downed character, shows it in the roll summary and saves the tally', async () => {
+    const { repository, d } = setup([prem, aria], 12);
+    await processRound(d, 'round-1');
+
+    const posted = vi.mocked(repository.insertRollSummary).mock.calls[0][2];
+    expect(posted).toContainEqual(expect.objectContaining({ playerDisplayName: 'Aria', roll: 12, check: expect.objectContaining({ skill: 'death_save', dc: 10, total: 12, success: true }) }));
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: expect.objectContaining({ successes: 1 }) })]);
+    const stats = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(stats.some((l) => l.includes('Aria'))).toBe(true);
+  });
+
+  it('nat 20 brings the character back with 1 HP and clears the tally', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 1, failures: 2, stable: false, dead: false } }], 20);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', hp: 1, status: 'active' })]), false);
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
+  });
+
+  it('a third failure leaves the character downed so revive still works', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 0, failures: 2, stable: false, dead: false } }], 3);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'downed', hp: 0 })]), false);
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: expect.objectContaining({ dead: true, failures: 3 }) })]);
+  });
+
+  it('a revive tag clears the saved tally', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 1, failures: 1, stable: false, dead: false } }], 12);
+    (d.generateNarration as any).mockImplementation(async () => fakeStream(['Light.\n[[revive: Aria]]']));
+    await processRound(d, 'round-1');
+
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
+  });
+
+  it('does not roll when dice are off, and a missing saveDeathSaves or failing write never breaks the round', async () => {
+    const off = setup([prem, aria], 12, { settings: { diceEnabled: false } });
+    await processRound(off.d, 'round-1');
+    expect(off.repository.saveDeathSaves).not.toHaveBeenCalled();
+
+    const failing = setup([prem, aria], 12, {}, vi.fn().mockRejectedValue(new Error('no column')));
+    await expect(processRound(failing.d, 'round-1')).resolves.toMatchObject({ processed: true });
+
+    const old = setup([prem, aria], 12);
+    delete (old.repository as any).saveDeathSaves;
+    await expect(processRound(old.d, 'round-1')).resolves.toMatchObject({ processed: true });
+  });
+});

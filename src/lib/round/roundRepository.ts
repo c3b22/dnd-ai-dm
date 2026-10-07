@@ -15,6 +15,7 @@ import type { CampaignFact } from '@/lib/memory/types';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
 import { normalizeAbilities } from '@/lib/character/constants';
+import { normalizeDeathSaves } from '@/lib/character/deathSaves';
 import { STORY_MESSAGE_ROLES } from '@/lib/messages/roles';
 import type { Adventure } from '@/lib/adventures/adventures';
 import { getAdventureById } from '@/lib/adventures/adventures';
@@ -81,6 +82,8 @@ export interface RoundRepository {
     rolls: RollSummaryEntry[]
   ): Promise<void>;
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
+  /** H1: persists the death save tally. Optional so older fakes keep working; tolerates a missing column. */
+  saveDeathSaves?(characters: Character[]): Promise<void>;
   saveInventories(
     campaignId: string,
     changes: { playerId: string; items: InventoryItem[]; baseItems: InventoryItem[] }[]
@@ -147,6 +150,10 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // hide the characters above. Unreadable means every score defaults to 10.
       const { data: abilityRows } = await supabase.from('players').select('id, abilities').eq('campaign_id', campaignId);
       const abilitiesById = new Map<string, unknown>((abilityRows ?? []).map((row: any) => [row.id as string, row.abilities]));
+
+      // Death saves (H1) in their own query: players.death_saves may not exist yet; unreadable means none.
+      const { data: deathRows } = await supabase.from('players').select('id, death_saves').eq('campaign_id', campaignId);
+      const deathSavesById = new Map<string, unknown>((deathRows ?? []).map((row: any) => [row.id as string, row.death_saves]));
 
       // Identity text in its own query for the same reason: unreadable means no identity, not no characters.
       const { data: identityRows } = await supabase.from('players').select('id, backstory, personality, goal').eq('campaign_id', campaignId);
@@ -243,6 +250,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           classId: (row.class_id ?? null) as string | null,
           abilityCooldown: Number(row.ability_cooldown ?? 0),
           abilities: normalizeAbilities(abilitiesById.get(row.id as string)),
+          ...(deathSavesById.get(row.id as string) ? { deathSaves: normalizeDeathSaves(deathSavesById.get(row.id as string)) } : {}),
           backstory: (identityById.get(row.id as string)?.backstory ?? null) as string | null,
           personality: (identityById.get(row.id as string)?.personality ?? null) as string | null,
           goal: (identityById.get(row.id as string)?.goal ?? null) as string | null,
@@ -332,6 +340,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .update({ pending_wipe: pendingWipe })
         .eq('id', campaignId);
       if (error) throw error;
+    },
+
+    async saveDeathSaves(characters) {
+      for (const c of characters) {
+        const { error } = await supabase.from('players').update({ death_saves: c.deathSaves ?? null }).eq('id', c.id);
+        if (error) throw error;
+      }
     },
 
     async saveInventories(campaignId, changes) {

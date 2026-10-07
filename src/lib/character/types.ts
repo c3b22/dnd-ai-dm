@@ -1,6 +1,7 @@
 import type { AbilityScores } from './constants';
 import type { SkillId } from './classes';
 import type { ItemEffects } from '@/lib/inventory/effects';
+import type { DeathSaves } from './deathSaves';
 
 export type CharacterStatus = 'active' | 'downed';
 
@@ -32,4 +33,6 @@ export interface Character {
   backstory?: string | null;
   personality?: string | null;
   goal?: string | null;
+  /** H1 death save tally while downed; null/absent = none. */
+  deathSaves?: DeathSaves | null;
 }

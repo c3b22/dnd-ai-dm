@@ -14,7 +14,10 @@ import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, runAttacks, typ
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
+import { changedDeathSaves, runDeathSaves, settleDeathSaves, type DeathSaveRoll } from '@/lib/character/deathSaves';
+import { DEATH_SAVE_SKILL } from '@/lib/character/skillLabels';
 import type { RollSummaryEntry } from './roundRepository';
+import type { Character } from '@/lib/character/types';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
   let text = '';
@@ -24,6 +27,15 @@ async function collect(stream: AsyncIterable<string>): Promise<string> {
 
 async function* single(text: string): AsyncIterable<string> {
   yield text;
+}
+
+/** A death save shown like a skill check so the dice overlay renders it for everyone (H1). */
+function deathSaveEntry(r: DeathSaveRoll): RollSummaryEntry {
+  return {
+    playerDisplayName: r.playerDisplayName,
+    roll: r.die,
+    check: { skill: DEATH_SAVE_SKILL, dc: r.dc, advantage: 'none', dice: [r.die], modifier: 0, proficiency: 0, total: r.total, success: r.success, critical: r.critical },
+  };
 }
 
 export interface ProcessRoundDeps {
@@ -57,6 +69,9 @@ export async function processRound(
   let prompt: string;
   let rolled: RoundAction[];
   let attackOutcomes: AttackOutcome[] = [];
+  let deathSaveRolls: DeathSaveRoll[] = [];
+  let deathSaveChanges: string[] = [];
+  let roundCharacters: Character[] = [];
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
@@ -84,6 +99,12 @@ export async function processRound(
     abilities = applyAbilityActions(potions.characters, context.actions, rollSides);
     // F5e: scrolls cut pips off the targeted enemy before narration; like potions nothing is saved until the end.
     scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
+    // H1: downed characters roll a death save before narration (dice tables only, like every other roll).
+    // Unsaved until the end, like potions; a nat 20 stands the character up before the DM narrates.
+    const deaths = diceEnabled ? runDeathSaves(abilities.characters, rollDie) : { characters: abilities.characters, outcomes: [], changes: [] as string[], died: [] as string[] };
+    deathSaveRolls = deaths.outcomes;
+    deathSaveChanges = deaths.changes;
+    roundCharacters = deaths.characters;
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
     rolled = context.actions.map((action) => {
       const note = action.playerId
@@ -105,7 +126,7 @@ export async function processRound(
         context.adventure,
         context.sceneInstructionText,
         settings,
-        { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter },
+        { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter },
         context.facts ?? [],
         { planChecks }
       );
@@ -113,7 +134,7 @@ export async function processRound(
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
     // DM message or player-action messages that a retry would duplicate.
-    if (diceEnabled && abilities.characters.length > 0) {
+    if (diceEnabled && roundCharacters.length > 0) {
       // Dice tables: the first call either asks for skill checks or narrates outright. Only a
       // round with checks costs a second call; anything unusable falls back to a plain narration.
       const first = parseCheckPlan(await collect(await deps.generateNarration(build(rolled, true))));
@@ -125,12 +146,12 @@ export async function processRound(
         const damageByName = new Map(rolled.map((a) => [a.playerDisplayName.toLowerCase(), a.damage]));
         attackOutcomes =
           first.kind === 'checks'
-            ? runAttacks(first.attacks, abilities.characters, scrolls.encounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
+            ? runAttacks(first.attacks, roundCharacters, scrolls.encounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
             : [];
         const attackers = new Set(attackOutcomes.map((o) => o.playerDisplayName.toLowerCase()));
         const outcomes =
           first.kind === 'checks'
-            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), abilities.characters, rollDie)
+            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), roundCharacters, rollDie)
             : [];
         if (outcomes.length > 0 || attackOutcomes.length > 0) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
@@ -160,7 +181,7 @@ export async function processRound(
       .insertRollSummary(
         context.campaignId,
         roundId,
-        rolled.map((r): RollSummaryEntry => {
+        [...rolled.map((r): RollSummaryEntry => {
           const c = r.check;
           if (r.attack) return { playerDisplayName: r.playerDisplayName, roll: r.attack.die };
           if (!c) return { playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 };
@@ -169,7 +190,7 @@ export async function processRound(
             roll: c.die,
             check: { skill: c.skill, dc: c.dc, advantage: c.advantage, dice: c.dice, modifier: c.modifier, proficiency: c.proficiency, total: c.total, success: c.success, critical: c.critical },
           };
-        })
+        }), ...deathSaveRolls.map(deathSaveEntry)]
       )
       .catch(() => {});
   }
@@ -204,7 +225,7 @@ export async function processRound(
       // An enemy that joins this very round may attack; one the players just downed still did.
       const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
       const wardUsed = new Set<string>(); // F5j4: one ward use per wearer per round, across both damage paths
-      const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags, wardUsed);
+      const enemyAttacks = applyEnemyAttacks(roundCharacters, roundStart, tags, wardUsed);
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
       const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
       const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
@@ -215,12 +236,21 @@ export async function processRound(
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
-      const finalCharacters = tickCooldowns(
+      const finalCharacters = settleDeathSaves(tickCooldowns(
         xpResult.characters,
         eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
         abilities.used
-      );
+      ));
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
+      // H1: best-effort like the rest; a missing death_saves column just means no tally carries over.
+      const deathSaveWrites = changedDeathSaves(context.characters, finalCharacters);
+      if (deathSaveWrites.length > 0 && deps.repository.saveDeathSaves) {
+        try {
+          await deps.repository.saveDeathSaves(deathSaveWrites);
+        } catch {
+          /* best-effort */
+        }
+      }
       const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
       if (changedIds.length > 0) {
@@ -285,6 +315,7 @@ export async function processRound(
         }
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
+        ...deathSaveChanges,
         ...potions.changes,
         ...scrolls.changes,
         ...abilities.changes,
