@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CharacterTag } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, resolveAttack, resolveEnemyAttack, runAttacks, runEnemyAttacks } from './attack';
+import { attackBonuses, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, resolveAttack, resolveEnemyAttack, runAttacks, runEnemyAttacks } from './attack';
 import type { Encounter } from './encounter';
+import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
 
 const tiers = ['minion', 'normal', 'strong', 'boss'] as const;
-const thresholds = { minion: 6, normal: 9, strong: 12, boss: 15 };
+const thresholds = { minion: 11, normal: 13, strong: 15, boss: 17 };
 const maxPips = { minion: 1, normal: 2, strong: 3, boss: 5 };
 
 describe('resolveAttack hit threshold', () => {
@@ -23,18 +24,18 @@ describe('resolveAttack hit threshold', () => {
   });
 
   it('a heavy blow is damage at 75% of the weapon max: 6 of 8 yes, 5 of 8 no', () => {
-    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 6, maxDamage: 8 }).pips).toBe(2);
-    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 5, maxDamage: 8 }).pips).toBe(1);
+    expect(resolveAttack({ d20s: [13], tier: 'normal', damage: 6, maxDamage: 8 }).pips).toBe(2);
+    expect(resolveAttack({ d20s: [13], tier: 'normal', damage: 5, maxDamage: 8 }).pips).toBe(1);
   });
 
   it('level bonus counts toward the heavy blow (d4 weapon: 3 of 4 yes, 2 of 4 no)', () => {
-    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 3, maxDamage: 4 }).pips).toBe(2);
-    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 2, maxDamage: 4 }).pips).toBe(1);
+    expect(resolveAttack({ d20s: [13], tier: 'normal', damage: 3, maxDamage: 4 }).pips).toBe(2);
+    expect(resolveAttack({ d20s: [13], tier: 'normal', damage: 2, maxDamage: 4 }).pips).toBe(1);
   });
 
   it('advantage takes the higher die and disadvantage the lower', () => {
-    expect(resolveAttack({ d20s: [3, 12], advantage: 'advantage', tier: 'strong', damage: 1, maxDamage: 8 })).toMatchObject({ die: 12, hit: true });
-    expect(resolveAttack({ d20s: [3, 12], advantage: 'disadvantage', tier: 'strong', damage: 1, maxDamage: 8 })).toMatchObject({ die: 3, hit: false });
+    expect(resolveAttack({ d20s: [3, 16], advantage: 'advantage', tier: 'strong', damage: 1, maxDamage: 8 })).toMatchObject({ die: 16, hit: true });
+    expect(resolveAttack({ d20s: [3, 16], advantage: 'disadvantage', tier: 'strong', damage: 1, maxDamage: 8 })).toMatchObject({ die: 3, hit: false });
   });
 });
 
@@ -55,8 +56,8 @@ describe('crit_surge (F5j1)', () => {
   });
 
   it('crit_surge does not change non-crit hits, heavy blows or misses', () => {
-    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 6, maxDamage: 8, critSurge: true }).pips).toBe(2);
-    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 1, maxDamage: 8, critSurge: true }).pips).toBe(1);
+    expect(resolveAttack({ d20s: [13], tier: 'normal', damage: 6, maxDamage: 8, critSurge: true }).pips).toBe(2);
+    expect(resolveAttack({ d20s: [13], tier: 'normal', damage: 1, maxDamage: 8, critSurge: true }).pips).toBe(1);
     expect(resolveAttack({ d20s: [1], tier: 'normal', damage: 8, maxDamage: 8, critSurge: true }).pips).toBe(0);
   });
 
@@ -129,12 +130,12 @@ describe('runAttacks', () => {
   const plan = (target: string) => [{ player: 'Prem', target, advantage: 'none' as const }];
 
   it('rolls against the enemy tier and keeps damage and max damage', () => {
-    const [o] = runAttacks(plan('หมาป่า'), [hero()], enc(wolf), () => 7, () => 9);
-    expect(o).toMatchObject({ target: 'หมาป่า', dc: 9, die: 9, hit: true, pips: 2, damage: 7, maxDamage: 8, defeated: true });
+    const [o] = runAttacks(plan('หมาป่า'), [hero()], enc(wolf), () => 7, () => 11);
+    expect(o).toMatchObject({ target: 'หมาป่า', dc: 13, die: 11, total: 13, hit: true, pips: 2, damage: 7, maxDamage: 8, defeated: true });
   });
 
   it('a miss removes nothing', () => {
-    const [o] = runAttacks(plan('หมาป่า'), [hero()], enc(wolf), () => 7, () => 8);
+    const [o] = runAttacks(plan('หมาป่า'), [hero()], enc(wolf), () => 7, () => 10);
     expect(o).toMatchObject({ hit: false, pips: 0, defeated: false });
     expect(applyAttackOutcomes(enc(wolf), [o])).toEqual(enc(wolf));
   });
@@ -156,7 +157,7 @@ describe('runAttacks', () => {
     const smallBoss = { ...boss, pip: 1, maxPip: 1 } as unknown as Encounter['enemies'][number];
     // pip === maxPip means "full": one blow cannot finish it
     const out = applyAttackOutcomes(enc(smallBoss), [
-      { playerId: 'p1', playerDisplayName: 'Prem', target: 'มังกร', tier: 'boss', dc: 15, advantage: 'none', dice: [20], die: 20, hit: true, critical: 'success', pips: 2, defeated: false, damage: 8, maxDamage: 8 },
+      { playerId: 'p1', playerDisplayName: 'Prem', target: 'มังกร', tier: 'boss', dc: 17, advantage: 'none', dice: [20], die: 20, modifier: 0, proficiency: 2, magic: 0, total: 22, hit: true, critical: 'success', pips: 2, defeated: false, damage: 8, maxDamage: 8 },
     ]);
     expect(out?.enemies[0].pip).toBe(1);
   });
@@ -296,11 +297,11 @@ describe('keen_eye (F5j3)', () => {
   const eye = (keenEye?: number) => ({ effects: ['keen_eye' as const], setTheme: null, setSkillBonus: 0, ...(keenEye ? { keenEye } : {}) });
   const plan = [{ player: 'Prem', target: 'มังกร', advantage: 'none' as const }];
 
-  it('lowers the threshold by 1 or 2: boss 15 -> 14 / 13', () => {
-    expect(resolveAttack({ d20s: [14], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 1 })).toMatchObject({ hit: true, dc: 14 });
-    expect(resolveAttack({ d20s: [13], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 1 })).toMatchObject({ hit: false });
-    expect(resolveAttack({ d20s: [13], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 2 })).toMatchObject({ hit: true, dc: 13 });
-    expect(resolveAttack({ d20s: [12], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 2 })).toMatchObject({ hit: false });
+  it('lowers the threshold by 1 or 2: boss 17 -> 16 / 15', () => {
+    expect(resolveAttack({ d20s: [16], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 1 })).toMatchObject({ hit: true, dc: 16 });
+    expect(resolveAttack({ d20s: [15], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 1 })).toMatchObject({ hit: false });
+    expect(resolveAttack({ d20s: [15], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 2 })).toMatchObject({ hit: true, dc: 15 });
+    expect(resolveAttack({ d20s: [14], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 2 })).toMatchObject({ hit: false });
   });
 
   it('nat 1 still always misses and the threshold never drops below 2', () => {
@@ -310,10 +311,11 @@ describe('keen_eye (F5j3)', () => {
 
   it('runAttacks uses the wearer value, defaults to 1 and ignores non-wearers', () => {
     const at = (c: Character, die: number) => runAttacks(plan, [c], enc(boss), () => 1, () => die)[0];
-    expect(at(hero({ itemEffects: eye(2) }), 13)).toMatchObject({ hit: true, dc: 13 });
-    expect(at(hero({ itemEffects: eye() }), 14)).toMatchObject({ hit: true, dc: 14 });
+    // the hero adds +2 proficiency at level 1, so total = die + 2
+    expect(at(hero({ itemEffects: eye(2) }), 13)).toMatchObject({ hit: true, dc: 15 });
+    expect(at(hero({ itemEffects: eye() }), 14)).toMatchObject({ hit: true, dc: 16 });
     expect(at(hero({ itemEffects: eye() }), 13).hit).toBe(false);
-    expect(at(hero(), 14)).toMatchObject({ hit: false, dc: 15 });
+    expect(at(hero(), 14)).toMatchObject({ hit: false, dc: 17 });
   });
 });
 
@@ -356,5 +358,53 @@ describe('ward (F5j4) on enemy attacks', () => {
     const warrior = hero({ id: 'w1', displayName: 'Bram', hp: 30, maxHp: 30, itemEffects: ward() });
     const r = applyEnemyAttackOutcomes([hero(), warrior], hits(hero()), new Set(), { p1: 'w1' });
     expect(r.characters[1].hp).toBe(30 - Math.ceil((8 - 2) / 2));
+  });
+});
+
+describe('I3 attack bonus: ability modifier + proficiency + magic weapon', () => {
+  const abil = (over: Partial<Record<'STR' | 'DEX' | 'CON' | 'INT' | 'WIS' | 'CHA', number>>) => ({ STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10, ...over });
+  const xpFor = (level: number) => [0, 60, 150, 270, 420, 600, 810, 1050, 1320, 1620][level - 1];
+
+  it('shortsword and dagger use the higher of STR and DEX, shortbow DEX, staff WIS, fists STR', () => {
+    const a = abil({ STR: 8, DEX: 16, WIS: 14 });
+    expect(attackBonuses(hero({ weaponId: 'shortsword', abilities: a })).modifier).toBe(3);
+    expect(attackBonuses(hero({ weaponId: 'dagger', abilities: abil({ STR: 18, DEX: 12 }) })).modifier).toBe(4);
+    expect(attackBonuses(hero({ weaponId: 'shortbow', abilities: a })).modifier).toBe(3);
+    expect(attackBonuses(hero({ weaponId: 'shortbow', abilities: abil({ STR: 20, DEX: 8 }) })).modifier).toBe(-1);
+    expect(attackBonuses(hero({ weaponId: 'staff', abilities: a })).modifier).toBe(2);
+    expect(attackBonuses(hero({ weaponId: 'fists', abilities: abil({ STR: 14, DEX: 18 }) })).modifier).toBe(2);
+    expect(attackBonuses(hero({ weaponId: null, abilities: abil({ STR: 14 }) })).modifier).toBe(2);
+  });
+
+  it('proficiency follows the level: +2 at 1, +3 at 5, +4 at 9', () => {
+    expect(attackBonuses(hero({ xp: xpFor(1) })).proficiency).toBe(2);
+    expect(attackBonuses(hero({ xp: xpFor(4) })).proficiency).toBe(2);
+    expect(attackBonuses(hero({ xp: xpFor(5) })).proficiency).toBe(3);
+    expect(attackBonuses(hero({ xp: xpFor(9) })).proficiency).toBe(4);
+  });
+
+  it('a magic weapon adds its bonus and attacks with its base weapon ability', () => {
+    const magicStaff = MAGIC_ITEMS.find((i) => i.mechanic.kind === 'weapon' && i.mechanic.weaponId === 'staff')!;
+    const bonus = (magicStaff.mechanic as { damageBonus: number }).damageBonus;
+    expect(bonus).toBeGreaterThan(0);
+    expect(attackBonuses(hero({ weaponId: magicStaff.id, abilities: abil({ STR: 18, WIS: 14 }) }))).toEqual({ modifier: 2, proficiency: 2, magic: bonus });
+    expect(attackBonuses(hero({ weaponId: 'staff' })).magic).toBe(0);
+  });
+
+  it('boundary: d20 + mod + proficiency must reach the AC (normal 13): 8 + 3 + 2 hits, 7 misses', () => {
+    const plan = [{ player: 'Prem', target: 'หมาป่า', advantage: 'none' as const }];
+    const r = (die: number) => runAttacks(plan, [hero({ abilities: abil({ DEX: 16 }) })], enc(wolf), () => 1, () => die)[0];
+    expect(r(8)).toMatchObject({ hit: true, modifier: 3, proficiency: 2, magic: 0, total: 13, dc: 13 });
+    expect(r(7)).toMatchObject({ hit: false, total: 12 });
+  });
+
+  it('the modifier does not rescue a natural 1 and a natural 20 hits even with a negative total', () => {
+    expect(resolveAttack({ d20s: [1], tier: 'minion', damage: 1, maxDamage: 8, modifier: 5, proficiency: 3 })).toMatchObject({ hit: false, critical: 'failure' });
+    expect(resolveAttack({ d20s: [20], tier: 'boss', damage: 1, maxDamage: 8, modifier: -5 })).toMatchObject({ hit: true, critical: 'success' });
+  });
+
+  it('magic bonus and keen_eye stack: boss AC 17 - 1, d20 11 + 3 + 2 + 1 = 17 hits', () => {
+    expect(resolveAttack({ d20s: [11], tier: 'boss', damage: 1, maxDamage: 8, modifier: 3, proficiency: 2, magic: 1, keenEye: 1 })).toMatchObject({ hit: true, total: 17, dc: 16 });
+    expect(resolveAttack({ d20s: [10], tier: 'boss', damage: 1, maxDamage: 8, modifier: 3, proficiency: 2, magic: 1 })).toMatchObject({ hit: false, total: 16, dc: 17 });
   });
 });

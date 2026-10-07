@@ -1,10 +1,20 @@
 // C8: every number of the automatic combat formula lives here so it can be tuned in one place.
 // These are starting values that have not been play-tested yet.
 import type { DiceSpec } from '@/lib/character/constants';
+import type { AbilityKey } from '@/lib/character/constants';
 import type { EnemyTier } from '@/lib/character/tags';
 
-/** A player's attack hits when the d20 is at least this (nat 1 always misses, nat 20 always hits). */
-export const HIT_THRESHOLD: Record<EnemyTier, number> = { minion: 6, normal: 9, strong: 12, boss: 15 };
+/** I3: an enemy's armor class. A player's attack hits when d20 + ability mod + proficiency + magic bonus is at least this (nat 1 always misses, nat 20 always hits). */
+export const HIT_THRESHOLD: Record<EnemyTier, number> = { minion: 11, normal: 13, strong: 15, boss: 17 };
+
+/** I3: the ability(ies) a base weapon attacks with; when two are listed the higher modifier is used. Magic weapons follow their base weapon. */
+export const WEAPON_ATTACK_ABILITIES: Record<string, readonly AbilityKey[]> = {
+  shortsword: ['STR', 'DEX'],
+  dagger: ['STR', 'DEX'],
+  shortbow: ['DEX'],
+  staff: ['WIS'],
+  fists: ['STR'],
+};
 
 /** Pips a normal hit removes. */
 export const HIT_PIPS = 1;

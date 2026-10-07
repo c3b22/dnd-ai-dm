@@ -222,7 +222,10 @@ export async function processRound(
         roundId,
         [...rolled.map((r): RollSummaryEntry => {
           const c = r.check;
-          if (r.attack) return { playerDisplayName: r.playerDisplayName, roll: r.attack.die };
+          if (r.attack) {
+            const a = r.attack;
+            return { playerDisplayName: r.playerDisplayName, roll: a.die, attack: { target: a.target, modifier: a.modifier, proficiency: a.proficiency, magic: a.magic, total: a.total, ac: a.dc, hit: a.hit, critical: a.critical } };
+          }
           if (!c) return { playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 };
           return {
             playerDisplayName: r.playerDisplayName,

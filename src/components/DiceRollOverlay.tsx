@@ -17,6 +17,26 @@ export interface DiceCheckView {
   success: boolean;
 }
 
+/** I3: one player attack on an enemy: d20 + ability modifier + proficiency (+ magic weapon bonus) against the enemy's armor class. */
+export interface DiceAttackView {
+  playerDisplayName: string;
+  target: string;
+  die: number;
+  modifier: number;
+  proficiency: number;
+  magic: number;
+  total: number;
+  ac: number;
+  hit: boolean;
+  critical: 'success' | 'failure' | null;
+}
+
+/** "12 + 3 + 2 + 1 = 18" : d20, ability modifier, proficiency, magic bonus (only when present), total. */
+export function attackFormula(a: Pick<DiceAttackView, 'die' | 'modifier' | 'proficiency' | 'magic' | 'total'>): string {
+  const part = (n: number) => ` ${n < 0 ? '-' : '+'} ${Math.abs(n)}`;
+  return `${a.die}${part(a.modifier)}${part(a.proficiency)}${a.magic ? part(a.magic) : ''} = ${a.total}`;
+}
+
 /** I2: one enemy attack on a player: the enemy's d20 plus its bonus against the player's armor class. */
 export interface DiceEnemyAttackView {
   enemy: string;
@@ -44,6 +64,8 @@ export interface DiceRollOverlayProps {
   values: number[];
   /** Skill checks among the rolls, if any; shown with the result once the dice settle. */
   checks?: DiceCheckView[];
+  /** Player attacks on enemies among the rolls (I3), shown as "player -> enemy, total vs AC". */
+  attacks?: DiceAttackView[];
   /** Enemy attacks among the rolls (I2), shown as "enemy -> player, total vs AC". */
   enemyAttacks?: DiceEnemyAttackView[];
   onComplete: () => void;
@@ -56,7 +78,7 @@ const SETTLE_PAUSE_MS = 900;
 // until this overlay completes, so give up and reveal everything instead of hanging the table.
 const MAX_ROLL_MS = 10_000;
 
-export function DiceRollOverlay({ values, checks, enemyAttacks, onComplete }: DiceRollOverlayProps) {
+export function DiceRollOverlay({ values, checks, attacks, enemyAttacks, onComplete }: DiceRollOverlayProps) {
   const doneRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -133,12 +155,18 @@ export function DiceRollOverlay({ values, checks, enemyAttacks, onComplete }: Di
       {landed && (
         <div className="dice-result" aria-live="polite">
           {values.join(', ')}
-          {((checks && checks.length > 0) || (enemyAttacks && enemyAttacks.length > 0)) && (
+          {((checks && checks.length > 0) || (attacks && attacks.length > 0) || (enemyAttacks && enemyAttacks.length > 0)) && (
             <ul className="dice-checks">
               {(checks ?? []).map((c, i) => (
                 <li key={i} className={`dice-check ${c.success ? 'pass' : 'fail'}`}>
                   <strong>{c.playerDisplayName}</strong> · {skillLabel(c.skill)} DC {c.dc} · {checkFormula(c)} ·{' '}
                   {c.success ? 'ผ่าน' : 'ไม่ผ่าน'}
+                </li>
+              ))}
+              {(attacks ?? []).map((a, i) => (
+                <li key={`attack-${i}`} className={`dice-check ${a.hit ? 'pass' : 'fail'}`}>
+                  <strong>{a.playerDisplayName}</strong> → {a.target} · {attackFormula(a)} เทียบ AC {a.ac} ·{' '}
+                  {a.hit ? (a.critical === 'success' ? 'โดน (คริติคอล)' : 'โดน') : 'พลาด'}
                 </li>
               ))}
               {(enemyAttacks ?? []).map((a, i) => (

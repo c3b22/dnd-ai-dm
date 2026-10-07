@@ -988,18 +988,18 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
   };
   const attackPlan = '{"attacks":[{"player":"Prem","target":"หมาป่า","advantage":"none"}]}';
 
-  it('a hit (d20 9 vs 9, dagger 4 of max 4 = heavy) removes 2 pips and ends the fight; the DM is told', async () => {
+  it('a hit (d20 8 + DEX 3 + prof 2 = 13 vs AC 13, dagger 4 of max 4 = heavy) removes 2 pips and ends the fight; the DM is told', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 9], attackPlan, 'หมาป่าล้มลง');
+    const generate = await go(repository, [5, 8], attackPlan, 'หมาป่าล้มลง');
     const second = generate.mock.calls[1][0] as string;
-    expect(second).toContain('attack on หมาป่า: d20 9 vs 9 -> HEAVY HIT');
+    expect(second).toContain('attack on หมาป่า: d20 8 + 5 = 13 vs armor class 13 -> HEAVY HIT');
     expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', null);
-    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 9 }]);
+    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 8, attack: { target: 'หมาป่า', modifier: 3, proficiency: 2, magic: 0, total: 13, ac: 13, hit: true, critical: null } }]);
   });
 
-  it('a miss (d20 8 vs 9) leaves the enemy untouched and the encounter is not rewritten', async () => {
+  it('a miss (d20 7 + 5 = 12 vs AC 13) leaves the enemy untouched and the encounter is not rewritten', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 8], attackPlan, 'พลาด');
+    const generate = await go(repository, [5, 7], attackPlan, 'พลาด');
     expect(generate.mock.calls[1][0]).toContain('MISS');
     expect(repository.setEncounter).not.toHaveBeenCalled();
   });

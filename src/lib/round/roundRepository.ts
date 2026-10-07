@@ -65,6 +65,17 @@ export interface RollSummaryEntry {
     success: boolean;
     critical: 'success' | 'failure' | null;
   };
+  /** I3: present when this roll is a player attacking an enemy; ability modifier, proficiency and magic weapon bonus are shown separately. */
+  attack?: {
+    target: string;
+    modifier: number;
+    proficiency: number;
+    magic: number;
+    total: number;
+    ac: number;
+    hit: boolean;
+    critical: 'success' | 'failure' | null;
+  };
   /** I2: present when this roll is an enemy attacking a player; `playerDisplayName` is then the enemy's name. */
   enemyAttack?: {
     target: string;

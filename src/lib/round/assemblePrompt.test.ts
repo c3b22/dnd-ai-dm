@@ -198,10 +198,10 @@ describe('assemblePrompt combat', () => {
   });
 
   it('tells the DM the attack result and asks for attacks in the first call during a fight', () => {
-    const attack = { playerId: 'p1', playerDisplayName: 'Prem', target: 'หมาป่า', tier: 'normal' as const, dc: 9, advantage: 'none' as const, dice: [12], die: 12, hit: true, critical: null, pips: 2, defeated: true, damage: 6, maxDamage: 8 };
+    const attack = { playerId: 'p1', playerDisplayName: 'Prem', target: 'หมาป่า', tier: 'normal' as const, dc: 13, advantage: 'none' as const, dice: [12], die: 12, modifier: 3, proficiency: 2, magic: 1, total: 18, hit: true, critical: null, pips: 2, defeated: true, damage: 6, maxDamage: 8 };
     const state = { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false }] } };
     const text = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'ฟัน', attack }], null, '', undefined, state);
-    expect(text).toContain('attack on หมาป่า: d20 12 vs 9 -> HEAVY HIT');
+    expect(text).toContain('attack on หมาป่า: d20 12 + 6 = 18 vs armor class 13 -> HEAVY HIT');
     expect(text).toContain('the enemy is defeated');
     expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('"attacks"');
     expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('"attacks"');

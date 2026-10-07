@@ -65,7 +65,8 @@ function attackText(a: AttackOutcome): string {
   const crit = a.critical === 'success' ? ', natural 20' : a.critical === 'failure' ? ', natural 1' : '';
   const after = a.defeated ? 'the enemy is defeated' : 'the enemy is still standing';
   const result = !a.hit ? 'MISS, the enemy is unharmed' : `${a.pips >= 2 ? 'HEAVY HIT, a devastating blow' : 'HIT, a solid wound'}, ${after}`;
-  return ` (attack on ${a.target}${adv}: d20 ${a.die}${crit} vs ${a.dc} -> ${result})`;
+  const bonus = a.modifier + a.proficiency + a.magic;
+  return ` (attack on ${a.target}${adv}: d20 ${a.die}${crit} ${bonus < 0 ? '-' : '+'} ${Math.abs(bonus)} = ${a.total} vs armor class ${a.dc} -> ${result})`;
 }
 
 function enemyAttackText(o: EnemyAttackOutcome): string {

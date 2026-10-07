@@ -1,10 +1,12 @@
 import { resolveCheck, type Advantage } from '@/lib/character/check';
-import { weaponFor } from '@/lib/character/constants';
+import { abilityModifier, normalizeAbilities, weaponFor } from '@/lib/character/constants';
+import { proficiencyBonus } from '@/lib/character/classes';
+import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
 import { findByDisplayName } from '@/lib/character/names';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_ATTACK_BONUS, ENEMY_DAMAGE_DICE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD } from './constants';
+import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_ATTACK_BONUS, ENEMY_DAMAGE_DICE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD, WEAPON_ATTACK_ABILITIES } from './constants';
 import { KEEN_EYE_DEFAULT, takeWard } from '@/lib/inventory/effects';
 import { armorClass } from './armorClass';
 import { rollDice } from '@/lib/character/dice';
@@ -18,10 +20,19 @@ export interface AttackOutcome {
   /** Name of the enemy as it is in the encounter (resolved, so `หมาป่า` may become `หมาป่า 2`). */
   target: string;
   tier: EnemyTier;
+  /** The enemy's armor class the roll was compared against (after keen_eye). */
   dc: number;
   advantage: Advantage;
   dice: number[];
   die: number;
+  /** I3: ability modifier of the weapon's attack ability. */
+  modifier: number;
+  /** I3: proficiency bonus of the attacker's level. */
+  proficiency: number;
+  /** I3: attack bonus of a magic weapon (0 for ordinary weapons). */
+  magic: number;
+  /** I3: die + modifier + proficiency + magic. */
+  total: number;
   hit: boolean;
   critical: 'success' | 'failure' | null;
   /** Pips this attack removes: 0 on a miss. */
@@ -33,9 +44,9 @@ export interface AttackOutcome {
 }
 
 /**
- * Pure resolution of one player attack. Interpretation: the attack roll is the bare d20 (no ability
- * modifier or proficiency, the threshold is already tuned per enemy tier); resolveCheck supplies the
- * advantage and natural 1 / 20 rules. A heavy blow is nat 20 or damage >= 75% of the weapon's maximum.
+ * Pure resolution of one player attack (I3): d20 + ability modifier + proficiency + magic weapon bonus
+ * against the enemy's armor class; resolveCheck supplies the advantage and natural 1 / 20 rules.
+ * A heavy blow is nat 20 or damage >= 75% of the weapon's maximum.
  */
 export function resolveAttack(input: {
   d20s: readonly number[];
@@ -47,19 +58,39 @@ export function resolveAttack(input: {
   critSurge?: boolean;
   /** F5j3 X3: lowers the enemy's hit threshold by this much (never below 2). */
   keenEye?: number;
-}): { dc: number; die: number; hit: boolean; critical: 'success' | 'failure' | null; pips: number } {
+  /** I3: ability modifier, proficiency bonus and magic weapon bonus added to the d20 (default 0). */
+  modifier?: number;
+  proficiency?: number;
+  magic?: number;
+}): { dc: number; die: number; total: number; hit: boolean; critical: 'success' | 'failure' | null; pips: number } {
   const advantage = input.advantage ?? 'none';
   const dc = Math.max(MIN_HIT_THRESHOLD, HIT_THRESHOLD[input.tier] - (input.keenEye ?? 0));
-  const result = resolveCheck({ d20s: input.d20s, ability: 10, proficient: false, level: 1, dc, advantage });
+  const bonus = (input.modifier ?? 0) + (input.proficiency ?? 0) + (input.magic ?? 0);
+  const result = resolveCheck({ d20s: input.d20s, ability: 10, proficient: false, level: 1, dc, advantage, bonus });
   const used = advantage === 'none' ? input.d20s.slice(0, 1) : input.d20s.slice(0, 2);
   const die = advantage === 'advantage' ? Math.max(...used) : advantage === 'disadvantage' ? Math.min(...used) : used[0];
-  if (!result.success) return { dc, die, hit: false, critical: result.critical, pips: 0 };
+  if (!result.success) return { dc, die, total: result.total, hit: false, critical: result.critical, pips: 0 };
   const heavy = result.critical === 'success' || input.damage >= input.maxDamage * HEAVY_DAMAGE_RATIO;
-  return { dc, die, hit: true, critical: result.critical, pips: (heavy ? HEAVY_PIPS : HIT_PIPS) + (result.critical === 'success' && input.critSurge ? CRIT_SURGE_EXTRA_PIPS : 0) };
+  return { dc, die, total: result.total, hit: true, critical: result.critical, pips: (heavy ? HEAVY_PIPS : HIT_PIPS) + (result.critical === 'success' && input.critSurge ? CRIT_SURGE_EXTRA_PIPS : 0) };
 }
 
 const keenEyeOf = (character: Character): number =>
   character.itemEffects?.effects.includes('keen_eye') ? (character.itemEffects.keenEye ?? KEEN_EYE_DEFAULT) : 0;
+
+/**
+ * I3: the attack bonus parts of a character's weapon. The ability is the one the base weapon uses (the
+ * higher modifier when two are listed); a magic weapon uses its base weapon's ability and adds its bonus.
+ */
+export function attackBonuses(character: Character): { modifier: number; proficiency: number; magic: number } {
+  const weaponId = character.weaponId ?? 'fists';
+  const magicItem = MAGIC_ITEMS.find((i) => i.id === weaponId);
+  const mechanic = magicItem?.mechanic.kind === 'weapon' ? magicItem.mechanic : null;
+  const baseId = mechanic ? mechanic.weaponId : weaponId;
+  const keys = WEAPON_ATTACK_ABILITIES[baseId] ?? WEAPON_ATTACK_ABILITIES.fists;
+  const abilities = normalizeAbilities(character.abilities);
+  const modifier = Math.max(...keys.map((k) => abilityModifier(abilities[k])));
+  return { modifier, proficiency: proficiencyBonus(levelForXp(character.xp ?? 0)), magic: mechanic?.damageBonus ?? 0 };
+}
 
 const maxDamageOf = (character: Character): number => {
   const { count, sides, bonus } = weaponFor(character.weaponId).dice;
@@ -90,7 +121,8 @@ export function runAttacks(
     const dice = attack.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
     const damage = damageOf(character) ?? 0;
     const maxDamage = maxDamageOf(character);
-    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) });
+    const bonuses = attackBonuses(character);
+    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, ...bonuses, critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) });
     if (r.hit) damageEnemy(target, r.pips);
     out.push({
       playerId: character.id,
@@ -101,6 +133,8 @@ export function runAttacks(
       advantage: attack.advantage,
       dice,
       die: r.die,
+      ...bonuses,
+      total: r.total,
       hit: r.hit,
       critical: r.critical,
       pips: r.pips,

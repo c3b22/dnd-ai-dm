@@ -173,3 +173,27 @@ describe('DiceRollOverlay enemy attacks (I2)', () => {
     expect(screen.getByText(/พลาด/)).toBeTruthy();
   });
 });
+
+describe('DiceRollOverlay player attacks (I3)', () => {
+  it('shows the ability modifier, proficiency and magic bonus against the enemy AC', async () => {
+    initMock.mockResolvedValue(undefined);
+    let box: { onRollComplete?: () => void } = {};
+    DiceBoxMock.mockImplementation(() => (box = { init: initMock, roll: vi.fn() } as never));
+
+    render(
+      <DiceRollOverlay
+        values={[9, 3]}
+        attacks={[
+          { playerDisplayName: 'Prem', target: 'หมาป่า', die: 9, modifier: 3, proficiency: 2, magic: 1, total: 15, ac: 13, hit: true, critical: null },
+          { playerDisplayName: 'Nok', target: 'โจร', die: 3, modifier: -1, proficiency: 2, magic: 0, total: 4, ac: 11, hit: false, critical: null },
+        ]}
+        onComplete={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(box.onRollComplete).toBeDefined());
+    act(() => box.onRollComplete!());
+
+    expect(await screen.findByText(/9 \+ 3 \+ 2 \+ 1 = 15 เทียบ AC 13/)).toBeTruthy();
+    expect(screen.getByText(/3 - 1 \+ 2 = 4 เทียบ AC 11/)).toBeTruthy();
+  });
+});
