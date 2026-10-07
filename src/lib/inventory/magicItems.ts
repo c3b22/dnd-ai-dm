@@ -96,7 +96,7 @@ const charm = (id: string, nameTh: string, reviveHp: number, price: number, flav
   mechanic: { kind: 'charm', effect: 'revive', reviveHp },
 });
 
-export const MAGIC_ITEMS: readonly MagicItem[] = [
+const BASE_MAGIC_ITEMS: readonly MagicItem[] = [
   // shortswords
   weapon('shortsword', 'dawn', 'ดาบสั้นยามเช้า', U, 'คมดาบสะท้อนแสงแรกของวันจนศัตรูตาพร่า'),
   weapon('shortsword', 'ember', 'ดาบสั้นถ่านแดง', U, 'ใบดาบอุ่นเหมือนถ่านที่ยังไม่มอดดับ'),
@@ -218,3 +218,56 @@ export const MAGIC_ITEMS: readonly MagicItem[] = [
   charm('twinheart', 'ลูกปัดหัวใจสอง', 2, 600, 'ลูกปัดที่เต้นเป็นจังหวะเดียวกับหัวใจดวงที่สองซึ่งสำรองไว้'),
   charm('crossing', 'เหรียญข้ามฝั่ง', 3, 700, 'เหรียญที่ใช้ซื้อทางกลับจากฝั่งตรงข้ามของความตาย'),
 ];
+
+/**
+ * F5j9: special effects. Rules: uncommon = no effect; rare = one small effect (X2 lifesteal, X3 keen_eye, X7 lucky_purse,
+ * X8 quick_tempo); legendary = one main effect. Each effect only on the slots the draft allows (crit_surge/lifesteal: weapon,
+ * ward: armor, keen_eye: weapon or accessory, deep_pack/lucky_purse/quick_tempo: accessory). Rare armor, potions and scrolls
+ * get none because no small effect is allowed on armor. Every rare weapon and accessory carries one: lifesteal on the
+ * "biting/draining/holy" ones, keen_eye on bows and sharp-sight pieces (value 2 only on hawkeye), the rest on accessories.
+ * KNOWN GAP: deep_pack (X6) should sit on a legendary accessory, but the catalogue has none (accessories are uncommon/rare only,
+ * charms have no slot) and adding items is out of scope here, so no item carries deep_pack yet.
+ */
+const EFFECTS: Readonly<Record<string, { effect: ItemEffectId; effectValue?: number }>> = {
+  // rare weapons: lifesteal (X2)
+  shortsword_thornbite: { effect: 'lifesteal' }, dagger_batfang: { effect: 'lifesteal' }, staff_bodhiroot: { effect: 'lifesteal' },
+  shortsword_nightsilver: { effect: 'lifesteal' }, dagger_shadowsnake: { effect: 'lifesteal' }, staff_silverbell: { effect: 'lifesteal' },
+  // rare weapons + rare accessory: keen_eye (X3)
+  shortbow_hawkeye: { effect: 'keen_eye', effectValue: 2 }, shortbow_galewind: { effect: 'keen_eye', effectValue: 1 },
+  shortbow_meteor: { effect: 'keen_eye', effectValue: 1 }, shortsword_stormcall: { effect: 'keen_eye', effectValue: 1 },
+  dagger_moonflick: { effect: 'keen_eye', effectValue: 1 }, staff_moonglass: { effect: 'keen_eye', effectValue: 1 },
+  acc_nightfalcon: { effect: 'keen_eye', effectValue: 1 },
+  // rare accessories: lucky_purse (X7) / quick_tempo (X8)
+  acc_envoyring: { effect: 'lucky_purse', effectValue: 2 }, acc_soundlessanklet: { effect: 'lucky_purse', effectValue: 2 },
+  acc_thirdeye: { effect: 'quick_tempo' }, acc_giantbelt: { effect: 'quick_tempo' },
+  // legendary weapons: crit_surge (X1)
+  shortsword_oathkeeper: { effect: 'crit_surge' }, shortbow_horizon: { effect: 'crit_surge' },
+  staff_lifetree: { effect: 'crit_surge' }, dagger_eternalwhisper: { effect: 'crit_surge' },
+  // legendary armor: ward (X4), the heaviest/most defensive pieces get 3
+  armor_hero: { effect: 'ward', effectValue: 2 }, armor_golddrake: { effect: 'ward', effectValue: 3 }, armor_eternalstar: { effect: 'ward', effectValue: 3 },
+};
+
+/**
+ * F5j9: themes for X9 (matching weapon + armor + accessory = +1 on every skill check). 9 themes, each with at least one full
+ * 3-slot set (first three ids of each entry); extra pieces let players mix and collect. Themes may sit on any rarity.
+ */
+const THEME_SETS: Readonly<Record<string, readonly string[]>> = {
+  'เงา': ['dagger_shadowsnake', 'armor_shadowhide', 'acc_silentshawl', 'dagger_blackrat', 'dagger_batfang', 'acc_grinmask'],
+  'ป่า': ['shortbow_vine', 'armor_campo', 'acc_evergreen', 'staff_mossy', 'armor_fallenleaf', 'acc_wolffang'],
+  'จันทรา': ['shortsword_nightsilver', 'armor_indigo', 'acc_nightfalcon', 'dagger_moonflick', 'staff_moonglass'],
+  'ผู้พิทักษ์': ['shortsword_oathkeeper', 'armor_gatewarden', 'acc_truthring', 'armor_hero', 'acc_fightband'],
+  'พายุ': ['shortbow_galewind', 'armor_frostwind', 'acc_wandercompass', 'shortsword_stormcall', 'acc_giantbelt'],
+  'มังกร': ['shortsword_ember', 'armor_wyrmling', 'acc_skullring', 'armor_golddrake', 'dagger_rain'],
+  'ดวงดาว': ['shortbow_meteor', 'armor_starfall', 'acc_thirdeye', 'armor_eternalstar', 'acc_crystalear'],
+  'ศักดิ์สิทธิ์': ['staff_bodhiroot', 'armor_crane', 'acc_prayerbeads', 'staff_silverbell', 'staff_lifetree'],
+  'มิธริล': ['dagger_needle', 'armor_mithril', 'acc_silverbrooch', 'armor_fishscale', 'acc_envoyring'],
+};
+const THEME_OF: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(THEME_SETS).flatMap(([theme, ids]) => ids.map((id) => [id, theme] as const))
+);
+
+export const MAGIC_ITEMS: readonly MagicItem[] = BASE_MAGIC_ITEMS.map((item) => {
+  const fx = EFFECTS[item.id];
+  const theme = THEME_OF[item.id];
+  return { ...item, ...(fx ?? {}), ...(theme ? { theme } : {}) };
+});
