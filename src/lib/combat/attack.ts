@@ -5,7 +5,7 @@ import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
 import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD } from './constants';
-import { KEEN_EYE_DEFAULT } from '@/lib/inventory/effects';
+import { KEEN_EYE_DEFAULT, takeWard } from '@/lib/inventory/effects';
 import { damageEnemy, findActiveEnemy, type Encounter } from './encounter';
 
 export interface AttackOutcome {
@@ -159,7 +159,9 @@ export function applyLifesteal(
 export function applyEnemyAttacks(
   characters: Character[],
   encounter: Encounter | null,
-  tags: CharacterTag[]
+  tags: CharacterTag[],
+  /** F5j4 ward: ids of wearers whose ward is already spent this round; shared with applyCharacterTags. */
+  wardUsed: Set<string> = new Set()
 ): { characters: Character[]; changes: string[] } {
   const next = characters.map((c) => ({ ...c }));
   const changes: string[] = [];
@@ -169,7 +171,7 @@ export function applyEnemyAttacks(
     const enemy = findActiveEnemy(encounter.enemies, tag.enemy);
     const target = findByDisplayName(next, tag.player);
     if (!enemy || !target || target.status !== 'active') continue;
-    const reduction = target.armorReduction ?? 0;
+    const reduction = (target.armorReduction ?? 0) + takeWard(target, wardUsed);
     const damage = Math.max(MIN_ENEMY_DAMAGE, ENEMY_DAMAGE[enemy.tier] - reduction);
     const absorbed = ENEMY_DAMAGE[enemy.tier] - damage;
     target.hp = Math.max(0, target.hp - damage);

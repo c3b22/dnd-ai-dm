@@ -40,3 +40,13 @@ describe('keen_eye value (F5j3)', () => {
     expect('keenEye' in aggregateEffects([{ slot: 'weapon', effect: 'lifesteal' }])).toBe(false);
   });
 });
+
+describe('ward value (F5j4)', () => {
+  it('defaults to 2, strongest worn value, clamps to 2-3, absent without ward', async () => {
+    const { aggregateEffects } = await import('./effects');
+    expect(aggregateEffects([{ slot: 'armor', effect: 'ward' }]).ward).toBe(2);
+    expect(aggregateEffects([{ slot: 'armor', effect: 'ward', effectValue: 3 }]).ward).toBe(3);
+    expect(aggregateEffects([{ slot: 'armor', effect: 'ward', effectValue: 9 }]).ward).toBe(3);
+    expect('ward' in aggregateEffects([{ slot: 'armor', effect: 'keen_eye' }])).toBe(false);
+  });
+});

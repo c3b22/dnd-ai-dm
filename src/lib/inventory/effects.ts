@@ -10,6 +10,10 @@ export const SET_SKILL_BONUS = 1;
 export const KEEN_EYE_DEFAULT = 1;
 export const KEEN_EYE_MAX = 2;
 
+/** X4 ward: extra damage reduction on the first hit a wearer takes in a round (2-3, default 2). */
+export const WARD_DEFAULT = 2;
+export const WARD_MAX = 3;
+
 export interface EquippedEffectItem {
   slot: Slot;
   effect?: ItemEffectId;
@@ -28,6 +32,8 @@ export interface ItemEffects {
   setSkillBonus: number;
   /** keen_eye only: hit-threshold reduction (1-2, default 1; the strongest worn item wins). Absent without keen_eye. */
   keenEye?: number;
+  /** ward only: extra reduction on the first hit of a round (2-3, default 2; the strongest worn item wins). Absent without ward. */
+  ward?: number;
 }
 
 export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffects {
@@ -40,5 +46,19 @@ export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffec
     const values = equippedItems.filter((i) => i.effect === 'keen_eye').map((i) => i.effectValue ?? KEEN_EYE_DEFAULT);
     result.keenEye = Math.min(KEEN_EYE_MAX, Math.max(KEEN_EYE_DEFAULT, ...values));
   }
+  if (effects.includes('ward')) {
+    const values = equippedItems.filter((i) => i.effect === 'ward').map((i) => i.effectValue ?? WARD_DEFAULT);
+    result.ward = Math.min(WARD_MAX, Math.max(WARD_DEFAULT, ...values));
+  }
   return result;
+}
+
+/**
+ * Takes the wearer's ward for the first hit of the round: returns the extra reduction (0 without ward or once
+ * `used` already holds the character) and records the use. `used` is shared by every damage path of one round.
+ */
+export function takeWard(character: { id: string; itemEffects?: ItemEffects }, used: Set<string>): number {
+  if (!character.itemEffects?.effects.includes('ward') || used.has(character.id)) return 0;
+  used.add(character.id);
+  return character.itemEffects.ward ?? WARD_DEFAULT;
 }

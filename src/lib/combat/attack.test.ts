@@ -231,3 +231,29 @@ describe('keen_eye (F5j3)', () => {
     expect(at(hero(), 14)).toMatchObject({ hit: false, dc: 15 });
   });
 });
+
+describe('ward (F5j4) on enemy_attack', () => {
+  const tag = (enemy: string, player: string): CharacterTag => ({ kind: 'enemy_attack', enemy, player });
+  const boss: Encounter = enc({ name: 'X', tier: 'boss', pip: 1, maxPip: maxPips.boss, fled: false });
+  const ward = (n?: number) => ({ effects: ['ward' as const], setTheme: null, setSkillBonus: 0, ...(n ? { ward: n } : {}) });
+
+  it('extra 2 (default) or 3 on top of armor, only for the first hit of the round', () => {
+    const r = applyEnemyAttacks([hero({ armorReduction: 1, itemEffects: ward() })], boss, [tag('X', 'Prem'), tag('X', 'Prem')]);
+    expect(r.characters[0].hp).toBe(20 - (8 - 3) - (8 - 1));
+    expect(r.changes[0]).toContain('เกราะกัน 3');
+    expect(applyEnemyAttacks([hero({ itemEffects: ward(3) })], boss, [tag('X', 'Prem')]).characters[0].hp).toBe(15);
+  });
+
+  it('never cuts a hit below 1 and still spends the ward', () => {
+    const minion: Encounter = enc({ name: 'X', tier: 'minion', pip: 1, maxPip: maxPips.minion, fled: false });
+    const used = new Set<string>();
+    expect(applyEnemyAttacks([hero({ armorReduction: 3, itemEffects: ward(3) })], minion, [tag('X', 'Prem')], used).characters[0].hp).toBe(19);
+    expect(used.has('p1')).toBe(true);
+  });
+
+  it('without the item nothing changes and the set stays empty', () => {
+    const used = new Set<string>();
+    expect(applyEnemyAttacks([hero()], boss, [tag('X', 'Prem')], used).characters[0].hp).toBe(12);
+    expect(used.size).toBe(0);
+  });
+});

@@ -203,10 +203,11 @@ export async function processRound(
       // C8: enemy attacks land first so a wipe they cause is handled by applyCharacterTags below.
       // An enemy that joins this very round may attack; one the players just downed still did.
       const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
-      const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags);
+      const wardUsed = new Set<string>(); // F5j4: one ward use per wearer per round, across both damage paths
+      const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags, wardUsed);
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
       const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
-      const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards);
+      const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
       const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
