@@ -1,5 +1,5 @@
 import { catalogEntry } from '@/lib/inventory/catalog';
-import { magicInfo } from '@/lib/inventory/magicDescribe';
+import { magicInfo, setStatusTh } from '@/lib/inventory/magicDescribe';
 import { carryCapacityOf, itemLabel, weightOf } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
 
@@ -22,6 +22,7 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
   const items = [...unsorted].sort(
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
   );
+  const worn = items.filter((i) => i.equipped);
   const weight = weightOf(items);
   const capacity = carryCapacityOf(items);
   return (
@@ -49,9 +50,12 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
                   {item.quantity > 1 ? ` ×${item.quantity}` : ''}
                   {item.equipped && <b className="badge-worn">สวมอยู่</b>}
                   {magic && <b className={`badge-rarity rarity-${magic.rarity}`}>{magic.rarityTh}</b>}
+                  {magic?.theme && <b className="badge-theme">ธีม{magic.theme}</b>}
                   {magic && (
                     <span className="inv-effect">
                       {magic.effectTh}
+                      {magic.specialTh && <small className="inv-special">{magic.specialTh}</small>}
+                      {magic.theme && item.equipped && <small className="inv-set">{setStatusTh(magic.theme, worn)}</small>}
                       <small>{magic.flavorTh}</small>
                     </span>
                   )}

@@ -309,6 +309,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .badge-rarity.rarity-legendary { background: rgba(224, 169, 74, 0.2); color: #e0a94a; }
 .inv-effect { display: block; font-size: 0.8rem; opacity: 0.9; }
 .inv-effect small { display: block; opacity: 0.65; font-size: 0.72rem; }
+.badge-theme { margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 0.7rem; background: rgba(160, 130, 220, 0.18); color: #b49be8; }
+.inv-effect .inv-special, .inv-effect .inv-set { opacity: 0.9; }
 
 /* Economy */
 .inv-gold { margin: 0 0 8px; color: #e0a94a; font-weight: 600; }

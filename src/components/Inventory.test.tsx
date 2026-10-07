@@ -119,3 +119,42 @@ describe('Inventory magic items (F5h)', () => {
     expect(container.querySelector('.inv-effect')).toBeNull();
   });
 });
+
+describe('Inventory special mechanics (F5j10)', () => {
+  const worn = (id: string): InventoryItem => {
+    const m = MAGIC_ITEMS.find((i) => i.id === id)!;
+    return { itemId: id, customName: '', quantity: 1, slot: m.mechanic.kind as 'weapon' | 'armor' | 'accessory', equipped: true };
+  };
+  const view = (items: InventoryItem[]) =>
+    render(<Inventory items={items} gold={0} canAct onEquip={() => {}} onDrink={() => {}} />);
+
+  it('describes each special effect and shows the theme badge', () => {
+    const fx = MAGIC_ITEMS.find((i) => i.effect === 'crit_surge')!;
+    const { container } = view([{ ...worn(fx.id) }]);
+    expect(container.querySelector('.inv-special')?.textContent).toMatch(/วิกฤตทวี/);
+    if (fx.theme) expect(screen.getByText(`ธีม${fx.theme}`)).toBeInTheDocument();
+  });
+
+  it('shows the effect value when the item has one', () => {
+    const fx = MAGIC_ITEMS.find((i) => i.effect === 'ward' && i.effectValue === 3)!;
+    const { container } = view([worn(fx.id)]);
+    expect(container.querySelector('.inv-special')?.textContent).toContain('เพิ่ม 3');
+  });
+
+  it('says a full set is complete', () => {
+    view([worn('dagger_shadowsnake'), worn('armor_shadowhide'), worn('acc_silentshawl')]);
+    expect(screen.getAllByText('ครบชุดธีมเงา +1 ทุกการเช็ก').length).toBe(3);
+  });
+
+  it('lists the missing slots of a partial set', () => {
+    view([worn('dagger_shadowsnake'), worn('armor_shadowhide')]);
+    expect(screen.getAllByText('ธีมเงา 2/3 ขาด: เครื่องประดับ').length).toBe(2);
+  });
+
+  it('shows no set status for unworn themed items, and nothing extra for plain items', () => {
+    const spare = { ...worn('dagger_shadowsnake'), equipped: false };
+    const { container } = view([spare, sword]);
+    expect(container.querySelector('.inv-set')).toBeNull();
+    expect(screen.getByText('ธีมเงา')).toBeInTheDocument();
+  });
+});
