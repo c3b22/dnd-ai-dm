@@ -57,9 +57,11 @@ export function skillModifier(params: {
   level: number;
   /** Worn-accessory bonuses (F5d), added when they name this skill. */
   skillBonuses?: Partial<Record<SkillId, number>>;
+  /** Complete-set bonus (X9), added to every skill once. */
+  setSkillBonus?: number;
 }): number {
   const mod = Math.floor((params.abilities[SKILL_ABILITIES[params.skill]] - 10) / 2);
-  return mod + (CLASSES[params.classId].skills.includes(params.skill) ? proficiencyBonus(params.level) : 0) + (params.skillBonuses?.[params.skill] ?? 0);
+  return mod + (CLASSES[params.classId].skills.includes(params.skill) ? proficiencyBonus(params.level) : 0) + (params.skillBonuses?.[params.skill] ?? 0) + (params.setSkillBonus ?? 0);
 }
 
 export const CLASSES: Record<ClassId, ClassDef> = {

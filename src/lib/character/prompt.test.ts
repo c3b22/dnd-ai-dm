@@ -84,6 +84,15 @@ describe('characterPrompt harm-risk guidance', () => {
     expect(text).toContain('set sensible DCs');
   });
 
+  it('includes the complete-set bonus in proficient skill modifiers (X9)', () => {
+    const warrior: Character = {
+      ...party[0], classId: 'warrior', abilities: { STR: 15, DEX: 13, CON: 14, INT: 8, WIS: 12, CHA: 10 },
+      itemEffects: { effects: [], setTheme: 'เงา', setSkillBonus: 1 },
+    };
+    const text = characterPrompt([warrior], false, undefined).join('\n');
+    expect(text).toContain('proficient: athletics +5, intimidation +3, perception +4, survival +4');
+  });
+
   it('treats missing abilities as 10 and omits skills for a classless character', () => {
     const text = characterPrompt([party[0]], false, undefined).join('\n');
     expect(text).toContain('Prem modifiers: STR +0 DEX +0 CON +0 INT +0 WIS +0 CHA +0');

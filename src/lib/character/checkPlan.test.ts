@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseCheckPlan, runChecks } from './checkPlan';
 import type { Character } from './types';
+import { aggregateEffects } from '@/lib/inventory/effects';
 
 describe('parseCheckPlan', () => {
   it('reads a checks plan, clamping dc and defaulting advantage', () => {
@@ -81,5 +82,41 @@ describe('runChecks with an accessory bonus (F5d)', () => {
   it('gives nothing for a different skill', () => {
     const [r] = runChecks(plan('athletics'), [rogue], () => 8);
     expect(r).toMatchObject({ itemBonus: 0, total: 8 - 1 });
+  });
+});
+
+describe('runChecks with a complete set bonus (F5j8 X9)', () => {
+  const base: Character = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 10, maxHp: 10, status: 'active',
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const plan = (skill: 'stealth' | 'athletics') => [{ player: 'Prem', skill, dc: 15, advantage: 'none' as const }];
+  const full = aggregateEffects([
+    { slot: 'weapon', theme: 'เงา' }, { slot: 'armor', theme: 'เงา' }, { slot: 'accessory', theme: 'เงา' },
+  ]);
+
+  it('adds +1 to every skill check with a full set', () => {
+    for (const skill of ['stealth', 'athletics'] as const) {
+      const [without] = runChecks(plan(skill), [base], () => 8);
+      const [r] = runChecks(plan(skill), [{ ...base, itemEffects: full }], () => 8);
+      expect(r).toMatchObject({ itemBonus: 1, total: without.total + 1 });
+    }
+  });
+
+  it('stacks once with the accessory bonus, not twice', () => {
+    const [r] = runChecks(plan('stealth'), [{ ...base, skillBonuses: { stealth: 2 }, itemEffects: full }], () => 8);
+    expect(r).toMatchObject({ itemBonus: 3, total: 8 + 3 + 2 + 2 + 1 });
+  });
+
+  it('gives nothing when one slot is missing', () => {
+    const fx = aggregateEffects([{ slot: 'weapon', theme: 'เงา' }, { slot: 'armor', theme: 'เงา' }]);
+    const [r] = runChecks(plan('stealth'), [{ ...base, itemEffects: fx }], () => 8);
+    expect(r).toMatchObject({ itemBonus: 0, total: 13 });
+  });
+
+  it('gives nothing when two themes are mixed', () => {
+    const fx = aggregateEffects([{ slot: 'weapon', theme: 'เงา' }, { slot: 'armor', theme: 'เงา' }, { slot: 'accessory', theme: 'ไฟ' }]);
+    const [r] = runChecks(plan('stealth'), [{ ...base, itemEffects: fx }], () => 8);
+    expect(r).toMatchObject({ itemBonus: 0, total: 13 });
   });
 });

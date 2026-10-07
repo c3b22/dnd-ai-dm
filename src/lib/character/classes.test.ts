@@ -107,6 +107,8 @@ describe('class starting abilities and skills', () => {
     const base = { abilities: CLASSES.rogue.abilities, classId: 'rogue' as const, level: 5 };
     expect(skillModifier({ ...base, skill: 'stealth' })).toBe(2 + 3);
     expect(skillModifier({ ...base, skill: 'athletics' })).toBe(-1);
+    expect(skillModifier({ ...base, skill: 'athletics', setSkillBonus: 1 })).toBe(0);
+    expect(skillModifier({ ...base, skill: 'stealth', skillBonuses: { stealth: 2 }, setSkillBonus: 1 })).toBe(2 + 3 + 2 + 1);
   });
 });
 
