@@ -19,6 +19,21 @@ describe('HpBar', () => {
     expect(container.querySelector('.hp-fill.low')).not.toBeNull();
   });
 
+  it('uses three colour levels with boundaries at 0.3 and 0.6', () => {
+    const cls = (hp: number) => {
+      const { container, unmount } = render(<HpBar hp={hp} maxHp={20} />);
+      const c = container.querySelector('.hp-fill')!.className;
+      unmount();
+      return c;
+    };
+    expect(cls(20)).toBe('hp-fill');
+    expect(cls(13)).toBe('hp-fill'); // 0.65 > 0.6
+    expect(cls(12)).toBe('hp-fill mid'); // exactly 0.6 is yellow
+    expect(cls(7)).toBe('hp-fill mid'); // 0.35
+    expect(cls(6)).toBe('hp-fill low'); // exactly 0.3 stays red
+    expect(cls(0)).toBe('hp-fill low');
+  });
+
   it('shows the level badge and XP progress toward the next level', () => {
     render(<HpBar hp={30} maxHp={30} xp={150} />);
     expect(screen.getByText('Lv 3')).toBeInTheDocument();

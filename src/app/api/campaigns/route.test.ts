@@ -193,4 +193,17 @@ describe('POST /api/campaigns', () => {
     );
     expect(response.status).toBe(201);
   });
+
+  it('stores identity fields on the creator, trimmed and capped', async () => {
+    const { client, calls } = createFakeSupabase({
+      campaigns: { id: 'camp-1', name: 'Test' },
+      players: { id: 'player-1', campaign_id: 'camp-1' },
+      rounds: { id: 'round-1', campaign_id: 'camp-1', status: 'pending' },
+    });
+    await createCampaign(client, { name: 'T', userId: 'u1', displayName: 'Prem', backstory: ' อดีตทหาร ', goal: 'y'.repeat(900) });
+    const row = calls.find((c) => c.action === 'insert' && c.table === 'players')?.payload as Record<string, unknown>;
+    expect(row.backstory).toBe('อดีตทหาร');
+    expect(row.goal).toBe('y'.repeat(500));
+    expect(row).not.toHaveProperty('personality');
+  });
 });

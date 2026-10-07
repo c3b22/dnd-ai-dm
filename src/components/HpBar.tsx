@@ -7,12 +7,13 @@ export function HpBar({ hp, maxHp, xp = 0 }: { hp: number; maxHp: number; xp?: n
   const full = BASE_MAX_HP + levelHpBonus(level);
   const lost = full - maxHp;
   const pct = (n: number) => `${(n / full) * 100}%`;
-  const low = maxHp > 0 && hp / maxHp <= 0.3;
+  const ratio = maxHp > 0 ? hp / maxHp : 1;
+  const tone = ratio <= 0.3 ? ' low' : ratio <= 0.6 ? ' mid' : '';
   const progress = xpProgress(xp);
   return (
     <div className="hp" aria-label={`HP ${hp} จาก ${maxHp}`}>
       <div className="hp-track">
-        <i className={`hp-fill${low ? ' low' : ''}`} style={{ width: pct(hp) }} />
+        <i className={`hp-fill${tone}`} style={{ width: pct(hp) }} />
         {lost > 0 && <i className="hp-lost" style={{ width: pct(lost) }} title={`max HP ลดลง ${lost}`} />}
       </div>
       <span className="hp-num">

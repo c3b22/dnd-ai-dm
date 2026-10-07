@@ -170,4 +170,21 @@ describe('tickCooldowns', () => {
     tickCooldowns(party, true, []);
     expect(party[0].abilityCooldown).toBe(2);
   });
+
+  describe('quick_tempo (F5j7)', () => {
+    const tempo = { effects: ['quick_tempo' as const], setTheme: null, setSkillBonus: 0 };
+
+    it('drops a wearer cooldown by one extra on an eventful round, never below zero', () => {
+      const party = [char({ abilityCooldown: 3, itemEffects: tempo }), char({ id: 'p2', abilityCooldown: 1, itemEffects: tempo }), char({ id: 'p3', abilityCooldown: 3 })];
+      expect(tickCooldowns(party, true, []).map((c) => c.abilityCooldown)).toEqual([1, 0, 2]);
+    });
+
+    it('does nothing on a quiet round', () => {
+      expect(tickCooldowns([char({ abilityCooldown: 3, itemEffects: tempo })], false, [])[0].abilityCooldown).toBe(3);
+    });
+
+    it('still gives the full cooldown on the round of use', () => {
+      expect(tickCooldowns([char({ classId: 'archer', itemEffects: tempo })], true, ['p1'])[0].abilityCooldown).toBe(3);
+    });
+  });
 });

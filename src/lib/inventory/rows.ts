@@ -1,4 +1,4 @@
-import type { Slot } from './catalog';
+import { SLOTS, type Slot } from './catalog';
 import type { Inventories, InventoryItem } from './types';
 
 export interface InventoryRow {
@@ -15,7 +15,7 @@ export function rowsToItems(rows: InventoryRow[]): InventoryItem[] {
     itemId: r.item_id,
     customName: r.custom_name ?? '',
     quantity: r.quantity,
-    slot: r.slot === 'weapon' || r.slot === 'armor' ? (r.slot as Slot) : null,
+    slot: (SLOTS as string[]).includes(r.slot ?? '') ? (r.slot as Slot) : null,
     equipped: Boolean(r.equipped),
   }));
 }

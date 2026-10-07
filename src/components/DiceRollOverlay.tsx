@@ -3,9 +3,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { prefersReducedMotion } from '@/lib/prefersReducedMotion';
+import { skillLabel } from '@/lib/character/skillLabels';
+
+/** One skill check shown to the whole table once the dice land. */
+export interface DiceCheckView {
+  playerDisplayName: string;
+  skill: string;
+  dc: number;
+  die: number;
+  modifier: number;
+  proficiency: number;
+  total: number;
+  success: boolean;
+}
+
+/** "12 + 2 + 2 = 16" : d20, ability modifier, proficiency (when proficient), total. */
+export function checkFormula(c: Pick<DiceCheckView, 'die' | 'modifier' | 'proficiency' | 'total'>): string {
+  const part = (n: number) => ` ${n < 0 ? '-' : '+'} ${Math.abs(n)}`;
+  return `${c.die}${part(c.modifier)}${c.proficiency ? part(c.proficiency) : ''} = ${c.total}`;
+}
 
 export interface DiceRollOverlayProps {
   values: number[];
+  /** Skill checks among the rolls, if any; shown with the result once the dice settle. */
+  checks?: DiceCheckView[];
   onComplete: () => void;
 }
 
@@ -16,7 +37,7 @@ const SETTLE_PAUSE_MS = 900;
 // until this overlay completes, so give up and reveal everything instead of hanging the table.
 const MAX_ROLL_MS = 10_000;
 
-export function DiceRollOverlay({ values, onComplete }: DiceRollOverlayProps) {
+export function DiceRollOverlay({ values, checks, onComplete }: DiceRollOverlayProps) {
   const doneRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -93,6 +114,16 @@ export function DiceRollOverlay({ values, onComplete }: DiceRollOverlayProps) {
       {landed && (
         <div className="dice-result" aria-live="polite">
           {values.join(', ')}
+          {checks && checks.length > 0 && (
+            <ul className="dice-checks">
+              {checks.map((c, i) => (
+                <li key={i} className={`dice-check ${c.success ? 'pass' : 'fail'}`}>
+                  <strong>{c.playerDisplayName}</strong> · {skillLabel(c.skill)} DC {c.dc} · {checkFormula(c)} ·{' '}
+                  {c.success ? 'ผ่าน' : 'ไม่ผ่าน'}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>,

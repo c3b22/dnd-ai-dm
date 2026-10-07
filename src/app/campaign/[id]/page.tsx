@@ -4,11 +4,16 @@ import { Suspense, use, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
+import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
+import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
+import type { AbilityChoice } from '@/lib/character/leveling';
+import { EncounterPanel } from '@/components/EncounterPanel';
 import { Inventory } from '@/components/Inventory';
 import { Shop } from '@/components/Shop';
 import { Trades } from '@/components/Trades';
+import { QuestLog } from '@/components/QuestLog';
 import { CampaignLobby } from '@/components/CampaignLobby';
 import { D20Icon } from '@/components/D20Icon';
 import { RoundTimer } from '@/components/RoundTimer';
@@ -22,6 +27,7 @@ import {
 import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
+  requestAbilityChoice,
   saveTurnOrder,
   subscribeToPlayers,
   type RoundPlayer,
@@ -45,6 +51,10 @@ import {
 import { startCampaignForClient } from '@/lib/supabase/startCampaign';
 import { triggerRoundProcessing } from '@/lib/round/triggerRoundProcessing';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
+import { fetchEncounter, subscribeToEncounter } from '@/lib/supabase/encounter';
+import type { Encounter } from '@/lib/combat/encounter';
+import { fetchCampaignFacts, subscribeToFacts } from '@/lib/supabase/factsRealtime';
+import type { CampaignFact } from '@/lib/memory/types';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
@@ -67,10 +77,14 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   // auto-processing the next one in the render where the new round id arrives.
   const [timeUpRoundId, setTimeUpRoundId] = useState<string | null>(null);
   const [shop, setShop] = useState<ShopState | null>(null);
+  // Synced only; the combat tracker UI reads it later.
+  const [encounter, setEncounter] = useState<Encounter | null>(null);
+  const [facts, setFacts] = useState<CampaignFact[]>([]);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
+  const [asksUsed, setAsksUsed] = useState(0);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
     setProcessing(true);
@@ -113,6 +127,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       .then(({ data }) => setShop(normalizeShop(data?.current_shop)));
     const unsubscribeShop = subscribeToCurrentShop(campaignId, setShop);
 
+    fetchEncounter(campaignId).then(setEncounter);
+    const unsubscribeEncounter = subscribeToEncounter(campaignId, setEncounter);
+
     fetchCampaignSettings(campaignId).then(setSettings);
     const unsubscribeSettings = subscribeToCampaignSettings(campaignId, setSettings);
 
@@ -127,6 +144,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       unsubscribeRound();
       unsubscribeScene();
       unsubscribeShop();
+      unsubscribeEncounter();
       unsubscribeSettings();
       unsubscribeStarted();
     };
@@ -185,7 +203,42 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     return subscribeToTrades(campaignId, refreshTrades);
   }, [campaignId, refreshTrades]);
 
+  const refreshFacts = useCallback(() => {
+    fetchCampaignFacts(campaignId)
+      .then(setFacts)
+      .catch(() => {});
+  }, [campaignId]);
+  useEffect(() => {
+    refreshFacts();
+    return subscribeToFacts(campaignId, refreshFacts);
+  }, [campaignId, refreshFacts]);
+
   const me = players.find((p) => p.id === playerId);
+
+  // Ask-the-DM quota resets every round. Count from messages when player_id exists, then follow local answers.
+  useEffect(() => {
+    setAsksUsed(0);
+    if (!roundId || !playerId) return;
+    let cancelled = false;
+    fetchAskCount(campaignId, playerId, roundId).then((n) => {
+      if (!cancelled) setAsksUsed((prev) => Math.max(prev, n));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, playerId, roundId]);
+
+  async function handleAsk(question: string) {
+    try {
+      await askDmForClient(campaignId, question);
+      setAsksUsed((n) => n + 1);
+    } catch (error) {
+      if ((error as { status?: number }).status === 429) setAsksUsed(ASK_LIMIT);
+      throw error;
+    }
+  }
+
+  const playerNames = Object.fromEntries(players.map((p) => [p.id, p.displayName]));
 
   function describeEconomyError(code: string): string {
     const known: Record<string, string> = {
@@ -252,6 +305,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     } catch {
       /* the refresh below puts the real state back on screen */
     }
+    refreshPlayers();
+  }
+
+  async function handleAbilityChoice(choice: AbilityChoice) {
+    await requestAbilityChoice(campaignId, choice);
     refreshPlayers();
   }
 
@@ -394,6 +452,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             campaignId={campaignId}
             fetchInitialMessages={fetchInitialMessages}
             subscribeToNewMessages={subscribeToNewMessages}
+            playerNames={playerNames}
           />
           {processing && (
             <div className="thinking" role="status" aria-live="polite">
@@ -417,6 +476,13 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               alreadyActed={me?.acted ?? false}
             />
           )}
+          {playerId && (
+            <ChatPanel
+              onSendChat={(content) => sendTeamChat(campaignId, content)}
+              onAsk={handleAsk}
+              asksUsed={asksUsed}
+            />
+          )}
         </div>
 
         <aside className="rail">
@@ -427,9 +493,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               locked={players.find((p) => p.id === playerId)?.acted ?? false}
               onMove={handleMove}
               onReorder={handleReorder}
+              onAbilityChoice={handleAbilityChoice}
               reorderPolicy={settings.reorderPolicy}
             />
           )}
+          <EncounterPanel encounter={encounter} />
           {me && (
             <Inventory
               items={me.items}
@@ -466,6 +534,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
             onSave={handleSaveSettings}
           />
+          <QuestLog facts={facts} />
           {adventure && (
             <section className="card" aria-label="เรื่องที่เล่น">
               <h3>เรื่องที่เล่น</h3>

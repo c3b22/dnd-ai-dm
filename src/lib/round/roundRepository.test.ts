@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createSupabaseRoundRepository } from './roundRepository';
 
 interface FakeRoundRow {
@@ -16,6 +16,10 @@ function createFakeSupabase(options: {
   inventoryError?: Error;
   actionRows?: unknown[];
   currentShop?: unknown;
+  currentEncounter?: unknown;
+  factRows?: unknown[];
+  factsError?: boolean;
+  messageRows?: { role: string; content: string }[];
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
 
@@ -43,6 +47,7 @@ function createFakeSupabase(options: {
                     adventure_id: 'test-adventure',
                     pending_wipe: options.pendingWipe ?? false,
                     current_shop: options.currentShop ?? null,
+                    current_encounter: options.currentEncounter ?? null,
                   },
                   error: null,
                 }),
@@ -87,6 +92,12 @@ function createFakeSupabase(options: {
           }),
         };
       }
+      if (table === 'campaign_facts') {
+        if (options.factsError) throw new Error('relation does not exist');
+        return {
+          select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: options.factRows ?? [], error: null }) }) }),
+        };
+      }
       if (table === 'messages') {
         const builder: any = {
           select: (...args: unknown[]) => {
@@ -95,6 +106,10 @@ function createFakeSupabase(options: {
           },
           eq: (...args: unknown[]) => {
             messagesCalls.push({ method: 'eq', args });
+            return builder;
+          },
+          in: (...args: unknown[]) => {
+            messagesCalls.push({ method: 'in', args });
             return builder;
           },
           gt: (...args: unknown[]) => {
@@ -107,7 +122,14 @@ function createFakeSupabase(options: {
           },
           limit: (...args: unknown[]) => {
             messagesCalls.push({ method: 'limit', args });
-            return Promise.resolve({ data: [], error: null });
+            const inCall = messagesCalls.find((c) => c.method === 'in');
+            const allowed = inCall ? (inCall.args[1] as string[]) : null;
+            // Rows are stored oldest-first; the query orders newest-first, filters, then limits.
+            const rows = [...(options.messageRows ?? [])]
+              .reverse()
+              .filter((r) => (allowed ? allowed.includes(r.role) : true))
+              .slice(0, args[0] as number);
+            return Promise.resolve({ data: rows, error: null });
           },
         };
         return builder;
@@ -150,6 +172,34 @@ describe('createSupabaseRoundRepository.getRoundContext', () => {
 
     const gtCall = messagesCalls.find((c) => c.method === 'gt');
     expect(gtCall).toBeUndefined();
+  });
+});
+
+describe('createSupabaseRoundRepository.getRoundContext message roles', () => {
+  it('filters to story roles at the query, before the 40-row limit', async () => {
+    const story = Array.from({ length: 40 }, (_, i) => ({ role: 'dm', content: `story ${i}` }));
+    const chatter = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 3 === 0 ? 'ooc' : i % 3 === 1 ? 'ask' : 'ask_answer',
+      content: `side ${i}`,
+    }));
+    const { client, messagesCalls } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      // 40 story rows first, then 30 newer side-channel rows: without filtering
+      // before the limit the whole window would be side chat.
+      messageRows: [...story, ...chatter],
+    });
+
+    const repository = createSupabaseRoundRepository(client);
+    const ctx = await repository.getRoundContext('round-1');
+
+    const inCall = messagesCalls.find((c) => c.method === 'in');
+    expect(inCall!.args).toEqual(['role', ['dm', 'player', 'system']]);
+    const methods = messagesCalls.map((c) => c.method);
+    expect(methods.indexOf('in')).toBeLessThan(methods.indexOf('limit'));
+    expect(ctx.recentMessages).toHaveLength(40);
+    expect(ctx.recentMessages.every((m) => ['dm', 'player', 'system'].includes(m.role))).toBe(true);
+    expect(ctx.recentMessages.some((m) => m.content.startsWith('side'))).toBe(false);
   });
 });
 
@@ -220,6 +270,33 @@ describe('createSupabaseRoundRepository classes', () => {
     });
     const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
     expect(context.characters.map((c) => [c.classId, c.abilityCooldown])).toEqual([['cleric', 2], [null, 0]]);
+  });
+
+  it('loads ability scores, defaulting every score to 10 for old rows', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, class_id: 'warrior', abilities: { STR: 15, DEX: 13, CON: 14, INT: 8, WIS: 12, CHA: 10 } },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 },
+      ],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.characters[0].abilities?.STR).toBe(15);
+    expect(context.characters[1].abilities).toEqual({ STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 });
+  });
+
+  it('loads backstory, personality and goal, null when missing', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, backstory: 'Orphan', personality: 'Calm', goal: 'Revenge' },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 },
+      ],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.characters.map((c) => [c.backstory, c.personality, c.goal])).toEqual([['Orphan', 'Calm', 'Revenge'], [null, null, null]]);
   });
 
   it('loads the ability flag and target of an action', async () => {
@@ -302,7 +379,7 @@ describe('createSupabaseRoundRepository character state', () => {
     expect(context.pendingWipe).toBe(true);
     expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0 },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, skillBonuses: {}, itemEffects: { effects: [], setTheme: null, setSkillBonus: 0 }, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, backstory: null, personality: null, goal: null },
     ]);
   });
 
@@ -474,6 +551,28 @@ describe('createSupabaseRoundRepository inventory', () => {
     expect(context.inventories.p1).toHaveLength(2);
   });
 
+  it('exposes the worn accessory as a skill bonus on the character (F5d)', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      players: [premRow],
+      inventoryRows: [{ player_id: 'p1', item_id: 'acc_soundlessanklet', custom_name: '', quantity: 1, slot: 'accessory', equipped: true }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.characters[0].skillBonuses).toEqual({ stealth: 2 });
+  });
+
+  it('exposes combined item effects on the character (F5j0), empty for items without effects', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { r1: { campaign_id: 'c1' } },
+      campaignSummary: null,
+      players: [premRow],
+      inventoryRows: [{ player_id: 'p1', item_id: 'shortbow', custom_name: '', quantity: 1, slot: 'weapon', equipped: true }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
+    expect(context.characters[0].itemEffects).toEqual({ effects: [], setTheme: null, setSkillBonus: 0 });
+  });
+
   it('treats a player with nothing equipped as bare-handed (the old weapon_id column is ignored)', async () => {
     const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, players: [premRow] });
     const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
@@ -487,7 +586,7 @@ describe('createSupabaseRoundRepository inventory', () => {
       actionRows: [{ action_text: 'ดื่มยา', use_item_id: 'potion_minor', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
     });
     const context = await createSupabaseRoundRepository(client).getRoundContext('r1');
-    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor', useAbility: false, abilityTargetId: null }]);
+    expect(context.actions).toEqual([{ playerDisplayName: 'Prem', actionText: 'ดื่มยา', playerId: 'p1', useItemId: 'potion_minor', itemTarget: null, useAbility: false, abilityTargetId: null }]);
   });
 });
 
@@ -589,5 +688,78 @@ describe('createSupabaseRoundRepository economy', () => {
       { table: 'campaigns', payload: { current_shop: { name: 'Mara', itemIds: ['staff'] } }, id: 'c1' },
       { table: 'campaigns', payload: { current_shop: null }, id: 'c1' },
     ]);
+  });
+});
+
+describe('createSupabaseRoundRepository encounter', () => {
+  const wolf = { name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false };
+
+  it('reads a valid stored encounter into the round context', async () => {
+    const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, currentEncounter: { enemies: [wolf] } });
+    expect((await createSupabaseRoundRepository(client).getRoundContext('r1')).currentEncounter).toEqual({ enemies: [wolf] });
+  });
+
+  it('has no encounter when none is stored or the value is invalid', async () => {
+    const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null });
+    expect((await createSupabaseRoundRepository(client).getRoundContext('r1')).currentEncounter).toBeNull();
+    const bad = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, currentEncounter: { enemies: 'x' } });
+    expect((await createSupabaseRoundRepository(bad.client).getRoundContext('r1')).currentEncounter).toBeNull();
+  });
+
+  it('sets and clears the encounter on the campaign', async () => {
+    const updates: unknown[] = [];
+    const client: any = { from: (table: string) => ({ update: (payload: unknown) => ({ eq: (_c: string, id: string) => { updates.push({ table, payload, id }); return Promise.resolve({ error: null }); } }) }) };
+    const repository = createSupabaseRoundRepository(client);
+    await repository.setEncounter('c1', { enemies: [wolf] } as any);
+    await repository.setEncounter('c1', null);
+    expect(updates).toEqual([
+      { table: 'campaigns', payload: { current_encounter: { enemies: [wolf] } }, id: 'c1' },
+      { table: 'campaigns', payload: { current_encounter: null }, id: 'c1' },
+    ]);
+  });
+
+  it('saveFacts writes to campaign_facts and swallows errors from a missing table', async () => {
+    const writes: { table: string; payload: unknown; options?: unknown }[] = [];
+    const client: any = {
+      from: (table: string) => ({
+        select: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }),
+        upsert: (payload: unknown, options: unknown) => { writes.push({ table, payload, options }); return Promise.resolve({ error: null }); },
+        insert: (payload: unknown) => { writes.push({ table, payload }); return Promise.resolve({ error: null }); },
+      }),
+    };
+    await createSupabaseRoundRepository(client).saveFacts('c1', [
+      { kind: 'npc', key: 'Elara', value: 'friendly' },
+      { kind: 'clue', key: null, value: 'blood' },
+    ]);
+    expect(writes.map((w) => w.table)).toEqual(['campaign_facts', 'campaign_facts']);
+    expect(writes[0].options).toEqual({ onConflict: 'campaign_id,kind,key' });
+
+    const broken: any = { from: () => ({ select: () => ({ eq: () => Promise.resolve({ data: null, error: { code: '42P01' } }) }) }) };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(createSupabaseRoundRepository(broken).saveFacts('c1', [{ kind: 'clue', key: null, value: 'x' }])).resolves.toBeUndefined();
+    spy.mockRestore();
+  });
+
+  it('getRoundContext loads campaign facts, and falls back to none when the table is unreadable', async () => {
+    const base = { roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null };
+    const row = { id: 'f1', campaign_id: 'c1', kind: 'npc', key: 'Elara', value: 'friendly', updated_at: 't' };
+    const withFacts = createFakeSupabase({ ...base, factRows: [row] });
+    const context = await createSupabaseRoundRepository(withFacts.client).getRoundContext('r1');
+    expect(context.facts).toEqual([{ id: 'f1', campaignId: 'c1', kind: 'npc', key: 'Elara', value: 'friendly', updatedAt: 't' }]);
+
+    const broken = createFakeSupabase({ ...base, factsError: true });
+    expect((await createSupabaseRoundRepository(broken.client).getRoundContext('r1')).facts).toEqual([]);
+  });
+});
+
+describe('scroll target (F5e)', () => {
+  it('reads the enemy a scroll is aimed at into the action', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'ใช้ม้วน', use_item_id: 'scroll_spark', item_target: 'หมาป่า', use_ability: false, ability_target_id: null, player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.actions[0]).toMatchObject({ playerId: 'p1', useItemId: 'scroll_spark', itemTarget: 'หมาป่า' });
   });
 });

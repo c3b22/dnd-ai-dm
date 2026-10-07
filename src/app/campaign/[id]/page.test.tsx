@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, cleanup } from '@testing-library/react';
 
-const { getAdventureById, campaignRow, supabaseBrowserClient } = vi.hoisted(() => {
+const { getAdventureById, campaignRow, supabaseBrowserClient, fetchEncounter, subscribeToEncounter, unsubscribeEncounter } = vi.hoisted(() => {
   const campaignRow: { current: Record<string, unknown> } = { current: {} };
   const supabaseBrowserClient = {
     from: () => ({
@@ -10,7 +10,15 @@ const { getAdventureById, campaignRow, supabaseBrowserClient } = vi.hoisted(() =
       }),
     }),
   };
-  return { getAdventureById: vi.fn(), campaignRow, supabaseBrowserClient };
+  const unsubscribeEncounter = vi.fn();
+  return {
+    getAdventureById: vi.fn(),
+    campaignRow,
+    supabaseBrowserClient,
+    fetchEncounter: vi.fn((_id: string) => Promise.resolve(null as unknown)),
+    subscribeToEncounter: vi.fn((_id: string, _cb: (e: unknown) => void) => unsubscribeEncounter),
+    unsubscribeEncounter,
+  };
 });
 
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams('playerId=p1') }));
@@ -46,6 +54,16 @@ vi.mock('@/lib/supabase/roundActionsRealtime', () => ({
   subscribeToCurrentShop: () => () => {},
   subscribeToCampaignStarted: () => () => {},
 }));
+vi.mock('@/lib/supabase/encounter', () => ({ fetchEncounter, subscribeToEncounter }));
+const { fetchCampaignFacts, subscribeToFacts, unsubscribeFacts } = vi.hoisted(() => {
+  const unsubscribeFacts = vi.fn();
+  return {
+    fetchCampaignFacts: vi.fn(() => Promise.resolve([] as unknown[])),
+    subscribeToFacts: vi.fn(() => unsubscribeFacts),
+    unsubscribeFacts,
+  };
+});
+vi.mock('@/lib/supabase/factsRealtime', () => ({ fetchCampaignFacts, subscribeToFacts }));
 vi.mock('@/lib/supabase/startCampaign', () => ({ startCampaignForClient: vi.fn() }));
 vi.mock('@/lib/round/triggerRoundProcessing', () => ({ triggerRoundProcessing: vi.fn() }));
 
@@ -108,5 +126,68 @@ describe('CampaignPage — adventure title', () => {
     getAdventureById.mockRejectedValue(new Error('network'));
     await renderPage();
     expect((await screen.findByTestId('lobby-title')).textContent).toBe('');
+  });
+});
+
+describe('CampaignPage — encounter sync', () => {
+  beforeEach(() => {
+    fetchEncounter.mockReset();
+    fetchEncounter.mockResolvedValue(null);
+    subscribeToEncounter.mockClear();
+    unsubscribeEncounter.mockClear();
+  });
+
+  it('loads the encounter and subscribes to realtime updates for the campaign', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: null, adventure_id: null, current_scene_id: null };
+    await renderPage();
+    expect(fetchEncounter).toHaveBeenCalledWith('c1');
+    expect(subscribeToEncounter).toHaveBeenCalledWith('c1', expect.any(Function));
+  });
+
+  it('shows the enemy panel while an encounter is active and hides it when it ends', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: null, current_scene_id: null };
+    fetchEncounter.mockResolvedValue({ enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] });
+    await renderPage();
+    expect(await screen.findByLabelText('หมาป่า เหลือ 1 จาก 2')).toBeTruthy();
+    const onChange = subscribeToEncounter.mock.calls[0][1] as (e: unknown) => void;
+    await act(async () => onChange(null));
+    expect(screen.queryByLabelText('ศัตรู')).toBeNull();
+  });
+
+  it('unsubscribes when the page unmounts', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: null, adventure_id: null, current_scene_id: null };
+    await renderPage();
+    cleanup();
+    expect(unsubscribeEncounter).toHaveBeenCalled();
+  });
+});
+
+describe('CampaignPage — quest log', () => {
+  const started = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: null, current_scene_id: null };
+
+  beforeEach(() => {
+    fetchCampaignFacts.mockReset();
+    fetchCampaignFacts.mockResolvedValue([]);
+    subscribeToFacts.mockClear();
+    unsubscribeFacts.mockClear();
+  });
+
+  it('loads facts, subscribes, and shows them in the notebook', async () => {
+    campaignRow.current = started;
+    fetchCampaignFacts.mockResolvedValue([
+      { id: 'f1', campaignId: 'c1', kind: 'npc', key: 'เกรตา', value: 'เป็นมิตร', updatedAt: '2026-10-06T00:00:00Z' },
+    ]);
+    await renderPage();
+    expect(fetchCampaignFacts).toHaveBeenCalledWith('c1');
+    expect(subscribeToFacts).toHaveBeenCalledWith('c1', expect.any(Function));
+    expect((await screen.findByLabelText('NPC ที่พบ')).textContent).toContain('เกรตา');
+  });
+
+  it('shows the empty state and unsubscribes on unmount', async () => {
+    campaignRow.current = started;
+    await renderPage();
+    expect(await screen.findByText(/ยังไม่มีบันทึก/)).toBeTruthy();
+    cleanup();
+    expect(unsubscribeFacts).toHaveBeenCalled();
   });
 });

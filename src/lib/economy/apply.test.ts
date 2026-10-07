@@ -67,3 +67,21 @@ describe('applyEconomyTags shop', () => {
     expect(applyEconomyTags(party, [open('A'), { kind: 'shop_close' }], ones).shop).toEqual({ action: 'close' });
   });
 });
+
+describe('applyEconomyTags lucky_purse', () => {
+  const purse = (luckyPurse?: number) => ({ effects: ['lucky_purse' as const], setTheme: null, setSkillBonus: 0, luckyPurse });
+  it('adds +2 by default to gold-tag rewards only', () => {
+    const chars = [{ id: 'p1', displayName: 'Prem', gold: 20, itemEffects: purse() }];
+    const r = applyEconomyTags(chars, [{ kind: 'gold', name: 'Prem', tier: 'small' }, { kind: 'pay', name: 'Prem', tier: 'small' }], ones);
+    expect(r.goldDeltas).toEqual({ p1: 2 }); // +4+2 then -4
+    expect(r.changes[0]).toBe('Prem ได้รับ 6 ทอง');
+  });
+  it('uses the per-item value and leaves non-wearers unchanged', () => {
+    const chars = [
+      { id: 'p1', displayName: 'Prem', gold: 0, itemEffects: purse(4) },
+      { id: 'p2', displayName: 'Suki', gold: 0 },
+    ];
+    const r = applyEconomyTags(chars, [{ kind: 'gold', name: 'Prem', tier: 'small' }, { kind: 'gold', name: 'Suki', tier: 'small' }], ones);
+    expect(r.goldDeltas).toEqual({ p1: 8, p2: 4 });
+  });
+});

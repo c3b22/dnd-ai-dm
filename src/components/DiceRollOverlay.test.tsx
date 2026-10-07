@@ -124,3 +124,25 @@ describe('DiceRollOverlay', () => {
     vi.useRealTimers();
   });
 });
+
+describe('DiceRollOverlay checks', () => {
+  it('shows skill, DC, formula and pass/fail once the dice land', async () => {
+    initMock.mockResolvedValue(undefined);
+    let box: { onRollComplete?: () => void } = {};
+    DiceBoxMock.mockImplementation(() => (box = { init: initMock, roll: vi.fn() } as never));
+
+    render(
+      <DiceRollOverlay
+        values={[12]}
+        checks={[{ playerDisplayName: 'Prem', skill: 'stealth', dc: 16, die: 12, modifier: 3, proficiency: 2, total: 17, success: true }]}
+        onComplete={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(box.onRollComplete).toBeDefined());
+    act(() => box.onRollComplete!());
+
+    expect(await screen.findByText(/ซุ่มเงียบ DC 16/)).toBeTruthy();
+    expect(screen.getByText(/12 \+ 3 \+ 2 = 17/)).toBeTruthy();
+    expect(screen.getByText(/ผ่าน/)).toBeTruthy();
+  });
+});

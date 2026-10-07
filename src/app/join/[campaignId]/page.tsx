@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import { supabaseBrowserClient } from '@/lib/supabase/client';
 import { ensureAnonymousUser } from '@/lib/supabase/ensureAnonymousUser';
 import { ClassPicker } from '@/components/ClassPicker';
+import { CharacterIdentityFields } from '@/components/CharacterIdentityFields';
 import { DEFAULT_CLASS_ID } from '@/lib/character/classes';
 
 export default function JoinPage({ params }: { params: Promise<{ campaignId: string }> }) {
   const { campaignId } = use(params);
   const [displayName, setDisplayName] = useState('');
   const [classId, setClassId] = useState<string>(DEFAULT_CLASS_ID);
+  const [identity, setIdentity] = useState({ backstory: '', personality: '', goal: '' });
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -28,7 +30,7 @@ export default function JoinPage({ params }: { params: Promise<{ campaignId: str
       const response = await fetch(`/api/campaigns/${campaignId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, displayName, classId }),
+        body: JSON.stringify({ userId: user.id, displayName, classId, ...identity }),
       });
       if (!response.ok) {
         setError('เข้าร่วมแคมเปญไม่สำเร็จ ลองอีกครั้ง');
@@ -65,6 +67,7 @@ export default function JoinPage({ params }: { params: Promise<{ campaignId: str
           />
         </div>
         <ClassPicker value={classId} onChange={setClassId} />
+        <CharacterIdentityFields value={identity} onChange={setIdentity} idPrefix="join-identity" />
         <button className="btn" type="submit" disabled={!displayName.trim() || joining}>
           {joining ? 'กำลังเข้าร่วม…' : 'เข้าร่วมแคมเปญ'}
         </button>

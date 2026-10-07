@@ -18,6 +18,7 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
       inventories: {},
       pendingWipe: false,
       currentShop: null,
+      facts: [],
       tagsApplied: false,
       adventure: null,
       allowedSceneIds: allowedScenes(undefined).map((s) => s.id),
@@ -30,6 +31,9 @@ function createFakeRepository(overrides: Partial<RoundRepository> = {}): RoundRe
     saveInventories: vi.fn().mockResolvedValue(undefined),
     applyGold: vi.fn().mockResolvedValue(undefined),
     setShop: vi.fn().mockResolvedValue(undefined),
+    setEncounter: vi.fn().mockResolvedValue(undefined),
+    saveFacts: vi.fn().mockResolvedValue(undefined),
+    saveMagicGiven: vi.fn().mockResolvedValue(undefined),
     insertStatsSummary: vi.fn().mockResolvedValue(undefined),
     insertDmMessagePlaceholder: vi.fn().mockResolvedValue('msg-1'),
     appendToMessage: vi.fn().mockResolvedValue(undefined),
@@ -719,5 +723,323 @@ describe('processRound abilities', () => {
     const repository = repoWith([archer], [useAbility()]);
     await processRound(deps(repository, ['Hit.']), 'round-1');
     expect((repository.insertStatsSummary as any).mock.calls[0][2]).toContain('Prem ใช้ยิงแม่นยำ');
+  });
+});
+
+describe('processRound encounter', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const one = (over: object = {}) => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('shows the current enemies in the prompt', async () => {
+    const repository = one({ currentEncounter: { enemies: [wolf] } });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(generateNarration.mock.calls[0][0]).toContain('- หมาป่า (normal): 2/2 pips');
+  });
+
+  it('starts an encounter from an enemy tag and strips the tag', async () => {
+    const repository = one();
+    await run(repository, ['หมาป่าโผล่มา', '[[enemy: หมาป่า | normal]]'].join('\n'));
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [wolf] });
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'หมาป่าโผล่มา');
+  });
+
+  it('updates the stored encounter on a hurt tag and ends it when the last enemy falls', async () => {
+    const hurt = one({ currentEncounter: { enemies: [wolf] } });
+    await run(hurt, '[[enemy_hurt: หมาป่า | light]]');
+    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+
+    const dead = one({ currentEncounter: { enemies: [wolf] } });
+    await run(dead, '[[enemy_hurt: หมาป่า | heavy]]');
+    expect(dead.setEncounter).toHaveBeenCalledWith('camp-1', null);
+  });
+
+  it('does not write when nothing changed', async () => {
+    const quiet = one({ currentEncounter: { enemies: [wolf] } });
+    await run(quiet, 'เงียบสงบ');
+    expect(quiet.setEncounter).not.toHaveBeenCalled();
+    const none = one();
+    await run(none, 'เงียบสงบ');
+    expect(none.setEncounter).not.toHaveBeenCalled();
+  });
+
+  it('ends the fight when the scene changes, but not when the same scene repeats', async () => {
+    const moved = one({ currentEncounter: { enemies: [wolf] }, currentSceneId: 'crypt' });
+    await run(moved, ['หนีออกมา', '[[scene: tavern-interior]]'].join('\n'));
+    expect(moved.setEncounter).toHaveBeenCalledWith('camp-1', null);
+
+    const same = one({ currentEncounter: { enemies: [wolf] }, currentSceneId: 'tavern-interior' });
+    await run(same, ['ยังสู้อยู่', '[[scene: tavern-interior]]'].join('\n'));
+    expect(same.setEncounter).not.toHaveBeenCalled();
+  });
+
+  it('gives no automatic xp or gold when enemies fall', async () => {
+    const repository = one({ currentEncounter: { enemies: [wolf] } });
+    await run(repository, '[[enemy_hurt: หมาป่า | heavy]]');
+    expect(repository.applyGold).not.toHaveBeenCalled();
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', []);
+    const saved = vi.mocked(repository.saveCharacterState).mock.calls[0][1];
+    expect(saved[0].xp).toBe(0);
+  });
+
+  it('still closes the round when saving the encounter fails', async () => {
+    const repository = one();
+    vi.mocked(repository.setEncounter).mockRejectedValue(new Error('no column'));
+    const result = await run(repository, '[[enemy: หมาป่า | normal]]');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
+});
+
+const NL = String.fromCharCode(10);
+describe('processRound magic items (F5f)', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const one = (magicGiven?: string[] | null) => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, magicGiven, actions: [{ playerDisplayName: 'Prem', actionText: 'open chest', playerId: 'p1', useItemId: null }] })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('hands out a server-picked item, saves it, records it as given and reports its name in the system message', async () => {
+    const repository = one([]);
+    await run(repository, 'Chest!'+NL+'[[magic: Prem | rare | scroll]]');
+    const saved = vi.mocked(repository.saveInventories).mock.calls[0][1][0];
+    const itemId = saved.items[0].itemId;
+    expect(repository.saveMagicGiven).toHaveBeenCalledWith('camp-1', [itemId]);
+    const changes = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(changes[0]).toMatch(/^Prem ได้รับไอเท็มวิเศษ .+ \(หายาก\)$/);
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'Chest!');
+  });
+
+  it('ignores [[magic]] when the given-table is unavailable (null or absent)', async () => {
+    for (const given of [null, undefined]) {
+      const repository = one(given);
+      await run(repository, '[[magic: Prem | rare]]');
+      expect(repository.saveMagicGiven).not.toHaveBeenCalled();
+      expect(repository.saveInventories).not.toHaveBeenCalled();
+    }
+  });
+
+  it('still closes the round when recording the given item fails', async () => {
+    const repository = one([]);
+    vi.mocked(repository.saveMagicGiven!).mockRejectedValue(new Error('no table'));
+    const result = await run(repository, '[[magic: Prem | uncommon]]');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
+});
+
+describe('processRound world memory', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const one = () => createFakeRepository({
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'talk', playerId: 'p1', useItemId: null }] })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('saves npc, quest and clue tags and strips them from the message', async () => {
+    const repository = one();
+    await run(repository, ['Elara smiles', '[[npc: Elara | friendly]]', '[[quest: Find ring | open]]', '[[clue: Blood on the door]]'].join('\n'));
+    expect(repository.saveFacts).toHaveBeenCalledWith('camp-1', [
+      { kind: 'npc', key: 'Elara', value: 'friendly' },
+      { kind: 'quest', key: 'Find ring', value: 'open' },
+      { kind: 'clue', key: null, value: 'Blood on the door' },
+    ]);
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'Elara smiles');
+  });
+
+  it('does not write when there are no memory tags', async () => {
+    const repository = one();
+    await run(repository, 'quiet');
+    expect(repository.saveFacts).not.toHaveBeenCalled();
+  });
+
+  it('still closes the round and posts stats when saving facts fails', async () => {
+    const repository = one();
+    vi.mocked(repository.saveFacts).mockRejectedValue(new Error('no table'));
+    const result = await run(repository, '[[clue: something]]');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+    expect(repository.insertStatsSummary).toHaveBeenCalled();
+  });
+});
+
+describe('processRound memory prompt', () => {
+  it('puts known facts into the narration prompt', async () => {
+    const facts = [
+      { id: 'f1', campaignId: 'camp-1', kind: 'npc' as const, key: 'Elara', value: 'friendly', updatedAt: 't' },
+      { id: 'f2', campaignId: 'camp-1', kind: 'clue' as const, key: null, value: 'Blood on the door', updatedAt: 't' },
+    ];
+    const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(contextWith({ facts })) });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    const prompt = generateNarration.mock.calls[0][0] as string;
+    expect(prompt).toContain('- Elara: friendly');
+    expect(prompt).toContain('- Blood on the door');
+  });
+});
+
+describe('processRound skill checks (two-call dice flow)', () => {
+  const prem = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const repo = () =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'ย่องผ่านทหารยาม' }],
+        characters: [prem],
+      }),
+    });
+  const streams = (...texts: string[]) => {
+    const fn = vi.fn();
+    texts.forEach((t) => fn.mockResolvedValueOnce(fakeStream([t])));
+    return fn;
+  };
+  const deps = (repository: RoundRepository, generateNarration: ReturnType<typeof vi.fn>, rolls: number[] = [14]): ProcessRoundDeps => {
+    const queue = [...rolls];
+    return { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration, rollDie: () => queue.shift() ?? 10, rollSides: () => 4 };
+  };
+
+  it('no check: one call, the narration inside the JSON is used and tags still apply', async () => {
+    const repository = repo();
+    const generate = streams(JSON.stringify({ narration: 'ล้มลง [[hurt: Prem | light]]' }));
+    await processRound(deps(repository, generate), 'round-1');
+    expect(generate).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(repository.appendToMessage).mock.calls[0][1];
+    expect(saved).toContain('ล้มลง');
+    expect(saved).not.toContain('[[hurt');
+    expect(repository.saveCharacterState).toHaveBeenCalled();
+    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 14 }]);
+  });
+
+  it('with a check: rolls on the server, calls the DM twice, tells the DM the result and posts it', async () => {
+    const repository = repo();
+    const generate = streams(
+      '{"checks":[{"player":"Prem","skill":"stealth","dc":16,"advantage":"none"}]}',
+      'ย่องผ่านสำเร็จ'
+    );
+    await processRound(deps(repository, generate, [14, 12]), 'round-1');
+    expect(generate).toHaveBeenCalledTimes(2);
+    const second = generate.mock.calls[1][0] as string;
+    expect(second).toContain('stealth check DC 16');
+    expect(second).toContain('d20 12 + 5 = 17');
+    expect(second).toContain('SUCCESS');
+    expect(second).not.toContain('FORMAT OF YOUR ANSWER');
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'ย่องผ่านสำเร็จ');
+    const posted = vi.mocked(repository.insertRollSummary).mock.calls[0][2];
+    expect(posted[0]).toMatchObject({ playerDisplayName: 'Prem', roll: 12, check: { skill: 'stealth', dc: 16, total: 17, success: true, modifier: 3, proficiency: 2 } });
+  });
+
+  it('rolls two dice for advantage', async () => {
+    const generate = streams('{"checks":[{"player":"Prem","skill":"stealth","dc":20,"advantage":"advantage"}]}', 'ok');
+    await processRound(deps(repo(), generate, [14, 3, 17]), 'round-1');
+    expect(generate.mock.calls[1][0]).toContain('rolled 3 and 17');
+    expect(generate.mock.calls[1][0]).toContain('d20 17 + 5 = 22');
+  });
+
+  it('broken JSON: falls back to a plain narration call without checks, tags still work', async () => {
+    const repository = repo();
+    const generate = streams('{"checks":[{"player":', 'เล่าปกติ [[hurt: Prem | light]]');
+    await processRound(deps(repository, generate), 'round-1');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0]).not.toContain('FORMAT OF YOUR ANSWER');
+    expect(generate.mock.calls[1][0]).not.toContain('check DC');
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เล่าปกติ');
+    expect(repository.saveCharacterState).toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+  });
+
+  it('asks for the JSON format only when dice are on and the table has characters', async () => {
+    const generate = streams('{"narration":"x"}');
+    await processRound(deps(repo(), generate), 'round-1');
+    expect(generate.mock.calls[0][0]).toContain('FORMAT OF YOUR ANSWER');
+    expect(generate.mock.calls[0][0]).toContain('ONLY for actions whose result is truly uncertain');
+  });
+});
+
+describe('processRound C8 attacks on enemies and from enemies', () => {
+  const prem = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 }, armorReduction: 1,
+  };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const repo = () =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'แทงหมาป่า' }],
+        characters: [prem], currentEncounter: { enemies: [wolf] },
+      }),
+    });
+  const go = async (repository: RoundRepository, rolls: number[], ...texts: string[]) => {
+    const generate = vi.fn();
+    texts.forEach((t) => generate.mockResolvedValueOnce(fakeStream([t])));
+    const queue = [...rolls];
+    await processRound({ claimRound: claim(), repository, generateNarration: generate, rollDie: () => queue.shift() ?? 10, rollSides: () => 4 }, 'round-1');
+    return generate;
+  };
+  const attackPlan = '{"attacks":[{"player":"Prem","target":"หมาป่า","advantage":"none"}]}';
+
+  it('a hit (d20 9 vs 9, dagger 4 of max 4 = heavy) removes 2 pips and ends the fight; the DM is told', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 9], attackPlan, 'หมาป่าล้มลง');
+    const second = generate.mock.calls[1][0] as string;
+    expect(second).toContain('attack on หมาป่า: d20 9 vs 9 -> HEAVY HIT');
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', null);
+    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 9 }]);
+  });
+
+  it('a miss (d20 8 vs 9) leaves the enemy untouched and the encounter is not rewritten', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 8], attackPlan, 'พลาด');
+    expect(generate.mock.calls[1][0]).toContain('MISS');
+    expect(repository.setEncounter).not.toHaveBeenCalled();
+  });
+
+  it('an enemy_attack tag hurts the player by the tier damage minus armor (4 - 1 = 3)', async () => {
+    const repository = repo();
+    await go(repository, [5, 8], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 17 })], false);
+  });
+});
+
+describe('processRound scrolls (F5e)', () => {
+  const scrollItem = { itemId: 'scroll_flame', customName: '', quantity: 1, slot: null, equipped: false };
+  const wolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 3, maxPip: 3, fled: false };
+  const scrollContext = (over: object = {}) =>
+    contextWith({
+      inventories: { p1: [scrollItem] },
+      currentEncounter: { enemies: [wolf] },
+      actions: [{ playerDisplayName: 'Prem', actionText: 'อ่านม้วน', playerId: 'p1', useItemId: 'scroll_flame', itemTarget: 'หมาป่า' }],
+      ...over,
+    });
+
+  it('cuts pips off the target before narration, consumes the scroll and saves the encounter', async () => {
+    const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(scrollContext()) });
+    const generateNarration = vi.fn().mockResolvedValue(fakeStream(['เล่าเรื่อง']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollDie: () => 7, rollSides: () => 4 }, 'round-1');
+
+    const prompt = generateNarration.mock.calls[0][0] as string;
+    expect(prompt).toContain('read ม้วนคัมภีร์เปลวไฟ at หมาป่า');
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [], baseItems: [scrollItem] }]);
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
+  });
+
+  it('keeps the scroll when there is no fight or the target is wrong', async () => {
+    for (const over of [{ currentEncounter: null }, { actions: [{ playerDisplayName: 'Prem', actionText: 'x', playerId: 'p1', useItemId: 'scroll_flame', itemTarget: 'มังกร' }] }]) {
+      const repository = createFakeRepository({ getRoundContext: vi.fn().mockResolvedValue(scrollContext(over)) });
+      await processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['ok'])), rollDie: () => 7, rollSides: () => 4 }, 'round-1');
+      expect(repository.saveInventories).not.toHaveBeenCalled();
+      expect(repository.setEncounter).not.toHaveBeenCalled();
+    }
   });
 });

@@ -4,12 +4,18 @@ import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
 import type { Character } from '@/lib/character/types';
 import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
-import { equippedWeaponId, armorReduction } from '@/lib/inventory/rules';
+import { equippedWeaponId, armorReduction, equippedSkillBonuses, equippedItemEffects } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
+import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
+import { persistFacts, loadFacts, type FactInput } from '@/lib/memory/facts';
+import { loadMagicGiven, persistMagicGiven } from '@/lib/inventory/magicGiven';
+import type { CampaignFact } from '@/lib/memory/types';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
+import { normalizeAbilities } from '@/lib/character/constants';
+import { STORY_MESSAGE_ROLES } from '@/lib/messages/roles';
 import type { Adventure } from '@/lib/adventures/adventures';
 import { getAdventureById } from '@/lib/adventures/adventures';
 import { allowedSceneIdsAsync, sceneInstructionAsync } from '@/lib/scenes/scenes';
@@ -29,8 +35,31 @@ export interface RoundContext {
   inventories: Inventories;
   pendingWipe: boolean;
   currentShop: ShopState | null;
+  /** The fight in progress, or null. Null as well when the column does not exist yet. */
+  currentEncounter: Encounter | null;
+  /** World memory (npc/quest/clue); [] when the table is missing or unreadable. */
+  facts: CampaignFact[];
   /** True once an earlier attempt at this round already applied its HP/inventory/gold tags. */
   tagsApplied: boolean;
+  /** Magic item ids this room already received (F5f); null/absent when the table is missing. */
+  magicGiven?: string[] | null;
+}
+
+/** One line of the posted roll summary; `check` is present when the roll was a skill check. */
+export interface RollSummaryEntry {
+  playerDisplayName: string;
+  roll: number;
+  check?: {
+    skill: string;
+    dc: number;
+    advantage: 'none' | 'advantage' | 'disadvantage';
+    dice: number[];
+    modifier: number;
+    proficiency: number;
+    total: number;
+    success: boolean;
+    critical: 'success' | 'failure' | null;
+  };
 }
 
 export interface RoundRepository {
@@ -49,7 +78,7 @@ export interface RoundRepository {
   insertRollSummary(
     campaignId: string,
     roundId: string,
-    rolls: { playerDisplayName: string; roll: number }[]
+    rolls: RollSummaryEntry[]
   ): Promise<void>;
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
   saveInventories(
@@ -58,6 +87,11 @@ export interface RoundRepository {
   ): Promise<void>;
   applyGold(changes: { playerId: string; delta: number }[]): Promise<void>;
   setShop(campaignId: string, shop: ShopState | null): Promise<void>;
+  setEncounter(campaignId: string, encounter: Encounter | null): Promise<void>;
+  /** Best-effort world-memory write (npc/quest/clue); never throws, tolerates a missing table. */
+  saveFacts(campaignId: string, facts: FactInput[]): Promise<void>;
+  /** Records magic items handed out this round (F5f). Optional so older fakes keep working. */
+  saveMagicGiven?(campaignId: string, itemIds: string[]): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -109,6 +143,15 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .select('id, display_name, weapon_id, hp, max_hp, status, revives_since_sanctuary, gold, xp, class_id, ability_cooldown')
         .eq('campaign_id', campaignId);
 
+      // Ability scores in their own query: players.abilities may not exist yet, and that must not
+      // hide the characters above. Unreadable means every score defaults to 10.
+      const { data: abilityRows } = await supabase.from('players').select('id, abilities').eq('campaign_id', campaignId);
+      const abilitiesById = new Map<string, unknown>((abilityRows ?? []).map((row: any) => [row.id as string, row.abilities]));
+
+      // Identity text in its own query for the same reason: unreadable means no identity, not no characters.
+      const { data: identityRows } = await supabase.from('players').select('id, backstory, personality, goal').eq('campaign_id', campaignId);
+      const identityById = new Map<string, any>((identityRows ?? []).map((row: any) => [row.id as string, row]));
+
       // Must not be tolerated like the columns above: an unreadable inventory read as "empty"
       // would let a later give/take save delete the player's real items.
       const { data: inventoryRows, error: inventoryError } = await supabase
@@ -124,11 +167,25 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .eq('id', campaignId)
         .maybeSingle();
 
+      // Separate query: a database without the encounter column just plays without combat tracking.
+      const { data: encounterRow } = await supabase
+        .from('campaigns')
+        .select('current_encounter')
+        .eq('id', campaignId)
+        .maybeSingle();
+
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
         .select('action_text, use_item_id, use_ability, ability_target_id, player_id, players(display_name, turn_order, created_at)')
         .eq('round_id', roundId);
       if (actionsError) throw actionsError;
+
+      // Scroll targets (F5e) in their own query: round_actions.item_target may not exist yet, and that
+      // must not hide the actions above. Unreadable means scrolls simply have no target (not used).
+      const { data: targetRows } = await supabase.from('round_actions').select('player_id, item_target').eq('round_id', roundId);
+      const itemTargetByPlayer = new Map<string, string>(
+        (targetRows ?? []).filter((r: any) => r.item_target).map((r: any) => [r.player_id as string, r.item_target as string])
+      );
 
       const { data: summaryRow } = await supabase
         .from('campaign_summary')
@@ -149,7 +206,9 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       let messagesQuery = supabase
         .from('messages')
         .select('role, content')
-        .eq('campaign_id', campaignId);
+        .eq('campaign_id', campaignId)
+        // Filter before the limit so ooc/ask rows never fill or reach the AI history window.
+        .in('role', [...STORY_MESSAGE_ROLES]);
       if (sinceTimestamp) {
         messagesQuery = messagesQuery.gt('created_at', sinceTimestamp);
       }
@@ -173,6 +232,8 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           displayName: row.display_name as string,
           weaponId: equippedWeaponId(inventories[row.id] ?? []),
           armorReduction: armorReduction(inventories[row.id] ?? []),
+          skillBonuses: equippedSkillBonuses(inventories[row.id] ?? []),
+          itemEffects: equippedItemEffects(inventories[row.id] ?? []),
           hp: row.hp as number,
           maxHp: effectiveMaxHp(row.max_hp as number, Number(row.xp ?? 0)),
           status: row.status as 'active' | 'downed',
@@ -181,10 +242,17 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           xp: Number(row.xp ?? 0),
           classId: (row.class_id ?? null) as string | null,
           abilityCooldown: Number(row.ability_cooldown ?? 0),
+          abilities: normalizeAbilities(abilitiesById.get(row.id as string)),
+          backstory: (identityById.get(row.id as string)?.backstory ?? null) as string | null,
+          personality: (identityById.get(row.id as string)?.personality ?? null) as string | null,
+          goal: (identityById.get(row.id as string)?.goal ?? null) as string | null,
         })),
         inventories,
         pendingWipe: Boolean(wipeRow?.pending_wipe),
         currentShop: normalizeShop(wipeRow?.current_shop),
+        currentEncounter: normalizeEncounter(encounterRow?.current_encounter),
+        facts: await loadFacts(supabase, campaignId),
+        magicGiven: await loadMagicGiven(supabase, campaignId),
         tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
@@ -193,12 +261,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
             actionText: row.action_text as string,
             playerId: row.player_id as string,
             useItemId: (row.use_item_id ?? null) as string | null,
+            itemTarget: itemTargetByPlayer.get(row.player_id as string) ?? null,
             useAbility: Boolean(row.use_ability),
             abilityTargetId: (row.ability_target_id ?? null) as string | null,
             turnOrder: (row.players?.turn_order ?? null) as number | null,
             joinedAt: (row.players?.created_at ?? '') as string,
           }))
-        ).map(({ playerDisplayName, actionText, playerId, useItemId, useAbility, abilityTargetId }) => ({ playerDisplayName, actionText, playerId, useItemId, useAbility, abilityTargetId })),
+        ).map(({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId }) => ({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId })),
       };
     },
 
@@ -298,6 +367,19 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     async setShop(campaignId, shop) {
       const { error } = await supabase.from('campaigns').update({ current_shop: shop }).eq('id', campaignId);
       if (error) throw error;
+    },
+
+    async setEncounter(campaignId, encounter) {
+      const { error } = await supabase.from('campaigns').update({ current_encounter: encounter }).eq('id', campaignId);
+      if (error) throw error;
+    },
+
+    async saveFacts(campaignId, facts) {
+      await persistFacts(supabase, campaignId, facts);
+    },
+
+    async saveMagicGiven(campaignId, itemIds) {
+      await persistMagicGiven(supabase, campaignId, itemIds);
     },
 
     async insertStatsSummary(campaignId, roundId, changes) {

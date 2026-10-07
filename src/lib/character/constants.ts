@@ -1,3 +1,5 @@
+import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
+
 export const BASE_MAX_HP = 20;
 /** max HP never drops below this, so nobody is stuck in a death spiral. */
 export const MIN_MAX_HP = 10;
@@ -22,14 +24,29 @@ export type Tier = keyof typeof TIERS;
 /** Heals only: 'full' restores straight to max HP with no roll, for a paid rest/treatment. */
 export type HealTier = Tier | 'full';
 
-export const WEAPONS = {
+const BASE_WEAPONS = {
   shortsword: { nameTh: 'ดาบสั้น', dice: { count: 1, sides: 8, bonus: 0 } },
   shortbow: { nameTh: 'ธนูสั้น', dice: { count: 1, sides: 6, bonus: 0 } },
   staff: { nameTh: 'ไม้เท้า', dice: { count: 1, sides: 4, bonus: 0 } },
   dagger: { nameTh: 'กริช', dice: { count: 1, sides: 4, bonus: 0 } },
   fists: { nameTh: 'มือเปล่า', dice: { count: 1, sides: 2, bonus: 0 } },
 } as const satisfies Record<string, { nameTh: string; dice: DiceSpec }>;
-export type WeaponId = keyof typeof WEAPONS;
+export type WeaponId = string;
+
+/** Magic weapons are generated from magicItems.ts: the base weapon's dice plus the item's damage bonus (F5c). */
+const MAGIC_WEAPONS: Record<string, { nameTh: string; dice: DiceSpec }> = Object.fromEntries(
+  MAGIC_ITEMS.flatMap((item) => {
+    if (item.mechanic.kind !== 'weapon') return [];
+    const base: { dice: DiceSpec } = BASE_WEAPONS[item.mechanic.weaponId];
+    const dice: DiceSpec = { ...base.dice, bonus: base.dice.bonus + item.mechanic.damageBonus };
+    return [[item.id, { nameTh: item.nameTh, dice }] as const];
+  })
+);
+
+export const WEAPONS: Readonly<Record<string, { nameTh: string; dice: DiceSpec }>> & typeof BASE_WEAPONS = {
+  ...MAGIC_WEAPONS,
+  ...BASE_WEAPONS,
+};
 
 function isWeaponId(id: unknown): id is WeaponId {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(WEAPONS, id);
@@ -53,3 +70,24 @@ export const XP_TIERS = { small: 10, medium: 25, large: 50 } as const;
 export type XpTier = keyof typeof XP_TIERS;
 /** What a [[milestone]] tag awards. */
 export const MILESTONE_XP = 100;
+
+export const ABILITY_KEYS = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'] as const;
+export type AbilityKey = (typeof ABILITY_KEYS)[number];
+export type AbilityScores = Record<AbilityKey, number>;
+export const DEFAULT_ABILITY_SCORE = 10;
+
+/** D&D modifier for an ability score: floor((score - 10) / 2). */
+export function abilityModifier(score: number): number {
+  return Math.floor((score - 10) / 2);
+}
+
+/** Tolerant reader for `players.abilities` (jsonb, column may be missing): anything unusable becomes 10. */
+export function normalizeAbilities(raw: unknown): AbilityScores {
+  const src = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const out = {} as AbilityScores;
+  for (const key of ABILITY_KEYS) {
+    const v = src[key];
+    out[key] = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : DEFAULT_ABILITY_SCORE;
+  }
+  return out;
+}

@@ -10,6 +10,7 @@ import { rollDice } from './dice';
 import { guardDivisor } from './abilities';
 import { levelForXp, levelHpBonus } from './leveling';
 import { findByDisplayName } from './names';
+import { takeWard } from '@/lib/inventory/effects';
 import type { CharacterTag } from './tags';
 import type { Character } from './types';
 
@@ -31,7 +32,9 @@ export function applyCharacterTags(
   tags: CharacterTag[],
   rollDie: (sides: number) => number,
   /** Protected ally id -> the warrior guarding them this round (see applyAbilityActions). */
-  guards: Record<string, string> = {}
+  guards: Record<string, string> = {},
+  /** F5j4 ward: ids of wearers whose ward is already spent this round; shared with applyEnemyAttacks. */
+  wardUsed: Set<string> = new Set()
 ): ApplyResult {
   const next = characters.map((c) => ({ ...c }));
   const changes: string[] = [];
@@ -58,7 +61,7 @@ export function applyCharacterTags(
       const guard = guards[target.id] ? next.find((c) => c.id === guards[target.id]) : undefined;
       if (guard && guard.status === 'active' && guard.id !== target.id) {
         // The warrior's armor applies, not the protected ally's.
-        const damage = Math.max(1, Math.ceil((rolled - (guard.armorReduction ?? 0)) / guardDivisor(levelForXp(guard.xp ?? 0))));
+        const damage = Math.max(1, Math.ceil((rolled - (guard.armorReduction ?? 0) - takeWard(guard, wardUsed)) / guardDivisor(levelForXp(guard.xp ?? 0))));
         guard.hp = Math.max(0, guard.hp - damage);
         changes.push(`${guard.displayName} รับดาเมจแทน ${target.displayName} −${damage} HP`);
         if (guard.hp === 0) {
@@ -66,7 +69,7 @@ export function applyCharacterTags(
           changes.push(`${guard.displayName} ล้มลง`);
         }
       } else {
-        const damage = Math.max(1, rolled - (target.armorReduction ?? 0));
+        const damage = Math.max(1, rolled - (target.armorReduction ?? 0) - takeWard(target, wardUsed));
         const absorbed = rolled - damage;
         target.hp = Math.max(0, target.hp - damage);
         changes.push(`${target.displayName} −${damage} HP${absorbed > 0 ? ` (เกราะกัน ${absorbed})` : ''}`);

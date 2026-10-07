@@ -1,6 +1,6 @@
-import { CATALOG } from '@/lib/inventory/catalog';
+import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
 
-export const PRICES = {
+const BASE_PRICES = {
   potion_minor: 10,
   potion_major: 25,
   staff: 20,
@@ -10,10 +10,17 @@ export const PRICES = {
   armor_light: 25,
   armor_medium: 50,
   armor_heavy: 90,
-} as const satisfies Record<keyof typeof CATALOG, number>;
+} as const;
+
+/** Every magic item that lands in CATALOG (weapon / armor / consumable / accessory / scroll) is priced from magicItems.ts (F5c). */
+const MAGIC_PRICES: Record<string, number> = Object.fromEntries(
+  MAGIC_ITEMS.filter((i) => ['weapon', 'armor', 'consumable', 'accessory', 'scroll'].includes(i.mechanic.kind)).map((i) => [i.id, i.price])
+);
+
+export const PRICES: Readonly<Record<string, number>> & typeof BASE_PRICES = { ...MAGIC_PRICES, ...BASE_PRICES };
 
 function base(itemId: string): number | null {
-  return Object.prototype.hasOwnProperty.call(PRICES, itemId) ? PRICES[itemId as keyof typeof PRICES] : null;
+  return Object.prototype.hasOwnProperty.call(PRICES, itemId) ? PRICES[itemId] : null;
 }
 
 export const buyPrice = (itemId: string): number | null => base(itemId);

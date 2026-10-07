@@ -1,8 +1,11 @@
 import type { DiceSpec } from '@/lib/character/constants';
+import type { SkillId } from '@/lib/character/classes';
 import {
-  CARRY_CAPACITY, MAX_STORY_TITLE, MAX_STORY_UNITS, STORY_ITEM_ID, catalogEntry, slotOf, type Slot,
+  CARRY_CAPACITY, MAX_STORY_TITLE, MAX_STORY_UNITS, SLOT_LIMIT, STORY_ITEM_ID, catalogEntry, slotOf, type Slot,
 } from './catalog';
 import type { InventoryItem } from './types';
+import { aggregateEffects, type EquippedEffectItem, type ItemEffects } from './effects';
+import { MAGIC_ITEMS } from './magicItems';
 
 const isStory = (item: { itemId: string }) => item.itemId === STORY_ITEM_ID;
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -10,6 +13,15 @@ const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().
 export function itemLabel(item: { itemId: string; customName: string }): string {
   if (isStory(item)) return item.customName;
   return catalogEntry(item.itemId)?.nameTh ?? item.itemId;
+}
+
+/** Carry capacity of one character: the base plus any worn deep_pack (F5j5). Equals CARRY_CAPACITY without one. */
+export function carryCapacity(effects?: ItemEffects): number {
+  return CARRY_CAPACITY + (effects?.deepPack ?? 0);
+}
+
+export function carryCapacityOf(items: InventoryItem[]): number {
+  return carryCapacity(equippedItemEffects(items));
 }
 
 export function weightOf(items: InventoryItem[]): number {
@@ -21,7 +33,8 @@ export type GiveResult = 'added' | 'full' | 'unknown';
 export function giveItem(
   items: InventoryItem[],
   itemId: string,
-  customName = ''
+  customName = '',
+  capacity: number = carryCapacityOf(items)
 ): { items: InventoryItem[]; result: GiveResult; label: string } {
   if (itemId === STORY_ITEM_ID) {
     const title = customName.trim().slice(0, MAX_STORY_TITLE);
@@ -45,7 +58,7 @@ export function giveItem(
 
   const entry = catalogEntry(itemId);
   if (!entry) return { items, result: 'unknown', label: '' };
-  if (weightOf(items) + entry.weight > CARRY_CAPACITY) return { items, result: 'full', label: entry.nameTh };
+  if (weightOf(items) + entry.weight > capacity) return { items, result: 'full', label: entry.nameTh };
 
   const existing = items.find((i) => i.itemId === itemId);
   if (existing) {
@@ -84,8 +97,11 @@ export function equipItem(items: InventoryItem[], itemId: string): { items: Inve
   const row = items.find((i) => i.itemId === itemId);
   if (!row || row.slot === null) return { items, ok: false };
   if (row.equipped) return { items, ok: true };
+  // Wearing past the slot's limit swaps out the earliest-listed worn item(s) of that slot.
+  const worn = items.filter((i) => i.slot === row.slot && i.equipped);
+  const evict = new Set(worn.slice(0, Math.max(0, worn.length - (SLOT_LIMIT[row.slot] - 1))));
   return {
-    items: items.map((i) => (i === row ? { ...i, equipped: true } : i.slot === row.slot ? { ...i, equipped: false } : i)),
+    items: items.map((i) => (i === row ? { ...i, equipped: true } : evict.has(i) ? { ...i, equipped: false } : i)),
     ok: true,
   };
 }
@@ -104,6 +120,39 @@ export function armorReduction(items: InventoryItem[]): number {
   const id = equippedArmorId(items);
   const entry = id ? catalogEntry(id) : null;
   return entry?.kind === 'armor' ? entry.reduction : 0;
+}
+
+/** Check bonus per skill from worn accessories (F5d); empty when none are worn. */
+export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<SkillId, number>> {
+  const bonuses: Partial<Record<SkillId, number>> = {};
+  for (const i of items) {
+    if (!i.equipped || i.slot !== 'accessory') continue;
+    const entry = catalogEntry(i.itemId);
+    if (entry?.kind === 'accessory') bonuses[entry.skill] = (bonuses[entry.skill] ?? 0) + entry.skillBonus;
+  }
+  return bonuses;
+}
+
+/** Special effects and set bonus from worn magic items (F5j0). */
+export function equippedItemEffects(items: InventoryItem[]): ItemEffects {
+  const worn: EquippedEffectItem[] = [];
+  for (const i of items) {
+    if (!i.equipped || !i.slot) continue;
+    const magic = MAGIC_ITEMS.find((m) => m.id === i.itemId);
+    worn.push({ slot: i.slot, effect: magic?.effect, effectValue: magic?.effectValue, theme: magic?.theme });
+  }
+  return aggregateEffects(worn);
+}
+
+/** Spends one scroll (F5e); null when it is not a scroll or the player does not have it. */
+export function useScroll(
+  items: InventoryItem[],
+  itemId: string
+): { items: InventoryItem[]; pipReduction: number; label: string } | null {
+  const entry = catalogEntry(itemId);
+  if (!entry || entry.kind !== 'scroll') return null;
+  const taken = takeItem(items, itemId);
+  return taken.taken ? { items: taken.items, pipReduction: entry.pipReduction, label: entry.nameTh } : null;
 }
 
 export function useConsumable(

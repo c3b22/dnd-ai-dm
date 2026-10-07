@@ -4,6 +4,7 @@ import { TIERS, weaponFor } from './constants';
 import { rollDice } from './dice';
 import { levelDamageBonus, levelForXp } from './leveling';
 import { SANCTUARY_CHANGE } from './applyTags';
+import { QUICK_TEMPO_EXTRA } from '@/lib/inventory/effects';
 import type { Character } from './types';
 
 export interface AbilityAction {
@@ -126,12 +127,12 @@ export function eventfulRound(changes: { character: string[]; inventory: string[
 /**
  * Cooldown bookkeeping after a round's tags: on an eventful round everyone's cooldown drops by one,
  * then players who used their ability this round start the full cooldown (so the round of use
- * never counts toward its own cooldown).
+ * never counts toward its own cooldown). F5j7 quick_tempo: a wearer's tick drops by QUICK_TEMPO_EXTRA more (floor 0).
  */
 export function tickCooldowns(characters: Character[], eventful: boolean, used: string[]): Character[] {
   return characters.map((c) => {
     let cooldown = c.abilityCooldown ?? 0;
-    if (eventful) cooldown = Math.max(0, cooldown - 1);
+    if (eventful) cooldown = Math.max(0, cooldown - 1 - (c.itemEffects?.effects.includes('quick_tempo') ? QUICK_TEMPO_EXTRA : 0));
     const cls = classOf(c.classId);
     if (cls && used.includes(c.id)) cooldown = cls.ability.cooldown;
     return { ...c, abilityCooldown: cooldown };
