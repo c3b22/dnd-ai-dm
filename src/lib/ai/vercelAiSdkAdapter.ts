@@ -1,6 +1,6 @@
 import { streamText } from 'ai';
 import { google } from '@ai-sdk/google';
-import { bufferTextOrThrow, type GeminiClientDeps } from './geminiClient';
+import { bufferTextOrThrow, EmptyResponseError, PromptBlockedError, type GeminiClientDeps } from './geminiClient';
 
 export const GEMINI_MODELS = {
   primary: 'gemini-3.5-flash-lite',
@@ -33,7 +33,7 @@ export const realGeminiDeps: GeminiClientDeps = {
     } catch (error) {
       console.error('gemini call failed', { model, promptChars: prompt.length, ms: Date.now() - startedAt, aborted: signal.aborted });
       // The stream carries no detail when Gemini refuses a prompt, so ask the REST API once more
-      // for its promptFeedback/finishReason. Diagnostic only; never changes the outcome.
+      // for its promptFeedback/finishReason.
       const raw = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
@@ -49,6 +49,9 @@ export const realGeminiDeps: GeminiClientDeps = {
         })
         .catch((e) => ({ diagnosticFailed: String(e) }));
       console.error('gemini raw diagnostic', JSON.stringify(raw));
+      // A refused prompt fails the same on every model, so tell callers instead of falling back.
+      const blockReason = (raw as { promptFeedback?: { blockReason?: string } }).promptFeedback?.blockReason;
+      if (error instanceof EmptyResponseError && blockReason) throw new PromptBlockedError(blockReason);
       throw error;
     }
   },

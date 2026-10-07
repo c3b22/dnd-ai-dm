@@ -32,6 +32,17 @@ export class EmptyResponseError extends Error {
   }
 }
 
+/** Gemini refused the prompt itself (promptFeedback.blockReason); the same prompt fails on every model. */
+export class PromptBlockedError extends Error {
+  readonly blockReason: string;
+
+  constructor(blockReason: string) {
+    super(`Gemini blocked the prompt (${blockReason})`);
+    this.name = 'PromptBlockedError';
+    this.blockReason = blockReason;
+  }
+}
+
 /** Failures worth retrying once on the fallback model; anything else (bad key) would fail again. */
 export function isFallbackWorthy(error: unknown): boolean {
   return isRateLimitError(error) || isTimeoutError(error) || error instanceof EmptyResponseError;

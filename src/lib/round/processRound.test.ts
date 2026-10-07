@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { processRound, ProcessRoundDeps } from './processRound';
 import type { RoundRepository } from './roundRepository';
+import { PromptBlockedError } from '@/lib/ai/geminiClient';
 import { allowedScenes } from '@/lib/scenes/scenes';
 
 async function* fakeStream(chunks: string[]) {
@@ -1041,5 +1042,29 @@ describe('processRound scrolls (F5e)', () => {
       expect(repository.saveInventories).not.toHaveBeenCalled();
       expect(repository.setEncounter).not.toHaveBeenCalled();
     }
+  });
+  it('retries once without chat history when Gemini blocks the prompt', async () => {
+    const base = createFakeRepository();
+    const ctx = await base.getRoundContext('round-1');
+    const repository = createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        ...ctx,
+        recentMessages: [{ role: 'dm', content: 'HISTORY-MARKER' }],
+      }),
+    });
+    const generateNarration = vi
+      .fn()
+      .mockRejectedValueOnce(new PromptBlockedError('PROHIBITED_CONTENT'))
+      .mockResolvedValue(fakeStream(['ok']));
+
+    const result = await processRound(
+      { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration },
+      'round-1'
+    );
+
+    expect(result.processed).toBe(true);
+    expect(generateNarration).toHaveBeenCalledTimes(2);
+    expect(generateNarration.mock.calls[0][0]).toContain('HISTORY-MARKER');
+    expect(generateNarration.mock.calls[1][0]).not.toContain('HISTORY-MARKER');
   });
 });
