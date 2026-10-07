@@ -1,4 +1,5 @@
 import { CARRY_CAPACITY, catalogEntry } from '@/lib/inventory/catalog';
+import { magicInfo } from '@/lib/inventory/magicDescribe';
 import { itemLabel, weightOf } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
 
@@ -39,12 +40,20 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
           {items.map((item) => {
             const label = itemLabel(item);
             const kind = catalogEntry(item.itemId)?.kind;
+            const magic = magicInfo(item.itemId);
             return (
               <li key={`${item.itemId}|${item.customName}`} className="inv-row">
                 <span className="inv-name">
                   {label}
                   {item.quantity > 1 ? ` ×${item.quantity}` : ''}
                   {item.equipped && <b className="badge-worn">สวมอยู่</b>}
+                  {magic && <b className={`badge-rarity rarity-${magic.rarity}`}>{magic.rarityTh}</b>}
+                  {magic && (
+                    <span className="inv-effect">
+                      {magic.effectTh}
+                      <small>{magic.flavorTh}</small>
+                    </span>
+                  )}
                 </span>
                 {(kind === 'weapon' || kind === 'armor' || kind === 'accessory') && (
                   <button

@@ -303,6 +303,12 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .inv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .inv-name { min-width: 0; overflow-wrap: anywhere; }
 .badge-worn { margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 0.7rem; background: rgba(95, 179, 165, 0.2); color: #5fb3a5; }
+.badge-rarity { margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 0.7rem; background: rgba(224, 169, 74, 0.15); color: #e0a94a; }
+.badge-rarity.rarity-uncommon { background: rgba(95, 179, 165, 0.15); color: #5fb3a5; }
+.badge-rarity.rarity-rare { background: rgba(110, 150, 230, 0.18); color: #7ea6f0; }
+.badge-rarity.rarity-legendary { background: rgba(224, 169, 74, 0.2); color: #e0a94a; }
+.inv-effect { display: block; font-size: 0.8rem; opacity: 0.9; }
+.inv-effect small { display: block; opacity: 0.65; font-size: 0.72rem; }
 
 /* Economy */
 .inv-gold { margin: 0 0 8px; color: #e0a94a; font-weight: 600; }

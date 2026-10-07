@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Inventory } from './Inventory';
 import type { InventoryItem } from '@/lib/inventory/types';
+import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
 
 const sword: InventoryItem = { itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon', equipped: true };
 const bow: InventoryItem = { itemId: 'shortbow', customName: '', quantity: 1, slot: 'weapon', equipped: false };
@@ -67,5 +68,54 @@ describe('Inventory', () => {
     expect(names.map((n) => n.replace(/(สวมอยู่|สวม|ถอด|ดื่ม).*/, '').trim())).toEqual([
       'ดาบสั้น', 'ธนูสั้น', 'เกราะหนัง', 'ยาฟื้นฟูเล็ก ×2', 'Rusty Key',
     ]);
+  });
+});
+
+describe('Inventory magic items (F5h)', () => {
+  const find = (kind: string, rarity: string) => MAGIC_ITEMS.find((i) => i.mechanic.kind === kind && i.rarity === rarity)!;
+  const row = (id: string, equipped = false): InventoryItem => ({ itemId: id, customName: '', quantity: 1, slot: null, equipped });
+  const renderOne = (id: string) =>
+    render(<Inventory items={[row(id)]} gold={0} canAct onEquip={() => {}} onDrink={() => {}} />);
+
+  it('shows rarity badge and weapon damage bonus', () => {
+    const w = find('weapon', 'rare');
+    renderOne(w.id);
+    expect(screen.getByText('หายาก')).toBeInTheDocument();
+    expect(screen.getByText(`ดาเมจ +${(w.mechanic as { damageBonus: number }).damageBonus}`)).toBeInTheDocument();
+    expect(screen.getByText(w.flavorTh)).toBeInTheDocument();
+  });
+
+  it('shows armor reduction, potion healing, scroll pips and accessory skill bonus', () => {
+    const a = find('armor', 'uncommon');
+    const { unmount } = renderOne(a.id);
+    expect(screen.getByText('ไม่ธรรมดา')).toBeInTheDocument();
+    expect(screen.getByText(/ลดดาเมจที่ได้รับ/)).toBeInTheDocument();
+    unmount();
+
+    const p = find('consumable', 'uncommon');
+    const u2 = renderOne(p.id);
+    expect(screen.getByText(/ฟื้นฟู .* HP/)).toBeInTheDocument();
+    u2.unmount();
+
+    const s = find('scroll', 'uncommon');
+    const u3 = renderOne(s.id);
+    expect(screen.getByText(/ศัตรูเสีย \d+ pip/)).toBeInTheDocument();
+    u3.unmount();
+
+    const acc = find('accessory', 'uncommon');
+    renderOne(acc.id);
+    expect(screen.getByText(/โบนัสทักษะ .* \+\d/)).toBeInTheDocument();
+  });
+
+  it('shows the legendary badge', () => {
+    const l = MAGIC_ITEMS.find((i) => i.rarity === 'legendary' && ['weapon', 'armor', 'accessory'].includes(i.mechanic.kind))!;
+    renderOne(l.id);
+    expect(screen.getByText('ตำนาน')).toBeInTheDocument();
+  });
+
+  it('plain items show no rarity badge or effect line', () => {
+    const { container } = render(<Inventory items={[sword, potion]} gold={0} canAct onEquip={() => {}} onDrink={() => {}} />);
+    expect(container.querySelector('.badge-rarity')).toBeNull();
+    expect(container.querySelector('.inv-effect')).toBeNull();
   });
 });
