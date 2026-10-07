@@ -84,10 +84,12 @@ const scroll = (id: string, nameTh: string, rarity: R, price: number, flavorTh: 
   mechanic: { kind: 'scroll', pipReduction: SCROLL_PIPS[rarity] },
 });
 
-// --- accessories: +1 (uncommon) / +2 (rare) on checks of one skill ---
+// --- accessories: +1 (uncommon) / +2 (rare) / +3 (legendary) on checks of one skill ---
+const ACC_BONUS: Record<R, number> = { uncommon: 1, rare: 2, legendary: 3 };
+const ACC_PRICE: Record<R, number> = { uncommon: 120, rare: 220, legendary: 450 };
 const accessory = (id: string, nameTh: string, skill: SkillId, rarity: R, weight: number, flavorTh: string): MagicItem => ({
-  id: `acc_${id}`, nameTh, flavorTh, rarity, weight, price: rarity === 'rare' ? 220 : 120,
-  mechanic: { kind: 'accessory', skill, skillBonus: rarity === 'rare' ? 2 : 1 },
+  id: `acc_${id}`, nameTh, flavorTh, rarity, weight, price: ACC_PRICE[rarity],
+  mechanic: { kind: 'accessory', skill, skillBonus: ACC_BONUS[rarity] },
 });
 
 // --- one-use revive charms ---
@@ -212,6 +214,10 @@ const BASE_MAGIC_ITEMS: readonly MagicItem[] = [
   accessory('thirdeye', 'จี้ตาที่สาม', 'arcana', RA, 0, 'ลูกตาแก้วที่เปิดขึ้นเองเมื่อเวทมนตร์ปรากฏ'),
   accessory('calmtassel', 'พู่ห้อยจิตสงบ', 'insight', U, 0, 'ความสงบจากพู่ห้อยช่วยให้อ่านใจคนได้ละเอียดขึ้น'),
 
+  // legendary accessories (F5k): carry deep_pack (X6), never in shops
+  accessory('shadowpouch', 'ถุงคาดเอวเงาไร้ก้น', 'stealth', L, 0, 'ถุงใบเล็กที่เงาข้างในลึกไม่สิ้นสุด ใส่ของเท่าไรก็ยังมีที่ว่างเสมอ'),
+  accessory('forestpack', 'กระเป๋าสะพายป่าไม่รู้จบ', 'survival', L, 0, 'กระเป๋าถักจากเถาวัลย์ที่ภายในกว้างเหมือนผืนป่าทั้งผืน'),
+
   // revive charms (legendary, never in shops)
   charm('revive', 'เครื่องรางคืนชีพ', 1, 500, 'เมื่อลมหายใจสุดท้ายจะหลุดไป เครื่องรางจะแตกสลายและดึงผู้สวมกลับมา'),
   charm('phoenix', 'ขนนกฟีนิกซ์', 2, 550, 'ขนนกสีเพลิงที่จะลุกไหม้แทนเจ้าของหนึ่งครั้ง'),
@@ -225,8 +231,7 @@ const BASE_MAGIC_ITEMS: readonly MagicItem[] = [
  * ward: armor, keen_eye: weapon or accessory, deep_pack/lucky_purse/quick_tempo: accessory). Rare armor, potions and scrolls
  * get none because no small effect is allowed on armor. Every rare weapon and accessory carries one: lifesteal on the
  * "biting/draining/holy" ones, keen_eye on bows and sharp-sight pieces (value 2 only on hawkeye), the rest on accessories.
- * KNOWN GAP: deep_pack (X6) should sit on a legendary accessory, but the catalogue has none (accessories are uncommon/rare only,
- * charms have no slot) and adding items is out of scope here, so no item carries deep_pack yet.
+ * F5k: deep_pack (X6) sits on the two legendary accessories (acc_shadowpouch, acc_forestpack), 3 extra slots each.
  */
 const EFFECTS: Readonly<Record<string, { effect: ItemEffectId; effectValue?: number }>> = {
   // rare weapons: lifesteal (X2)
@@ -243,6 +248,8 @@ const EFFECTS: Readonly<Record<string, { effect: ItemEffectId; effectValue?: num
   // legendary weapons: crit_surge (X1)
   shortsword_oathkeeper: { effect: 'crit_surge' }, shortbow_horizon: { effect: 'crit_surge' },
   staff_lifetree: { effect: 'crit_surge' }, dagger_eternalwhisper: { effect: 'crit_surge' },
+  // legendary accessories: deep_pack (X6)
+  acc_shadowpouch: { effect: 'deep_pack', effectValue: 3 }, acc_forestpack: { effect: 'deep_pack', effectValue: 3 },
   // legendary armor: ward (X4), the heaviest/most defensive pieces get 3
   armor_hero: { effect: 'ward', effectValue: 2 }, armor_golddrake: { effect: 'ward', effectValue: 3 }, armor_eternalstar: { effect: 'ward', effectValue: 3 },
 };
@@ -252,8 +259,8 @@ const EFFECTS: Readonly<Record<string, { effect: ItemEffectId; effectValue?: num
  * 3-slot set (first three ids of each entry); extra pieces let players mix and collect. Themes may sit on any rarity.
  */
 const THEME_SETS: Readonly<Record<string, readonly string[]>> = {
-  'เงา': ['dagger_shadowsnake', 'armor_shadowhide', 'acc_silentshawl', 'dagger_blackrat', 'dagger_batfang', 'acc_grinmask'],
-  'ป่า': ['shortbow_vine', 'armor_campo', 'acc_evergreen', 'staff_mossy', 'armor_fallenleaf', 'acc_wolffang'],
+  'เงา': ['dagger_shadowsnake', 'armor_shadowhide', 'acc_silentshawl', 'dagger_blackrat', 'dagger_batfang', 'acc_grinmask', 'acc_shadowpouch'],
+  'ป่า': ['shortbow_vine', 'armor_campo', 'acc_evergreen', 'staff_mossy', 'armor_fallenleaf', 'acc_wolffang', 'acc_forestpack'],
   'จันทรา': ['shortsword_nightsilver', 'armor_indigo', 'acc_nightfalcon', 'dagger_moonflick', 'staff_moonglass'],
   'ผู้พิทักษ์': ['shortsword_oathkeeper', 'armor_gatewarden', 'acc_truthring', 'armor_hero', 'acc_fightband'],
   'พายุ': ['shortbow_galewind', 'armor_frostwind', 'acc_wandercompass', 'shortsword_stormcall', 'acc_giantbelt'],

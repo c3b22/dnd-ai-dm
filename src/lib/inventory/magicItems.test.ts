@@ -123,9 +123,17 @@ describe('magic item catalogue', () => {
       }
     });
 
-    it('uses every implemented effect except deep_pack (no legendary accessory exists yet)', () => {
+    it('uses every implemented effect, and deep_pack sits only on legendary accessories', () => {
       const used = new Set(MAGIC_ITEMS.flatMap((i) => (i.effect ? [i.effect] : [])));
-      for (const e of ITEM_EFFECT_IDS.filter((x) => x !== 'deep_pack')) expect(used.has(e)).toBe(true);
+      for (const e of ITEM_EFFECT_IDS) expect(used.has(e)).toBe(true);
+      const packs = MAGIC_ITEMS.filter((i) => i.effect === 'deep_pack');
+      expect(packs.length).toBeGreaterThanOrEqual(1);
+      for (const i of packs) {
+        expect(i.mechanic.kind).toBe('accessory');
+        expect(i.rarity).toBe('legendary');
+        expect(isSoldInShop(i)).toBe(false);
+        expect(i.theme).toBeTruthy();
+      }
     });
 
     it('has at least 8 themes, each with a full weapon + armor + accessory set', () => {
