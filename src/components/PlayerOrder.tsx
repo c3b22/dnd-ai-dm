@@ -7,7 +7,8 @@ import { HpBar } from './HpBar';
 import { AbilityChoice } from './AbilityChoice';
 import type { AbilityChoice as Choice } from '@/lib/character/leveling';
 import { catalogEntry } from '@/lib/inventory/catalog';
-import { equippedArmorId, equippedWeaponId } from '@/lib/inventory/rules';
+import { armorReduction, armorWeight, equippedArmorId, equippedWeaponId } from '@/lib/inventory/rules';
+import { armorClass } from '@/lib/combat/armorClass';
 
 export interface PlayerOrderProps {
   players: RoundPlayer[];
@@ -93,6 +94,7 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                   {' '}
                   · {weaponFor(equippedWeaponId(player.items)).nameTh}
                   {equippedArmorId(player.items) ? ` · ${catalogEntry(equippedArmorId(player.items)!)?.nameTh}` : ''}
+                  {' '}· AC {armorClass({ abilities: player.abilities, armorReduction: armorReduction(player.items), armorWeight: armorWeight(player.items) })}
                   {' '}· {player.gold} ทอง
                 </span>
               </span>

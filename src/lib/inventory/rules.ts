@@ -122,6 +122,13 @@ export function armorReduction(items: InventoryItem[]): number {
   return entry?.kind === 'armor' ? entry.reduction : 0;
 }
 
+/** Weight of the worn armor (decides the DEX cap of armor class); 0 when none is worn. */
+export function armorWeight(items: InventoryItem[]): number {
+  const id = equippedArmorId(items);
+  const entry = id ? catalogEntry(id) : null;
+  return entry?.kind === 'armor' ? entry.weight : 0;
+}
+
 /** Check bonus per skill from worn accessories (F5d); empty when none are worn. */
 export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<SkillId, number>> {
   const bonuses: Partial<Record<SkillId, number>> = {};

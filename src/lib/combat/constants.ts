@@ -22,3 +22,11 @@ export const ENEMY_DAMAGE: Record<EnemyTier, number> = { minion: 2, normal: 4, s
 export const MIN_ENEMY_DAMAGE = 1;
 /** The hit threshold never drops below this, even with keen_eye (nat 1 still always misses). */
 export const MIN_HIT_THRESHOLD = 2;
+
+/** I1: player armor class = BASE_AC + DEX mod (capped by armor class) + AC_PER_REDUCTION x worn armor reduction. */
+export const BASE_AC = 10;
+export const AC_PER_REDUCTION = 2;
+/** Highest DEX bonus by worn-armor weight: light (weight <= 1) and no armor are uncapped, medium (2) +2, heavy (>= 3) none. */
+export const LIGHT_ARMOR_MAX_WEIGHT = 1;
+export const MEDIUM_ARMOR_MAX_WEIGHT = 2;
+export const MEDIUM_ARMOR_DEX_CAP = 2;

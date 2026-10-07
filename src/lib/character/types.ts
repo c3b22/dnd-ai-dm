@@ -16,6 +16,8 @@ export interface Character {
   revivesSinceSanctuary: number;
   /** Flat damage the equipped armor absorbs from each hit; absent means none. */
   armorReduction?: number;
+  /** Weight of the equipped armor (caps the DEX bonus of armor class, see combat/armorClass.ts); absent means no armor. */
+  armorWeight?: number;
   /** Check bonus per skill from the worn accessory (see equippedSkillBonuses); absent means none. */
   skillBonuses?: Partial<Record<SkillId, number>>;
   /** Combined special effects of the worn items (F5j0); absent means none. */

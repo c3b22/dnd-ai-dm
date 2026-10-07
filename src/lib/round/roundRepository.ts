@@ -6,7 +6,7 @@ import type { Character } from '@/lib/character/types';
 import type { Corpse } from '@/lib/character/permadeath';
 import type { CorpseUpdate, LootableCorpse } from '@/lib/character/loot';
 import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
-import { equippedWeaponId, armorReduction, equippedSkillBonuses, equippedItemEffects, equippedReviveCharm } from '@/lib/inventory/rules';
+import { equippedWeaponId, armorReduction, armorWeight, equippedSkillBonuses, equippedItemEffects, equippedReviveCharm } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
@@ -264,6 +264,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           displayName: row.display_name as string,
           weaponId: equippedWeaponId(inventories[row.id] ?? []),
           armorReduction: armorReduction(inventories[row.id] ?? []),
+          armorWeight: armorWeight(inventories[row.id] ?? []),
           skillBonuses: equippedSkillBonuses(inventories[row.id] ?? []),
           itemEffects: equippedItemEffects(inventories[row.id] ?? []),
           ...(equippedReviveCharm(inventories[row.id] ?? []) ? { reviveCharm: equippedReviveCharm(inventories[row.id] ?? []) } : {}),

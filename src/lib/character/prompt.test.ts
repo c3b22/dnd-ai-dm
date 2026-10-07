@@ -14,8 +14,15 @@ describe('characterPrompt', () => {
 
   it('lists each character with HP, weapon and standing/downed', () => {
     const text = characterPrompt(party, false, undefined).join('\n');
-    expect(text).toContain('Prem (Lv 1): HP 15/18, shortsword (1d8), standing');
-    expect(text).toContain('Suki (Lv 1): HP 0/20, fists (1d2), DOWNED');
+    expect(text).toContain('Prem (Lv 1): HP 15/18, AC 10, shortsword (1d8), standing');
+    expect(text).toContain('Suki (Lv 1): HP 0/20, AC 10, fists (1d2), DOWNED');
+  });
+
+  it('shows armor class from DEX and worn armor', () => {
+    const armored: Character = {
+      ...party[0], abilities: { STR: 10, DEX: 14, CON: 10, INT: 10, WIS: 10, CHA: 10 }, armorReduction: 2, armorWeight: 2,
+    };
+    expect(characterPrompt([armored], false, undefined).join(' ')).toContain('HP 15/18, AC 16,');
   });
 
   it('teaches the tags and forbids inventing HP numbers', () => {

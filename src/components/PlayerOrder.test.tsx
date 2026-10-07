@@ -140,4 +140,22 @@ describe('PlayerOrder', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }));
     await waitFor(() => expect(onAbilityChoice).toHaveBeenCalledWith({ kind: 'double', ability: 'CON' }));
   });
+
+  it('shows armor class of each player from DEX and worn armor', () => {
+    const armor = { itemId: 'armor_medium', customName: '', quantity: 1, slot: 'armor' as const, equipped: true };
+    const abilities = { STR: 10, DEX: 14, CON: 10, INT: 10, WIS: 10, CHA: 10 };
+    render(
+      <PlayerOrder
+        players={[
+          { ...players[0], items: [gear('shortsword'), armor], abilities },
+          { ...players[1] },
+        ]}
+        currentPlayerId="p1"
+        locked={false}
+        onMove={() => {}}
+      />
+    );
+    expect(screen.getByText(/AC 16/)).toBeTruthy();
+    expect(screen.getByText(/AC 10/)).toBeTruthy();
+  });
 });
