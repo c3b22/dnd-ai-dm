@@ -5,7 +5,7 @@ export async function submitAction(
   playerId: string,
   actionText: string,
   useItemId?: string,
-  ability?: { targetId?: string | null },
+  ability?: { targetId?: string | null; abilityId?: string | null },
   /** Enemy a scroll is aimed at (F5e). */
   itemTarget?: string
 ): Promise<void> {
@@ -19,6 +19,8 @@ export async function submitAction(
       ...(itemTarget ? { item_target: itemTarget } : {}),
       ...(ability ? { use_ability: true } : {}),
       ...(ability?.targetId ? { ability_target_id: ability.targetId } : {}),
+      // K2: only sent when a non-default ability is picked, so a database without the column keeps working.
+      ...(ability?.abilityId ? { ability_id: ability.abilityId } : {}),
     });
   if (error) throw error;
 }

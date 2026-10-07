@@ -61,6 +61,7 @@ export function shortRest(c: RestCharacter, rollDie: (sides: number) => number):
   const amount = Math.max(0, dice.reduce((a, b) => a + b, 0) + con);
   const hp = Math.min(c.maxHp, c.hp + amount);
   const next: RestCharacter = { ...c, hp, abilityCooldown: 0, shortRestsUsed: used + 1 };
+  if (c.abilityCooldowns) next.abilityCooldowns = {};
   if (c.spellSlots) {
     next.spellSlots = { max: c.spellSlots.max, current: Math.min(c.spellSlots.max, c.spellSlots.current + SHORT_REST_SPELL_SLOTS_RESTORED) };
   }
@@ -76,6 +77,7 @@ export function longRest(c: RestCharacter, opts: { safe: boolean; sanctuary?: bo
     return refuse(c, 'not_safe', 'ที่นี่ไม่ปลอดภัยพอที่จะพักยาว');
   }
   const next: RestCharacter = { ...c, hp: c.maxHp, abilityCooldown: 0, shortRestsUsed: 0, deathSaves: null };
+  if (c.abilityCooldowns) next.abilityCooldowns = {};
   if (c.spellSlots) next.spellSlots = { max: c.spellSlots.max, current: c.spellSlots.max };
   return { ok: true, character: next, healed: c.maxHp - c.hp, dice: [], changes: [`${c.displayName} พักยาว ฟื้น HP เต็มและพลังกลับมาครบ`] };
 }

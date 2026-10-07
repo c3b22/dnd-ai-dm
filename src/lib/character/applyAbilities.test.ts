@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyAbilityActions, eventfulRound, tickCooldowns } from './applyAbilities';
+import { applyAbilityActions, cooldownOf, eventfulRound, tickCooldowns } from './applyAbilities';
 import { SANCTUARY_CHANGE } from './applyTags';
 import type { Character } from './types';
 
@@ -186,5 +186,67 @@ describe('tickCooldowns', () => {
     it('still gives the full cooldown on the round of use', () => {
       expect(tickCooldowns([char({ classId: 'archer', itemEffects: tempo })], true, ['p1'])[0].abilityCooldown).toBe(3);
     });
+  });
+});
+
+describe('multi-ability cooldowns (K2)', () => {
+  it('reads the main ability cooldown from the legacy field and others from the map', () => {
+    const c = char({ abilityCooldown: 2, abilityCooldowns: { berserk_strike: 1 } });
+    expect(cooldownOf(c, 'warrior')).toBe(2);
+    expect(cooldownOf(c, 'berserk_strike')).toBe(1);
+    expect(cooldownOf(c, 'unknown')).toBe(0);
+    expect(cooldownOf(char({ abilityCooldown: 3 }), 'warrior')).toBe(3);
+  });
+
+  it('prefers a map entry for the main ability when both exist', () => {
+    expect(cooldownOf(char({ abilityCooldown: 3, abilityCooldowns: { warrior: 1 } }), 'warrior')).toBe(1);
+  });
+
+  it('refuses an ability id the class does not have, leaving everything unchanged', () => {
+    const result = applyAbilityActions([char()], [use('p1', null, { abilityId: 'nope' })], four);
+    expect(result.used).toEqual([]);
+    expect(result.usedAbilities).toEqual([]);
+    expect(result.notes.p1).toBe('tried to use ยืนบัง but it was not ready');
+  });
+
+  it('treats the class id as the main ability id and reports it as used', () => {
+    const party = [char(), char({ id: 'p2', displayName: 'Suki', classId: 'archer' })];
+    const result = applyAbilityActions(party, [use('p1', 'p2', { abilityId: 'warrior' })], four);
+    expect(result.used).toEqual(['p1']);
+    expect(result.usedAbilities).toEqual([{ playerId: 'p1', abilityId: 'warrior' }]);
+  });
+
+  it('blocks a ready-looking main ability when the map says it is cooling down', () => {
+    const party = [char({ abilityCooldowns: { warrior: 2 } }), char({ id: 'p2', classId: 'archer' })];
+    expect(applyAbilityActions(party, [use('p1', 'p2')], four).used).toEqual([]);
+  });
+
+  it('ticks every map entry down on an eventful round, dropping zeros', () => {
+    const [c] = tickCooldowns([char({ abilityCooldowns: { a: 3, b: 1 } })], true, []);
+    expect(c.abilityCooldowns).toEqual({ a: 2 });
+  });
+
+  it('leaves the map alone on a quiet round', () => {
+    expect(tickCooldowns([char({ abilityCooldowns: { a: 3 } })], false, [])[0].abilityCooldowns).toEqual({ a: 3 });
+  });
+
+  it('applies quick_tempo to the map entries too', () => {
+    const tempo = { effects: ['quick_tempo' as const], setTheme: null, setSkillBonus: 0 };
+    expect(tickCooldowns([char({ abilityCooldowns: { a: 3 }, itemEffects: tempo })], true, [])[0].abilityCooldowns).toEqual({ a: 1 });
+  });
+
+  it('starts the full cooldown of an extra ability used this round, unticked', () => {
+    const [c] = tickCooldowns([char({ abilityCooldowns: { a: 3 } })], true, [], [{ playerId: 'p1', abilityId: 'a', cooldown: 4 }]);
+    expect(c.abilityCooldowns).toEqual({ a: 4 });
+  });
+
+  it('creates a map only when needed, so old characters stay shaped as before', () => {
+    expect('abilityCooldowns' in tickCooldowns([char({ abilityCooldown: 2 })], true, [])[0]).toBe(false);
+  });
+
+  it('does not mutate the input map', () => {
+    const party = [char({ abilityCooldowns: { a: 3 } })];
+    tickCooldowns(party, true, []);
+    expect(party[0].abilityCooldowns).toEqual({ a: 3 });
   });
 });

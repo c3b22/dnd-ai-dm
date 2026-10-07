@@ -326,6 +326,14 @@ export async function processRound(
         abilities.used
       ));
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
+      // K2: best-effort; a missing players.ability_cooldowns column just means the extra cooldowns do not carry over.
+      if (deps.repository.saveAbilityCooldowns && finalCharacters.some((c) => c.abilityCooldowns)) {
+        try {
+          await deps.repository.saveAbilityCooldowns(finalCharacters);
+        } catch {
+          /* best-effort */
+        }
+      }
       // J3: best-effort; a missing short_rests_used / rest_vote column just means nothing carries over.
       if (rest.shortRestChanged.length > 0 && deps.repository.saveShortRestsUsed) {
         try {

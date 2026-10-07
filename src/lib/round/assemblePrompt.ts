@@ -45,6 +45,9 @@ export interface RoundAction {
   /** True when the player triggers their class ability this round, with an optional ally target. */
   useAbility?: boolean;
   abilityTargetId?: string | null;
+  /** K2: which ability / spell the player picked (round_actions.ability_id / spell_id); absent = the class's main ability. */
+  abilityId?: string;
+  spellId?: string;
   /** Server-side outcome of the action (for example a potion drunk) that the narration must match. */
   note?: string;
   /** Skill check the server rolled for this action; the narration must match its success or failure. */

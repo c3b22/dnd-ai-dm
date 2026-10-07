@@ -11,6 +11,8 @@ export interface AbilityAction {
   playerId?: string;
   useAbility?: boolean;
   abilityTargetId?: string | null;
+  /** K2: which ability; absent or the class id = the class's main ability. */
+  abilityId?: string | null;
   useItemId?: string | null;
 }
 
@@ -24,8 +26,20 @@ export interface AbilityResult {
   guards: Record<string, string>;
   /** Players whose ability worked, so their cooldown starts. */
   used: string[];
+  /** K2: the same, with the ability id (the class id for the main ability). */
+  usedAbilities: { playerId: string; abilityId: string }[];
   /** Thai lines for the game log. */
   changes: string[];
+}
+
+/**
+ * K2: cooldown left on one ability. The class's main ability (id = class id) lives in the legacy
+ * `abilityCooldown` field unless the map has an entry for it; every other id lives in the map.
+ */
+export function cooldownOf(c: Character, abilityId: string): number {
+  const mapped = c.abilityCooldowns?.[abilityId];
+  if (mapped !== undefined) return mapped;
+  return abilityId === c.classId ? (c.abilityCooldown ?? 0) : 0;
 }
 
 /**
@@ -42,6 +56,7 @@ export function applyAbilityActions(
   const damage: Record<string, number> = {};
   const guards: Record<string, string> = {};
   const used: string[] = [];
+  const usedAbilities: { playerId: string; abilityId: string }[] = [];
   const changes: string[] = [];
 
   for (const action of actions) {
@@ -53,7 +68,9 @@ export function applyAbilityActions(
     const fail = (reason = 'it was not ready') => {
       notes[user.id] = `tried to use ${cls ? cls.ability.nameTh : 'a class ability'} but ${reason}`;
     };
-    if (!cls || user.status !== 'active' || (user.abilityCooldown ?? 0) > 0) {
+    // K2: only the class's main ability (id = class id) is defined so far; any other id is refused.
+    const abilityId = action.abilityId || cls?.id;
+    if (!cls || user.status !== 'active' || abilityId !== cls.id || cooldownOf(user, cls.id) > 0) {
       fail();
       continue;
     }
@@ -105,9 +122,10 @@ export function applyAbilityActions(
       changes.push(`${user.displayName} ใช้${ability.nameTh}`);
     }
     used.push(user.id);
+    usedAbilities.push({ playerId: user.id, abilityId: cls.id });
   }
 
-  return { characters: next, notes, damage, guards, used, changes };
+  return { characters: next, notes, damage, guards, used, usedAbilities, changes };
 }
 
 /**
@@ -128,13 +146,29 @@ export function eventfulRound(changes: { character: string[]; inventory: string[
  * Cooldown bookkeeping after a round's tags: on an eventful round everyone's cooldown drops by one,
  * then players who used their ability this round start the full cooldown (so the round of use
  * never counts toward its own cooldown). F5j7 quick_tempo: a wearer's tick drops by QUICK_TEMPO_EXTRA more (floor 0).
+ * K2: the per-ability map ticks the same way; `usedExtra` lists other abilities used this round with
+ * their own full cooldown. A character gets a map only if it already had one or just used an extra ability.
  */
-export function tickCooldowns(characters: Character[], eventful: boolean, used: string[]): Character[] {
+export function tickCooldowns(
+  characters: Character[],
+  eventful: boolean,
+  used: string[],
+  usedExtra: { playerId: string; abilityId: string; cooldown: number }[] = []
+): Character[] {
   return characters.map((c) => {
+    const drop = 1 + (c.itemEffects?.effects.includes('quick_tempo') ? QUICK_TEMPO_EXTRA : 0);
     let cooldown = c.abilityCooldown ?? 0;
-    if (eventful) cooldown = Math.max(0, cooldown - 1 - (c.itemEffects?.effects.includes('quick_tempo') ? QUICK_TEMPO_EXTRA : 0));
+    if (eventful) cooldown = Math.max(0, cooldown - drop);
     const cls = classOf(c.classId);
     if (cls && used.includes(c.id)) cooldown = cls.ability.cooldown;
-    return { ...c, abilityCooldown: cooldown };
+    const mine = usedExtra.filter((u) => u.playerId === c.id);
+    if (!c.abilityCooldowns && mine.length === 0) return { ...c, abilityCooldown: cooldown };
+    const map: Record<string, number> = {};
+    for (const [id, left] of Object.entries(c.abilityCooldowns ?? {})) {
+      const next = eventful ? Math.max(0, left - drop) : left;
+      if (next > 0) map[id] = next;
+    }
+    for (const u of mine) if (u.cooldown > 0) map[u.abilityId] = u.cooldown;
+    return { ...c, abilityCooldown: cooldown, abilityCooldowns: map };
   });
 }

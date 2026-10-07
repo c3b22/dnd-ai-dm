@@ -1494,3 +1494,37 @@ describe('processRound team rest (J3)', () => {
     expect(savedState(fight)[0].hp).toBe(5);
   });
 });
+
+describe('processRound cooldown map persistence (K2)', () => {
+  const mapped = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilityCooldown: 0, abilityCooldowns: { extra: 3 },
+    abilities: { STR: 8, DEX: 16, CON: 14, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const plain = { ...mapped, id: 'p2', displayName: 'Nok', abilityCooldowns: undefined };
+  const make = (save: (c: unknown[]) => Promise<void>) =>
+    createFakeRepository({
+      saveAbilityCooldowns: vi.fn(save),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'เดิน', playerId: 'p1' }],
+        characters: [mapped, plain],
+      }),
+    });
+  const run = (repository: RoundRepository) =>
+    processRound({ claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['{"narration":"x"}'])), rollDie: () => 10, rollSides: () => 4 }, 'round-1');
+
+  it('saves the per-ability map (quiet round: unticked), after saving the round state', async () => {
+    const repo = make(async () => {});
+    await run(repo);
+    const saved = vi.mocked(repo.saveAbilityCooldowns!).mock.calls[0][0];
+    expect(saved.find((c) => c.id === 'p1')?.abilityCooldowns).toEqual({ extra: 3 });
+  });
+
+  it('does not fail the round when the map cannot be saved (column missing)', async () => {
+    const repo = make(async () => { throw new Error('column does not exist'); });
+    await expect(run(repo)).resolves.not.toThrow();
+  });
+});

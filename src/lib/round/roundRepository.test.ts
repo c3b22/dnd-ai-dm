@@ -847,3 +847,54 @@ describe('createSupabaseRoundRepository corpse looting (H3c)', () => {
     await expect(createSupabaseRoundRepository(client).saveCorpseLoot!([{ id: 'c1', items: [], gold: 0, empty: true }])).rejects.toThrow('x');
   });
 });
+
+describe('createSupabaseRoundRepository multi-ability data (K2)', () => {
+  it('loads the cooldown map, subclass, picks and slots used, and omits them for old rows', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, class_id: 'warrior', ability_cooldown: 2,
+          ability_cooldowns: { berserk_strike: 3, bad: 'x', neg: -1 }, subclass_id: 'warrior_guardian', ability_picks: { '6': 'a', '9': 5 }, spell_slots_used: 2 },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 },
+      ],
+    });
+    const { characters } = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(characters[0]).toMatchObject({ abilityCooldown: 2, abilityCooldowns: { berserk_strike: 3 }, subclassId: 'warrior_guardian', abilityPicks: { '6': 'a' }, spellSlotsUsed: 2 });
+    expect('abilityCooldowns' in characters[1]).toBe(false);
+    expect('subclassId' in characters[1]).toBe(false);
+    expect('abilityPicks' in characters[1]).toBe(false);
+    expect('spellSlotsUsed' in characters[1]).toBe(false);
+  });
+
+  it('loads ability_id and spell_id of an action when the columns exist', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'x', use_item_id: null, use_ability: true, ability_target_id: null, ability_id: 'berserk_strike', spell_id: 'fire_bolt', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const { actions } = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(actions[0]).toMatchObject({ abilityId: 'berserk_strike', spellId: 'fire_bolt' });
+  });
+
+  it('leaves abilityId and spellId out for actions without them', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'x', use_item_id: null, use_ability: true, ability_target_id: null, player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const { actions } = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(actions[0].abilityId ?? null).toBeNull();
+    expect(actions[0].spellId ?? null).toBeNull();
+  });
+
+  it('saves only the characters that carry a cooldown map', async () => {
+    const updates: unknown[] = [];
+    const client: any = { from: (table: string) => ({ update: (payload: unknown) => ({ eq: (_c: string, id: string) => { updates.push({ table, payload, id }); return Promise.resolve({ error: null }); } }) }) };
+    await createSupabaseRoundRepository(client).saveAbilityCooldowns!([
+      { id: 'p1', displayName: 'A', weaponId: null, hp: 1, maxHp: 1, status: 'active', revivesSinceSanctuary: 0, abilityCooldowns: { a: 2 } },
+      { id: 'p2', displayName: 'B', weaponId: null, hp: 1, maxHp: 1, status: 'active', revivesSinceSanctuary: 0 },
+    ]);
+    expect(updates).toEqual([{ table: 'players', payload: { ability_cooldowns: { a: 2 } }, id: 'p1' }]);
+  });
+});

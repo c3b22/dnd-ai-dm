@@ -111,6 +111,8 @@ export interface RoundRepository {
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
   /** H1: persists the death save tally. Optional so older fakes keep working; tolerates a missing column. */
   saveDeathSaves?(characters: Character[]): Promise<void>;
+  /** K2: persists players.ability_cooldowns (only for characters that carry the map). Optional so older fakes keep working; tolerates a missing column. */
+  saveAbilityCooldowns?(characters: Character[]): Promise<void>;
   /** J3: persists players.short_rests_used. Optional so older fakes keep working; tolerates a missing column. */
   saveShortRestsUsed?(characters: Character[]): Promise<void>;
   /** J3: consumes the rest vote (campaigns.rest_vote = null). Optional so older fakes keep working; tolerates a missing column. */
@@ -211,6 +213,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       const { data: restRows } = await supabase.from('players').select('id, short_rests_used').eq('campaign_id', campaignId);
       const shortRestsById = new Map<string, number>((restRows ?? []).map((row: any) => [row.id as string, Number(row.short_rests_used ?? 0)]));
 
+      // K2: multi-ability data in its own query: these players columns may not exist yet; unreadable means none.
+      const { data: multiRows } = await supabase
+        .from('players')
+        .select('id, ability_cooldowns, subclass_id, ability_picks, spell_slots_used')
+        .eq('campaign_id', campaignId);
+      const multiById = new Map<string, any>((multiRows ?? []).map((row: any) => [row.id as string, row]));
+
       // The rest vote (J3) in its own query too: campaigns.rest_vote may not exist yet; unreadable means no vote.
       const { data: voteRow } = await supabase.from('campaigns').select('rest_vote').eq('id', campaignId).maybeSingle();
       const restVote = normalizeRestVote((voteRow as any)?.rest_vote, roundId);
@@ -250,6 +259,14 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // Scroll targets (F5e) in their own query: round_actions.item_target may not exist yet, and that
       // must not hide the actions above. Unreadable means scrolls simply have no target (not used).
       const { data: targetRows } = await supabase.from('round_actions').select('player_id, item_target').eq('round_id', roundId);
+      // K2: which ability / spell an action picked, in its own query for the same reason.
+      const { data: pickRows } = await supabase.from('round_actions').select('player_id, ability_id, spell_id').eq('round_id', roundId);
+      const picksByPlayer = new Map<string, { abilityId?: string; spellId?: string }>(
+        (pickRows ?? []).filter((r: any) => r.ability_id || r.spell_id).map((r: any) => [
+          r.player_id as string,
+          { ...(r.ability_id ? { abilityId: r.ability_id as string } : {}), ...(r.spell_id ? { spellId: r.spell_id as string } : {}) },
+        ])
+      );
       const itemTargetByPlayer = new Map<string, string>(
         (targetRows ?? []).filter((r: any) => r.item_target).map((r: any) => [r.player_id as string, r.item_target as string])
       );
@@ -313,6 +330,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           abilityCooldown: Number(row.ability_cooldown ?? 0),
           abilities: normalizeAbilities(abilitiesById.get(row.id as string)),
           shortRestsUsed: shortRestsById.get(row.id as string) ?? 0,
+          ...multiFields(multiById.get(row.id as string)),
           ...(deathSavesById.get(row.id as string) ? { deathSaves: normalizeDeathSaves(deathSavesById.get(row.id as string)) } : {}),
           backstory: (identityById.get(row.id as string)?.backstory ?? null) as string | null,
           personality: (identityById.get(row.id as string)?.personality ?? null) as string | null,
@@ -337,10 +355,11 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
             itemTarget: itemTargetByPlayer.get(row.player_id as string) ?? null,
             useAbility: Boolean(row.use_ability),
             abilityTargetId: (row.ability_target_id ?? null) as string | null,
+            ...(picksByPlayer.get(row.player_id as string) ?? {}),
             turnOrder: (row.players?.turn_order ?? null) as number | null,
             joinedAt: (row.players?.created_at ?? '') as string,
           }))
-        ).map(({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId }) => ({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId })),
+        ).map(({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId, abilityId, spellId }) => ({ playerDisplayName, actionText, playerId, useItemId, itemTarget, useAbility, abilityTargetId, ...(abilityId ? { abilityId } : {}), ...(spellId ? { spellId } : {}) })),
       };
     },
 
@@ -417,6 +436,14 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     async saveDeathSaves(characters) {
       for (const c of characters) {
         const { error } = await supabase.from('players').update({ death_saves: c.deathSaves ?? null }).eq('id', c.id);
+        if (error) throw error;
+      }
+    },
+
+    async saveAbilityCooldowns(characters) {
+      for (const c of characters) {
+        if (!c.abilityCooldowns) continue;
+        const { error } = await supabase.from('players').update({ ability_cooldowns: c.abilityCooldowns }).eq('id', c.id);
         if (error) throw error;
       }
     },
@@ -574,4 +601,24 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       if (error) throw error;
     },
   };
+}
+
+/**
+ * K2: the optional multi-ability fields of a players row, left out when absent or malformed so a
+ * character without them keeps the exact shape it had before.
+ */
+function multiFields(row: any): Pick<Character, 'abilityCooldowns' | 'subclassId' | 'abilityPicks' | 'spellSlotsUsed'> {
+  if (!row) return {};
+  const out: Pick<Character, 'abilityCooldowns' | 'subclassId' | 'abilityPicks' | 'spellSlotsUsed'> = {};
+  const cooldowns = Object.entries(row.ability_cooldowns && typeof row.ability_cooldowns === 'object' ? row.ability_cooldowns : {})
+    .filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v > 0)
+    .map(([k, v]) => [k, Math.floor(v as number)] as const);
+  if (cooldowns.length > 0) out.abilityCooldowns = Object.fromEntries(cooldowns);
+  if (typeof row.subclass_id === 'string' && row.subclass_id) out.subclassId = row.subclass_id;
+  const picks = Object.entries(row.ability_picks && typeof row.ability_picks === 'object' ? row.ability_picks : {})
+    .filter(([, v]) => typeof v === 'string' && v);
+  if (picks.length > 0) out.abilityPicks = Object.fromEntries(picks) as Record<string, string>;
+  const slots = Number(row.spell_slots_used ?? 0);
+  if (slots > 0) out.spellSlotsUsed = Math.floor(slots);
+  return out;
 }

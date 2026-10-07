@@ -75,3 +75,16 @@ describe('longRest', () => {
     }
   });
 });
+
+describe('rest and the per-ability cooldown map (K2)', () => {
+  it('short rest clears the map when the character has one', () => {
+    expect(shortRest(c({ abilityCooldown: 2, abilityCooldowns: { a: 3 } }), fixed(4)).character.abilityCooldowns).toEqual({});
+  });
+  it('long rest clears the map when the character has one', () => {
+    expect(longRest(c({ abilityCooldowns: { a: 3 } }), { safe: true }).character.abilityCooldowns).toEqual({});
+  });
+  it('does not add a map to a character without one', () => {
+    expect('abilityCooldowns' in shortRest(c(), fixed(4)).character).toBe(false);
+    expect('abilityCooldowns' in longRest(c(), { safe: true }).character).toBe(false);
+  });
+});

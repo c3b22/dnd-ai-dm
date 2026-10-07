@@ -30,6 +30,17 @@ export interface Character {
   classId?: string | null;
   /** Eventful rounds left before the class ability is ready; absent means 0. */
   abilityCooldown?: number;
+  /**
+   * K2: cooldown per ability id for every ability beyond the class's main one (the main ability's id is
+   * the class id and its cooldown stays in `abilityCooldown`). Absent = none; read with `cooldownOf`.
+   */
+  abilityCooldowns?: Record<string, number>;
+  /** K2/K5: chosen subclass id; absent = none. */
+  subclassId?: string | null;
+  /** K2/K6: abilities picked at level 6 and 9, e.g. { "6": "<id>", "9": "<id>" }; absent = none. */
+  abilityPicks?: Record<string, string>;
+  /** K2/K3: spell slots spent since the last rest; absent = 0. */
+  spellSlotsUsed?: number;
   /** Six ability scores; absent means 10 for every score (see normalizeAbilities). */
   abilities?: AbilityScores;
   /** Identity text (max 500 chars each, see identity.ts); null or absent means not set. */
