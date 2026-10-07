@@ -1009,6 +1009,20 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
     await go(repository, [5, 8, 11], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
     expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 15 })], false);
   });
+
+  it('I4 venomous: a hit records the poisoned player, and the next round takes 1 HP first and clears the list', async () => {
+    const venomWolf = { ...wolf, traits: ['venomous' as const] };
+    const hit = repo();
+    vi.mocked(hit.getRoundContext).mockResolvedValue({ ...(await hit.getRoundContext('round-1')), currentEncounter: { enemies: [venomWolf] } });
+    await go(hit, [5, 2, 11], attackPlan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
+    expect(hit.setEncounter).toHaveBeenCalledWith('camp-1', expect.objectContaining({ poisoned: ['p1'] }));
+
+    const next = repo();
+    vi.mocked(next.getRoundContext).mockResolvedValue({ ...(await next.getRoundContext('round-1')), currentEncounter: { enemies: [venomWolf], poisoned: ['p1'] } });
+    await go(next, [5], 'เงียบ');
+    expect(next.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 19 })], false);
+    expect(next.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [venomWolf] });
+  });
 });
 
 describe('processRound I2 enemy attacks against AC', () => {

@@ -48,3 +48,48 @@ export const AC_PER_REDUCTION = 2;
 export const LIGHT_ARMOR_MAX_WEIGHT = 1;
 export const MEDIUM_ARMOR_MAX_WEIGHT = 2;
 export const MEDIUM_ARMOR_DEX_CAP = 2;
+
+/** I4: enemy traits picked from this fixed list; the server computes every effect. */
+export const ENEMY_TRAIT_IDS = ['armored', 'brute', 'pack', 'venomous', 'nimble', 'regenerating', 'ranged', 'fearsome', 'boss_signature'] as const;
+export type EnemyTrait = (typeof ENEMY_TRAIT_IDS)[number];
+/** An enemy carries at most this many traits (extra ones in a tag are ignored). */
+export const MAX_ENEMY_TRAITS = 2;
+/** Thai badge shown in the enemy panel. */
+export const ENEMY_TRAIT_LABELS: Record<EnemyTrait, string> = {
+  armored: 'เกราะหนา',
+  brute: 'กำลังสูง',
+  pack: 'ล่าเป็นฝูง',
+  venomous: 'พิษร้าย',
+  nimble: 'ว่องไว',
+  regenerating: 'ฟื้นตัวได้',
+  ranged: 'โจมตีระยะไกล',
+  fearsome: 'น่าเกรงขาม',
+  boss_signature: 'ท่าไม้ตายบอส',
+};
+/** What the DM is told each trait does (the server applies the numbers; "narration only" ones are just for the story). */
+export const ENEMY_TRAIT_HINTS: Record<EnemyTrait, string> = {
+  armored: 'armor class +2 against player attacks',
+  brute: 'its hits deal +2 damage',
+  pack: 'attacks with advantage while at least one other enemy of the fight is still standing',
+  venomous: 'a hit also poisons the player: 1 more HP lost at the start of the next round',
+  nimble: 'armor class +1 against player attacks, and slips away easily when it flees (narration only)',
+  regenerating: 'recovers 1 pip after every 2 rounds in which it is not hit, never above its starting pips',
+  ranged: 'can strike any player from afar, no one is out of reach (narration only)',
+  fearsome: 'its terror gives every player disadvantage on attacks during the first round of the fight',
+  boss_signature: 'boss only: every 3rd round of the fight it may attack 2 different players',
+};
+/** Traits only a boss can carry. */
+export const BOSS_ONLY_TRAITS: readonly EnemyTrait[] = ['boss_signature'];
+export const ARMORED_AC_BONUS = 2;
+export const NIMBLE_AC_BONUS = 1;
+export const BRUTE_DAMAGE_BONUS = 2;
+/** HP a venomous hit takes at the start of the next round (never drops the player below 1 HP). */
+export const VENOM_DAMAGE = 1;
+/** Rounds without being hit before a regenerating enemy recovers, and the pips it recovers. */
+export const REGEN_CALM_ROUNDS = 2;
+export const REGEN_PIPS = 1;
+/** The fight round (1-based) in which fearsome enemies frighten the players. */
+export const FEARSOME_ROUND = 1;
+/** A boss_signature boss attacks two players every this-many rounds. */
+export const BOSS_SIGNATURE_EVERY = 3;
+export const BOSS_SIGNATURE_TARGETS = 2;

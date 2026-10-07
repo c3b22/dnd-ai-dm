@@ -6,7 +6,7 @@ const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 1, maxP
 describe('combatPrompt', () => {
   it('explains the enemy tags and says no fight is going on when there is no encounter', () => {
     const text = combatPrompt(null).join('\n');
-    expect(text).toContain('[[enemy: Name | minion/normal/strong/boss]]');
+    expect(text).toContain('[[enemy: Name | minion/normal/strong/boss');
     expect(text).toContain('[[enemy_hurt: Name | light/medium/heavy]]');
     expect(text).toContain('[[enemy_flee: Name]]');
     expect(text).toContain('[[combat_end]]');

@@ -10,8 +10,8 @@ import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { takeItem } from '@/lib/inventory/rules';
-import { applyEnemyTags } from '@/lib/combat/encounter';
-import { applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
+import { advanceEncounter, applyEnemyTags, type Encounter } from '@/lib/combat/encounter';
+import { applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -86,6 +86,8 @@ export async function processRound(
   let deathSaveRolls: DeathSaveRoll[] = [];
   let deathSaveChanges: string[] = [];
   let roundCharacters: Character[] = [];
+  let storedEncounter: Encounter | null = null;
+  let venomChanges: string[] = [];
   let corpses: Corpse[] = [];
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
@@ -104,6 +106,16 @@ export async function processRound(
       // or re-rolling dice, so nothing doubles up.
       const nextRoundId = await deps.repository.closeRoundAndOpenNext(context.campaignId, roundId);
       return { processed: true, nextRoundId };
+    }
+    // I4 venomous: last round's poisoned players lose HP now, before anything else; the stored encounter keeps its
+    // poisoned list until this round's end-of-round save replaces it, so a retry before that never loses it.
+    storedEncounter = context.currentEncounter ?? null;
+    if (storedEncounter?.poisoned) {
+      const venom = applyVenom(context.characters, storedEncounter.poisoned);
+      venomChanges = venom.changes;
+      const { poisoned: _poisoned, ...rest } = storedEncounter;
+      void _poisoned;
+      context = { ...context, characters: venom.characters, currentEncounter: rest };
     }
     // The server rolls, not the model, so results are fair and can be shown to the table.
     const rollDie = rollD20;
@@ -191,7 +203,7 @@ export async function processRound(
             ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), roundCharacters, rollDie)
             : [];
         // I2: enemy attacks roll against the players' AC before the narration, then the DM narrates the real result.
-        enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, scrolls.encounter, rollDie, rollSides) : [];
+        enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, scrolls.encounter, rollDie, rollSides, applyAttackOutcomes(scrolls.encounter, attackOutcomes)) : [];
         if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
@@ -273,7 +285,8 @@ export async function processRound(
       const tagHits =
         enemyAttackOutcomes.length === 0
           ? applyEnemyAttackTags(plannedHits.characters, roundStart, tags, rollD20, deps.rollSides ?? randomDie, wardUsed, abilities.guards)
-          : { characters: plannedHits.characters, changes: [] as string[] };
+          : { characters: plannedHits.characters, changes: [] as string[], outcomes: [] as EnemyAttackOutcome[] };
+      const poisonedIds = [...enemyAttackOutcomes, ...tagHits.outcomes].filter((o) => o.venomous).map((o) => o.playerId);
       const enemyAttacks = { characters: tagHits.characters, changes: [...plannedHits.changes, ...tagHits.changes] };
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
       const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
@@ -386,8 +399,8 @@ export async function processRound(
       }
       // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
       // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
-      const before = context.currentEncounter ?? null;
-      const after = applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : scrolls.encounter, attackOutcomes), tags);
+      const before = storedEncounter;
+      const after = advanceEncounter(sceneChanged ? null : before, applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : scrolls.encounter, attackOutcomes), tags), poisonedIds);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         try {
           await deps.repository.setEncounter(context.campaignId, after);
@@ -405,6 +418,7 @@ export async function processRound(
         }
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
+        ...venomChanges,
         ...deathSaveChanges,
         ...potions.changes,
         ...scrolls.changes,

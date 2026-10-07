@@ -295,6 +295,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .enc-row.is-dead, .enc-row.is-fled { opacity: 0.45; }
 .enc-row.is-dead .nm { text-decoration: line-through; }
 .badge-fled { justify-self: start; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-weight: 600; }
+.enc-traits { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.badge-trait { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-weight: 600; }
 
 /* Inventory card */
 .inv-weight { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }

@@ -77,4 +77,12 @@ describe('EncounterPanel', () => {
     expect(container.querySelector('.enc-list')).toHaveClass('collapsed');
     expect(screen.getByRole('button', { name: 'ขยายรายการศัตรู' })).toHaveAttribute('aria-expanded', 'false');
   });
+
+  it('shows Thai trait badges and none for an enemy without traits', () => {
+    render(<EncounterPanel encounter={{ enemies: [enemy({ traits: ['armored', 'pack'] }), enemy({ name: 'โจร' })] }} />);
+    expect(screen.getByText('เกราะหนา')).toBeInTheDocument();
+    expect(screen.getByText('ล่าเป็นฝูง')).toBeInTheDocument();
+    expect(screen.getByLabelText('นิสัยของ หมาป่า')).toBeInTheDocument();
+    expect(screen.queryByLabelText('นิสัยของ โจร')).toBeNull();
+  });
 });

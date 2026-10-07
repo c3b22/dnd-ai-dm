@@ -6,13 +6,19 @@ import { findByDisplayName } from '@/lib/character/names';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_ATTACK_BONUS, ENEMY_DAMAGE_DICE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD, WEAPON_ATTACK_ABILITIES } from './constants';
+import { ARMORED_AC_BONUS, BOSS_SIGNATURE_EVERY, BOSS_SIGNATURE_TARGETS, BRUTE_DAMAGE_BONUS, FEARSOME_ROUND, NIMBLE_AC_BONUS, VENOM_DAMAGE, CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_ATTACK_BONUS, ENEMY_DAMAGE_DICE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD, WEAPON_ATTACK_ABILITIES } from './constants';
 import { KEEN_EYE_DEFAULT, takeWard } from '@/lib/inventory/effects';
 import { armorClass } from './armorClass';
 import { rollDice } from '@/lib/character/dice';
 import { guardDivisor } from '@/lib/character/abilities';
 import { levelForXp } from '@/lib/character/leveling';
-import { damageEnemy, findActiveEnemy, type Encounter } from './encounter';
+import { damageEnemy, findActiveEnemy, hasTrait, type Encounter, type EncounterEnemy } from './encounter';
+
+/** I4: armor class bonus an enemy's traits add against player attacks. */
+export const traitAcBonus = (enemy: EncounterEnemy): number =>
+  (hasTrait(enemy, 'armored') ? ARMORED_AC_BONUS : 0) + (hasTrait(enemy, 'nimble') ? NIMBLE_AC_BONUS : 0);
+
+const isLive = (e: EncounterEnemy) => e.pip > 0 && !e.fled;
 
 export interface AttackOutcome {
   playerId: string;
@@ -58,13 +64,15 @@ export function resolveAttack(input: {
   critSurge?: boolean;
   /** F5j3 X3: lowers the enemy's hit threshold by this much (never below 2). */
   keenEye?: number;
+  /** I4: armored / nimble raise the enemy's armor class by this much. */
+  acBonus?: number;
   /** I3: ability modifier, proficiency bonus and magic weapon bonus added to the d20 (default 0). */
   modifier?: number;
   proficiency?: number;
   magic?: number;
 }): { dc: number; die: number; total: number; hit: boolean; critical: 'success' | 'failure' | null; pips: number } {
   const advantage = input.advantage ?? 'none';
-  const dc = Math.max(MIN_HIT_THRESHOLD, HIT_THRESHOLD[input.tier] - (input.keenEye ?? 0));
+  const dc = Math.max(MIN_HIT_THRESHOLD, HIT_THRESHOLD[input.tier] + (input.acBonus ?? 0) - (input.keenEye ?? 0));
   const bonus = (input.modifier ?? 0) + (input.proficiency ?? 0) + (input.magic ?? 0);
   const result = resolveCheck({ d20s: input.d20s, ability: 10, proficient: false, level: 1, dc, advantage, bonus });
   const used = advantage === 'none' ? input.d20s.slice(0, 1) : input.d20s.slice(0, 2);
@@ -113,7 +121,11 @@ export function runAttacks(
   const out: AttackOutcome[] = [];
   // Simulated copy so a later attack in the same round sees the pips earlier hits already took.
   const enemies = encounter.enemies.map((e) => ({ ...e }));
-  for (const attack of planned) {
+  // I4 fearsome: while a live fearsome enemy stands in the first round of the fight, every attack is made with disadvantage
+  // (a planned advantage just cancels out).
+  const frightened = (encounter.round ?? 1) === FEARSOME_ROUND && encounter.enemies.some((e) => isLive(e) && hasTrait(e, 'fearsome'));
+  for (const planAttack of planned) {
+    const attack = frightened ? { ...planAttack, advantage: planAttack.advantage === 'advantage' ? ('none' as const) : ('disadvantage' as const) } : planAttack;
     const character = findByDisplayName(characters, attack.player);
     const target = findActiveEnemy(enemies, attack.target);
     if (!character || !target || character.status !== 'active' || seen.has(character.id)) continue;
@@ -122,7 +134,7 @@ export function runAttacks(
     const damage = damageOf(character) ?? 0;
     const maxDamage = maxDamageOf(character);
     const bonuses = attackBonuses(character);
-    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, ...bonuses, critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) });
+    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, ...bonuses, acBonus: traitAcBonus(target), critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) });
     if (r.hit) damageEnemy(target, r.pips);
     out.push({
       playerId: character.id,
@@ -205,6 +217,10 @@ export interface EnemyAttackOutcome {
   critical: 'success' | 'failure' | null;
   /** Damage dice rolled on a hit (doubled dice on a natural 20), before ward and guard; 0 on a miss. */
   damage: number;
+  /** I4 pack: the roll was made with advantage (two dice, the higher kept). */
+  advantage?: boolean;
+  /** I4 venomous: the enemy has it and hit, so the player is poisoned for the next round. */
+  venomous?: boolean;
 }
 
 /** Pure: d20 + tier bonus against AC; nat 1 always misses, nat 20 always hits. */
@@ -225,22 +241,33 @@ export function runEnemyAttacks(
   characters: Character[],
   encounter: Encounter | null,
   rollDie: () => number,
-  rollSides: (sides: number) => number
+  rollSides: (sides: number) => number,
+  /** I4: the encounter after this round's player attacks; pack looks here for mates still standing (default: `encounter`). */
+  survivors?: Encounter | null
 ): EnemyAttackOutcome[] {
   if (!encounter) return [];
-  const seen = new Set<string>();
+  const used = new Map<string, Set<string>>(); // enemy name -> player ids it already attacked this round
   const out: EnemyAttackOutcome[] = [];
+  const signatureRound = (encounter.round ?? 1) % BOSS_SIGNATURE_EVERY === 0;
   for (const attack of planned) {
     const enemy = findActiveEnemy(encounter.enemies, attack.enemy);
     const target = findByDisplayName(characters, attack.player);
-    if (!enemy || !target || target.status !== 'active' || seen.has(enemy.name)) continue;
-    seen.add(enemy.name);
-    const die = rollDie();
+    if (!enemy || !target || target.status !== 'active') continue;
+    const targets = used.get(enemy.name) ?? new Set<string>();
+    const limit = signatureRound && enemy.tier === 'boss' && hasTrait(enemy, 'boss_signature') ? BOSS_SIGNATURE_TARGETS : 1;
+    if (targets.size >= limit || targets.has(target.id)) continue;
+    targets.add(target.id);
+    used.set(enemy.name, targets);
+    const mates = (survivors ?? encounter).enemies.some((e) => e.name !== enemy.name && isLive(e));
+    const advantage = hasTrait(enemy, 'pack') && mates;
+    const first = rollDie();
+    const die = advantage ? Math.max(first, rollDie()) : first;
     const ac = armorClass(target);
     const r = resolveEnemyAttack({ die, tier: enemy.tier, ac });
     const spec = ENEMY_DAMAGE_DICE[enemy.tier];
-    const damage = r.hit ? rollDice(r.critical === 'success' ? { ...spec, count: spec.count * 2 } : spec, rollSides) : 0;
-    out.push({ enemy: enemy.name, tier: enemy.tier, playerId: target.id, playerDisplayName: target.displayName, die, bonus: r.bonus, total: r.total, ac, hit: r.hit, critical: r.critical, damage });
+    const dice = r.hit ? rollDice(r.critical === 'success' ? { ...spec, count: spec.count * 2 } : spec, rollSides) : 0;
+    const damage = r.hit && hasTrait(enemy, 'brute') ? dice + BRUTE_DAMAGE_BONUS : dice;
+    out.push({ enemy: enemy.name, tier: enemy.tier, playerId: target.id, playerDisplayName: target.displayName, die, bonus: r.bonus, total: r.total, ac, hit: r.hit, critical: r.critical, damage, ...(advantage ? { advantage } : {}), venomous: r.hit && hasTrait(enemy, 'venomous') });
   }
   return out;
 }
@@ -308,4 +335,20 @@ export function applyEnemyAttackTags(
   const planned = tags.flatMap((t) => (t.kind === 'enemy_attack' ? [{ enemy: t.enemy, player: t.player }] : []));
   const outcomes = runEnemyAttacks(planned, characters, encounter, rollDie, rollSides);
   return { ...applyEnemyAttackOutcomes(characters, outcomes, wardUsed, guards), outcomes };
+}
+
+/**
+ * I4 venomous: players poisoned by a hit last round lose VENOM_DAMAGE HP at the start of this one. Poison weakens
+ * but never downs anyone (HP stays at 1 or more), and a player who is not active any more is skipped.
+ */
+export function applyVenom(characters: Character[], poisoned: readonly string[] | undefined): { characters: Character[]; changes: string[] } {
+  const next = characters.map((c) => ({ ...c }));
+  const changes: string[] = [];
+  for (const id of new Set(poisoned ?? [])) {
+    const c = next.find((x) => x.id === id);
+    if (!c || c.status !== 'active' || c.hp <= 1) continue;
+    c.hp = Math.max(1, c.hp - VENOM_DAMAGE);
+    changes.push(`${c.displayName} −${VENOM_DAMAGE} HP จากพิษ`);
+  }
+  return { characters: next, changes };
 }

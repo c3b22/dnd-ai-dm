@@ -72,7 +72,7 @@ function attackText(a: AttackOutcome): string {
 function enemyAttackText(o: EnemyAttackOutcome): string {
   const crit = o.critical === 'success' ? ', natural 20' : o.critical === 'failure' ? ', natural 1' : '';
   const result = !o.hit ? 'MISS, the player is unharmed' : o.critical === 'success' ? 'CRITICAL HIT, a brutal wound' : 'HIT, the player is wounded';
-  return `- ${o.enemy} attacks ${o.playerDisplayName}: d20 ${o.die} + ${o.bonus} = ${o.total}${crit} vs armor class ${o.ac} -> ${result}`;
+  return `- ${o.enemy} attacks ${o.playerDisplayName}: d20 ${o.die} + ${o.bonus} = ${o.total}${crit} vs armor class ${o.ac}${o.advantage ? ' (rolled with advantage, the pack presses in)' : ''} -> ${result}${o.venomous ? ', and the venom seeps in (the player will feel it next round)' : ''}`;
 }
 
 function checkText(c: CheckOutcome): string {

@@ -1,5 +1,6 @@
 import type { HealTier, Tier, XpTier } from './constants';
 import type { GoldTier } from '@/lib/economy/gold';
+import { ENEMY_TRAIT_IDS, MAX_ENEMY_TRAITS, type EnemyTrait } from '@/lib/combat/constants';
 
 export type CharacterTag =
   | { kind: 'hurt'; name: string; tier: Tier }
@@ -14,7 +15,7 @@ export type CharacterTag =
   | { kind: 'shop_close' }
   | { kind: 'xp'; tier: XpTier }
   | { kind: 'milestone' }
-  | { kind: 'enemy'; name: string; tier: EnemyTier }
+  | { kind: 'enemy'; name: string; tier: EnemyTier; traits?: EnemyTrait[] }
   | { kind: 'enemy_hurt'; name: string; tier: EnemyHurtTier }
   | { kind: 'enemy_flee'; name: string }
   | { kind: 'enemy_attack'; enemy: string; player: string }
@@ -41,10 +42,21 @@ export type EnemyHurtTier = 'light' | 'medium' | 'heavy';
 // (so an unterminated or malformed tag can never stretch forward and swallow a real tag that
 // follows it on a later line, instead of just leaving itself unstripped in the narration).
 const VALID_TAG =
-  /\[\[\s*(?:hurt\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy)|heal\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy|full)|revive\s*:\s*([^\]\n[]+?)|(sanctuary)|(give|take)\s*:\s*([^|\]\n[]+?)\s*\|\s*(?:story\s*:\s*([^\]\n[]+?)|([a-z_]+))|(gold|pay)\s*:\s*([^|\]\n[]+?)\s*\|\s*(small|medium|large)|shop\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|(shop_close)|xp\s*:\s*(small|medium|large)|(milestone)|enemy\s*:\s*([^|\]\n[]+?)\s*\|\s*(minion|normal|strong|boss)|enemy_hurt\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy)|enemy_flee\s*:\s*([^\]\n[]+?)|(combat_end)|npc\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|quest\s*:\s*([^|\]\n[]+?)\s*\|\s*(open|done)|clue\s*:\s*([^\]\n[]+?)|enemy_attack\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|magic\s*:\s*([^|\]\n[]+?)\s*\|\s*(uncommon|rare|legendary)(?:\s*\|\s*(weapon|armor|accessory|potion|scroll))?|loot\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?))\s*\]\]/gi;
+  /\[\[\s*(?:hurt\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy)|heal\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy|full)|revive\s*:\s*([^\]\n[]+?)|(sanctuary)|(give|take)\s*:\s*([^|\]\n[]+?)\s*\|\s*(?:story\s*:\s*([^\]\n[]+?)|([a-z_]+))|(gold|pay)\s*:\s*([^|\]\n[]+?)\s*\|\s*(small|medium|large)|shop\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|(shop_close)|xp\s*:\s*(small|medium|large)|(milestone)|enemy\s*:\s*([^|\]\n[]+?)\s*\|\s*(minion|normal|strong|boss)(?:\s*\|[^\]\n[]*)?|enemy_hurt\s*:\s*([^|\]\n[]+?)\s*\|\s*(light|medium|heavy)|enemy_flee\s*:\s*([^\]\n[]+?)|(combat_end)|npc\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|quest\s*:\s*([^|\]\n[]+?)\s*\|\s*(open|done)|clue\s*:\s*([^\]\n[]+?)|enemy_attack\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?)|magic\s*:\s*([^|\]\n[]+?)\s*\|\s*(uncommon|rare|legendary)(?:\s*\|\s*(weapon|armor|accessory|potion|scroll))?|loot\s*:\s*([^|\]\n[]+?)\s*\|\s*([^\]\n[]+?))\s*\]\]/gi;
 // A tag-shaped leftover (bad tier, missing part, misspelled name like [[milestones]]): hidden from
 // players, never applied.
 const LEFTOVER_TAG = /\[\[\s*(?:hurt|heal|revive|sanctuary|give|take|gold|pay|shop_close|shop|xp|milestone|enemy_hurt|enemy_flee|enemy_attack|enemy|combat_end|npc|quest|clue|magic|loot)[^\]\n[]*\]\]/gi;
+
+/** I4: the optional third part of an enemy tag. Unknown names are ignored, duplicates dropped, at most MAX_ENEMY_TRAITS kept. */
+export function parseEnemyTraits(raw: string | undefined): EnemyTrait[] {
+  if (!raw) return [];
+  const out: EnemyTrait[] = [];
+  for (const part of raw.replace(/\]\]\s*$/, '').split(',')) {
+    const id = part.trim().toLowerCase();
+    if ((ENEMY_TRAIT_IDS as readonly string[]).includes(id) && !out.includes(id as EnemyTrait)) out.push(id as EnemyTrait);
+  }
+  return out.slice(0, MAX_ENEMY_TRAITS);
+}
 
 export function parseCharacterTags(text: string): { tags: CharacterTag[]; cleanText: string } {
   const tags: CharacterTag[] = [];
@@ -82,7 +94,8 @@ export function parseCharacterTags(text: string): { tags: CharacterTag[]; cleanT
     } else if (match[18]) {
       tags.push({ kind: 'milestone' });
     } else if (match[19]) {
-      tags.push({ kind: 'enemy', name: match[19].trim(), tier: match[20].toLowerCase() as EnemyTier });
+      const traits = parseEnemyTraits(match[0].split('|')[2]);
+      tags.push({ kind: 'enemy', name: match[19].trim(), tier: match[20].toLowerCase() as EnemyTier, ...(traits.length > 0 ? { traits } : {}) });
     } else if (match[21]) {
       tags.push({ kind: 'enemy_hurt', name: match[21].trim(), tier: match[22].toLowerCase() as EnemyHurtTier });
     } else if (match[23]) {
