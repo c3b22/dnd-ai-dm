@@ -21,7 +21,7 @@ import { combatPrompt } from '@/lib/combat/prompt';
 import type { Encounter } from '@/lib/combat/encounter';
 import { isStoryRole, type MessageRole } from '@/lib/messages/roles';
 import { checkPlanInstructions, type CheckOutcome } from '@/lib/character/checkPlan';
-import type { AttackOutcome } from '@/lib/combat/attack';
+import type { AttackOutcome, EnemyAttackOutcome } from '@/lib/combat/attack';
 
 export interface StoredMessage {
   role: MessageRole;
@@ -56,6 +56,8 @@ export interface RoundAction {
 export interface AssembleOptions {
   /** First call of a dice round: the DM answers with a JSON check plan or the narration instead of narrating directly. */
   planChecks?: boolean;
+  /** I2: enemy attacks the server already rolled this round; the narration must match them. */
+  enemyAttacks?: EnemyAttackOutcome[];
 }
 
 function attackText(a: AttackOutcome): string {
@@ -64,6 +66,12 @@ function attackText(a: AttackOutcome): string {
   const after = a.defeated ? 'the enemy is defeated' : 'the enemy is still standing';
   const result = !a.hit ? 'MISS, the enemy is unharmed' : `${a.pips >= 2 ? 'HEAVY HIT, a devastating blow' : 'HIT, a solid wound'}, ${after}`;
   return ` (attack on ${a.target}${adv}: d20 ${a.die}${crit} vs ${a.dc} -> ${result})`;
+}
+
+function enemyAttackText(o: EnemyAttackOutcome): string {
+  const crit = o.critical === 'success' ? ', natural 20' : o.critical === 'failure' ? ', natural 1' : '';
+  const result = !o.hit ? 'MISS, the player is unharmed' : o.critical === 'success' ? 'CRITICAL HIT, a brutal wound' : 'HIT, the player is wounded';
+  return `- ${o.enemy} attacks ${o.playerDisplayName}: d20 ${o.die} + ${o.bonus} = ${o.total}${crit} vs armor class ${o.ac} -> ${result}`;
 }
 
 function checkText(c: CheckOutcome): string {
@@ -152,6 +160,9 @@ export function assemblePrompt(
     })(),
     ...(actions.some((a) => a.check || a.attack)
       ? ['', 'Skill checks and attacks above are final and decided by the server: narrate each SUCCESS or HIT as the player achieving what they tried and each FAILURE or MISS as it going wrong or falling short. Never re-roll or change them.']
+      : []),
+    ...(options.enemyAttacks && options.enemyAttacks.length > 0
+      ? ['', 'Enemy attacks this round, rolled and final (decided by the server; narrate each HIT as the enemy landing the blow and each MISS as it failing; never state damage numbers, never use an enemy_attack tag for them):', ...options.enemyAttacks.map(enemyAttackText)]
       : []),
     ...(options.planChecks ? ['', ...checkPlanInstructions(!!characterState?.encounter)] : []),
   ].join('\n');

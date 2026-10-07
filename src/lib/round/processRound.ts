@@ -11,7 +11,7 @@ import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { takeItem } from '@/lib/inventory/rules';
 import { applyEnemyTags } from '@/lib/combat/encounter';
-import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
+import { applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -41,6 +41,15 @@ function deathSaveEntry(r: DeathSaveRoll): RollSummaryEntry {
   };
 }
 
+/** An enemy attack shown like a roll so the dice overlay renders it for everyone (I2). */
+function enemyAttackEntry(o: EnemyAttackOutcome): RollSummaryEntry {
+  return {
+    playerDisplayName: o.enemy,
+    roll: o.die,
+    enemyAttack: { target: o.playerDisplayName, bonus: o.bonus, total: o.total, ac: o.ac, hit: o.hit, critical: o.critical },
+  };
+}
+
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
   /** Hands a claimed round back to 'pending' so a retry doesn't wait out the stale window. */
@@ -63,6 +72,7 @@ export async function processRound(
   deps: ProcessRoundDeps,
   roundId: string
 ): Promise<ProcessRoundResult> {
+  const rollD20 = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
   const claimed = await deps.claimRound(roundId);
   if (!claimed) {
     return { processed: false };
@@ -72,6 +82,7 @@ export async function processRound(
   let prompt: string;
   let rolled: RoundAction[];
   let attackOutcomes: AttackOutcome[] = [];
+  let enemyAttackOutcomes: EnemyAttackOutcome[] = [];
   let deathSaveRolls: DeathSaveRoll[] = [];
   let deathSaveChanges: string[] = [];
   let roundCharacters: Character[] = [];
@@ -95,7 +106,7 @@ export async function processRound(
       return { processed: true, nextRoundId };
     }
     // The server rolls, not the model, so results are fair and can be shown to the table.
-    const rollDie = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
+    const rollDie = rollD20;
     const settings = normalizeSettings(context.settings);
     diceEnabled = settings.diceEnabled;
     const rollSides = deps.rollSides ?? randomDie;
@@ -144,7 +155,7 @@ export async function processRound(
       const weapon = weaponFor(character.weaponId);
       return { ...a, roll, weaponLabel: weapon.id, damage: abilities.damage[character.id] ?? rollDice(weapon.dice, rollSides) + levelDamageBonus(levelForXp(character.xp ?? 0)) };
     });
-    const build = (actions: RoundAction[], planChecks = false) =>
+    const build = (actions: RoundAction[], planChecks = false, enemyAttackResults: EnemyAttackOutcome[] = []) =>
       assemblePrompt(
         context.campaignSummary,
         context.recentMessages,
@@ -154,7 +165,7 @@ export async function processRound(
         settings,
         { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter, corpses: context.corpses ?? [] },
         context.facts ?? [],
-        { planChecks }
+        { planChecks, enemyAttacks: enemyAttackResults }
       );
     prompt = build(rolled);
     // Generate before writing anything: the real adapter resolves only once Gemini has
@@ -179,7 +190,9 @@ export async function processRound(
           first.kind === 'checks'
             ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), roundCharacters, rollDie)
             : [];
-        if (outcomes.length > 0 || attackOutcomes.length > 0) {
+        // I2: enemy attacks roll against the players' AC before the narration, then the DM narrates the real result.
+        enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, scrolls.encounter, rollDie, rollSides) : [];
+        if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           rolled = rolled.map((a) => {
@@ -188,7 +201,7 @@ export async function processRound(
             const attack = attackByName.get(key);
             return { ...a, ...(check ? { check } : {}), ...(attack ? { attack } : {}) };
           });
-          prompt = build(rolled);
+          prompt = build(rolled, false, enemyAttackOutcomes);
         }
         stream = await deps.generateNarration(prompt);
       }
@@ -216,7 +229,7 @@ export async function processRound(
             roll: c.die,
             check: { skill: c.skill, dc: c.dc, advantage: c.advantage, dice: c.dice, modifier: c.modifier, proficiency: c.proficiency, total: c.total, success: c.success, critical: c.critical },
           };
-        }), ...deathSaveRolls.map(deathSaveEntry)]
+        }), ...enemyAttackOutcomes.map(enemyAttackEntry), ...deathSaveRolls.map(deathSaveEntry)]
       )
       .catch(() => {});
   }
@@ -251,7 +264,14 @@ export async function processRound(
       // An enemy that joins this very round may attack; one the players just downed still did.
       const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
       const wardUsed = new Set<string>(); // F5j4: one ward use per wearer per round, across both damage paths
-      const enemyAttacks = applyEnemyAttacks(roundCharacters, roundStart, tags, wardUsed);
+      // I2: attacks the server rolled from the plan land first; only when there were none, an [[enemy_attack]]
+      // tag from a pure narration is rolled by the same formula and reported in the stats summary.
+      const plannedHits = applyEnemyAttackOutcomes(roundCharacters, enemyAttackOutcomes, wardUsed, abilities.guards);
+      const tagHits =
+        enemyAttackOutcomes.length === 0
+          ? applyEnemyAttackTags(plannedHits.characters, roundStart, tags, rollD20, deps.rollSides ?? randomDie, wardUsed, abilities.guards)
+          : { characters: plannedHits.characters, changes: [] as string[] };
+      const enemyAttacks = { characters: tagHits.characters, changes: [...plannedHits.changes, ...tagHits.changes] };
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
       const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
       const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);

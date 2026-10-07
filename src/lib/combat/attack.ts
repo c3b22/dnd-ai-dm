@@ -4,8 +4,12 @@ import { findByDisplayName } from '@/lib/character/names';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD } from './constants';
+import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_ATTACK_BONUS, ENEMY_DAMAGE_DICE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD } from './constants';
 import { KEEN_EYE_DEFAULT, takeWard } from '@/lib/inventory/effects';
+import { armorClass } from './armorClass';
+import { rollDice } from '@/lib/character/dice';
+import { guardDivisor } from '@/lib/character/abilities';
+import { levelForXp } from '@/lib/character/leveling';
 import { damageEnemy, findActiveEnemy, type Encounter } from './encounter';
 
 export interface AttackOutcome {
@@ -152,35 +156,122 @@ export function applyLifesteal(
   return { characters: next, changes };
 }
 
+export interface EnemyAttackOutcome {
+  /** Enemy name as it is in the encounter (resolved, so `หมาป่า` may become `หมาป่า 2`). */
+  enemy: string;
+  tier: EnemyTier;
+  playerId: string;
+  playerDisplayName: string;
+  die: number;
+  bonus: number;
+  total: number;
+  /** The target's armor class the roll was compared against. */
+  ac: number;
+  hit: boolean;
+  critical: 'success' | 'failure' | null;
+  /** Damage dice rolled on a hit (doubled dice on a natural 20), before ward and guard; 0 on a miss. */
+  damage: number;
+}
+
+/** Pure: d20 + tier bonus against AC; nat 1 always misses, nat 20 always hits. */
+export function resolveEnemyAttack(input: { die: number; tier: EnemyTier; ac: number }): { bonus: number; total: number; hit: boolean; critical: 'success' | 'failure' | null } {
+  const bonus = ENEMY_ATTACK_BONUS[input.tier];
+  const total = input.die + bonus;
+  const critical = input.die === 20 ? 'success' : input.die === 1 ? 'failure' : null;
+  const hit = critical === 'success' ? true : critical === 'failure' ? false : total >= input.ac;
+  return { bonus, total, hit, critical };
+}
+
 /**
- * Pure: resolves [[enemy_attack]] tags. Damage is fixed by the enemy's tier, minus the target's armor,
- * at least 1, and there is no roll. The warrior's guard ability is not applied to these hits.
+ * I2: rolls every planned enemy attack on the server. One attack per live enemy; the enemy must be in the
+ * encounter and the target an active player, anything else is ignored. The damage dice are only rolled on a hit.
  */
-export function applyEnemyAttacks(
+export function runEnemyAttacks(
+  planned: readonly { enemy: string; player: string }[],
   characters: Character[],
   encounter: Encounter | null,
-  tags: CharacterTag[],
+  rollDie: () => number,
+  rollSides: (sides: number) => number
+): EnemyAttackOutcome[] {
+  if (!encounter) return [];
+  const seen = new Set<string>();
+  const out: EnemyAttackOutcome[] = [];
+  for (const attack of planned) {
+    const enemy = findActiveEnemy(encounter.enemies, attack.enemy);
+    const target = findByDisplayName(characters, attack.player);
+    if (!enemy || !target || target.status !== 'active' || seen.has(enemy.name)) continue;
+    seen.add(enemy.name);
+    const die = rollDie();
+    const ac = armorClass(target);
+    const r = resolveEnemyAttack({ die, tier: enemy.tier, ac });
+    const spec = ENEMY_DAMAGE_DICE[enemy.tier];
+    const damage = r.hit ? rollDice(r.critical === 'success' ? { ...spec, count: spec.count * 2 } : spec, rollSides) : 0;
+    out.push({ enemy: enemy.name, tier: enemy.tier, playerId: target.id, playerDisplayName: target.displayName, die, bonus: r.bonus, total: r.total, ac, hit: r.hit, critical: r.critical, damage });
+  }
+  return out;
+}
+
+/**
+ * I2: applies rolled enemy hits. Armor is already part of the AC so it no longer reduces damage, but the
+ * target's ward (F5j4, first hit of the round) and the warrior's guard (ยืนบัง, who takes the hit instead) still do.
+ */
+export function applyEnemyAttackOutcomes(
+  characters: Character[],
+  outcomes: readonly EnemyAttackOutcome[],
   /** F5j4 ward: ids of wearers whose ward is already spent this round; shared with applyCharacterTags. */
-  wardUsed: Set<string> = new Set()
+  wardUsed: Set<string> = new Set(),
+  /** Protected ally id -> the warrior guarding them this round (see applyAbilityActions). */
+  guards: Record<string, string> = {}
 ): { characters: Character[]; changes: string[] } {
   const next = characters.map((c) => ({ ...c }));
   const changes: string[] = [];
-  if (!encounter) return { characters: next, changes };
-  for (const tag of tags) {
-    if (tag.kind !== 'enemy_attack') continue;
-    const enemy = findActiveEnemy(encounter.enemies, tag.enemy);
-    const target = findByDisplayName(next, tag.player);
-    if (!enemy || !target || target.status !== 'active') continue;
-    const reduction = (target.armorReduction ?? 0) + takeWard(target, wardUsed);
-    const damage = Math.max(MIN_ENEMY_DAMAGE, ENEMY_DAMAGE[enemy.tier] - reduction);
-    const absorbed = ENEMY_DAMAGE[enemy.tier] - damage;
-    target.hp = Math.max(0, target.hp - damage);
-    changes.push(`${target.displayName} −${damage} HP จาก ${enemy.name}${absorbed > 0 ? ` (เกราะกัน ${absorbed})` : ''}`);
-    if (target.hp === 0) {
-      target.status = 'downed';
-      changes.push(`${target.displayName} ล้มลง`);
+  const down = (c: Character) => {
+    c.hp = Math.max(0, c.hp);
+    if (c.hp === 0) {
+      c.status = 'downed';
+      changes.push(`${c.displayName} ล้มลง`);
+    }
+  };
+  for (const o of outcomes) {
+    const head = `${o.enemy} โจมตี ${o.playerDisplayName}: ทอย ${o.die}${o.bonus >= 0 ? '+' : '-'}${Math.abs(o.bonus)} = ${o.total} เทียบ AC ${o.ac}`;
+    if (!o.hit) {
+      changes.push(`${head} พลาด${o.critical === 'failure' ? ' (ทอยได้ 1)' : ''}`);
+      continue;
+    }
+    const target = next.find((c) => c.id === o.playerId);
+    if (!target || target.status !== 'active') continue;
+    const crit = o.critical === 'success' ? ' คริติคอล' : '';
+    const guard = guards[target.id] ? next.find((c) => c.id === guards[target.id]) : undefined;
+    if (guard && guard.status === 'active' && guard.id !== target.id) {
+      const damage = Math.max(MIN_ENEMY_DAMAGE, Math.ceil((o.damage - takeWard(guard, wardUsed)) / guardDivisor(levelForXp(guard.xp ?? 0))));
+      guard.hp -= damage;
+      changes.push(`${head} โดน${crit}: ${guard.displayName} รับดาเมจแทน ${target.displayName} −${damage} HP`);
+      down(guard);
+    } else {
+      const damage = Math.max(MIN_ENEMY_DAMAGE, o.damage - takeWard(target, wardUsed));
+      const absorbed = o.damage - damage;
+      target.hp -= damage;
+      changes.push(`${head} โดน${crit} −${damage} HP${absorbed > 0 ? ` (เกราะวิเศษกัน ${absorbed})` : ''}`);
+      down(target);
     }
   }
   return { characters: next, changes };
 }
 
+/**
+ * Pure, narration-only fallback (I2): an [[enemy_attack]] tag the DM wrote anyway is rolled with the same
+ * formula, just after the fact (the story may not match the dice). Returns the outcomes already applied.
+ */
+export function applyEnemyAttackTags(
+  characters: Character[],
+  encounter: Encounter | null,
+  tags: CharacterTag[],
+  rollDie: () => number,
+  rollSides: (sides: number) => number,
+  wardUsed: Set<string> = new Set(),
+  guards: Record<string, string> = {}
+): { characters: Character[]; changes: string[]; outcomes: EnemyAttackOutcome[] } {
+  const planned = tags.flatMap((t) => (t.kind === 'enemy_attack' ? [{ enemy: t.enemy, player: t.player }] : []));
+  const outcomes = runEnemyAttacks(planned, characters, encounter, rollDie, rollSides);
+  return { ...applyEnemyAttackOutcomes(characters, outcomes, wardUsed, guards), outcomes };
+}

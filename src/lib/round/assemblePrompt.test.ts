@@ -187,7 +187,7 @@ describe('assemblePrompt combat', () => {
     const prompt = assemblePrompt('', [], act, null, '', undefined,
       { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] } });
     expect(prompt).not.toContain('[[enemy_hurt:');
-    expect(prompt).toContain('[[enemy_attack: EnemyName | PlayerName]]');
+    expect(prompt).toContain('"enemyAttacks"');
     expect(prompt).toContain('- หมาป่า (normal): 1/2 pips');
   });
 
@@ -205,6 +205,19 @@ describe('assemblePrompt combat', () => {
     expect(text).toContain('the enemy is defeated');
     expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('"attacks"');
     expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('"attacks"');
+    expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('you MUST answer in shape 1');
+    expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('you MUST answer in shape 1');
+  });
+
+  it('tells the DM the rolled enemy attacks (hit, miss, critical) without damage numbers', () => {
+    const state = { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false }] } };
+    const base = { enemy: 'หมาป่า', tier: 'normal' as const, playerId: 'p1', playerDisplayName: 'Prem', die: 12, bonus: 4, total: 16, ac: 14, hit: true, critical: null, damage: 5 };
+    const text = assemblePrompt('', [], act, null, '', undefined, state, [], { enemyAttacks: [base, { ...base, die: 3, total: 7, hit: false }, { ...base, die: 20, total: 24, critical: 'success' }] });
+    expect(text).toContain('หมาป่า attacks Prem: d20 12 + 4 = 16 vs armor class 14 -> HIT');
+    expect(text).toContain('-> MISS');
+    expect(text).toContain('natural 20 vs armor class 14 -> CRITICAL HIT');
+    expect(text).not.toContain('damage 5');
+    expect(assemblePrompt('', [], act, null, '', undefined, state, [], { enemyAttacks: [] })).not.toContain('Enemy attacks this round');
   });
   it('says no fight is in progress without an encounter', () => {
     const prompt = assemblePrompt('', [], act, null, '', undefined, { characters: [prem], pendingWipe: false });

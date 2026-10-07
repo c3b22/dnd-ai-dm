@@ -146,3 +146,30 @@ describe('DiceRollOverlay checks', () => {
     expect(screen.getByText(/ผ่าน/)).toBeTruthy();
   });
 });
+
+describe('DiceRollOverlay enemy attacks (I2)', () => {
+  it('shows enemy -> player, the total against AC and hit or miss once the dice land', async () => {
+    initMock.mockResolvedValue(undefined);
+    let box: { onRollComplete?: () => void } = {};
+    DiceBoxMock.mockImplementation(() => (box = { init: initMock, roll: vi.fn() } as never));
+
+    render(
+      <DiceRollOverlay
+        values={[11, 3]}
+        enemyAttacks={[
+          { enemy: 'หมาป่า', target: 'Prem', die: 11, bonus: 4, total: 15, ac: 15, hit: true, critical: null },
+          { enemy: 'โจร', target: 'Nok', die: 3, bonus: 3, total: 6, ac: 12, hit: false, critical: null },
+        ]}
+        onComplete={vi.fn()}
+      />
+    );
+    await waitFor(() => expect(box.onRollComplete).toBeDefined());
+    act(() => box.onRollComplete!());
+
+    expect(await screen.findByText(/หมาป่า/)).toBeTruthy();
+    expect(screen.getByText(/11 \+ 4 = 15 เทียบ AC 15/)).toBeTruthy();
+    expect(screen.getByText(/โดน/)).toBeTruthy();
+    expect(screen.getByText(/3 \+ 3 = 6 เทียบ AC 12/)).toBeTruthy();
+    expect(screen.getByText(/พลาด/)).toBeTruthy();
+  });
+});

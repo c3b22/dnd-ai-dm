@@ -13,6 +13,7 @@ describe('parseCheckPlan', () => {
         { player: 'Nok', skill: 'athletics', dc: 30, advantage: 'none' },
       ],
       attacks: [],
+      enemyAttacks: [],
     });
   });
   it('reads attacks (alone or with checks) and drops malformed ones', () => {
@@ -20,8 +21,20 @@ describe('parseCheckPlan', () => {
       kind: 'checks',
       checks: [],
       attacks: [{ player: 'Prem', target: 'หมาป่า', advantage: 'disadvantage' }],
+      enemyAttacks: [],
     });
     expect(parseCheckPlan('{"attacks":[{"player":"Prem"}]}')).toEqual({ kind: 'invalid' });
+  });
+  it('reads enemyAttacks (alone or with checks) and drops malformed ones', () => {
+    expect(parseCheckPlan('{"checks":[],"enemyAttacks":[{"enemy":"หมาป่า","player":"Prem"},{"enemy":"x"},{"player":"y"},"z"]}')).toEqual({
+      kind: 'checks',
+      checks: [],
+      attacks: [],
+      enemyAttacks: [{ enemy: 'หมาป่า', player: 'Prem' }],
+    });
+    expect(parseCheckPlan('{"enemyAttacks":[{"enemy":"x"}]}')).toEqual({ kind: 'invalid' });
+    const both = parseCheckPlan('{"checks":[{"player":"Prem","skill":"stealth","dc":10}],"enemyAttacks":[{"enemy":"หมาป่า","player":"Nok"}]}');
+    expect(both).toMatchObject({ kind: 'checks', enemyAttacks: [{ enemy: 'หมาป่า', player: 'Nok' }] });
   });
   it('reads a narration plan, also inside a code fence', () => {
     expect(parseCheckPlan('```json\n{"narration":"ประตูเปิดออก"}\n```')).toEqual({ kind: 'narration', text: 'ประตูเปิดออก' });
