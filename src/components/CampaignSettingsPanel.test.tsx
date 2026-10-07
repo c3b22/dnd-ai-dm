@@ -46,4 +46,24 @@ describe('CampaignSettingsPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/บันทึกไม่สำเร็จ/);
     expect(screen.getByRole('button', { name: 'ยกเลิก' })).toBeInTheDocument();
   });
+
+  it('shows permadeath state and lets the owner toggle it before the game starts', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<CampaignSettingsPanel settings={DEFAULT_SETTINGS} isOwner onSave={onSave} />);
+    expect(screen.getByText('โหมดตายจริง')).toBeInTheDocument();
+    expect(screen.getByText('ปิด')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'แก้ไขการตั้งค่า' }));
+    await userEvent.click(screen.getByLabelText(/โหมดตายจริง/));
+    await userEvent.click(screen.getByRole('button', { name: 'บันทึก' }));
+
+    expect(onSave).toHaveBeenCalledWith({ ...DEFAULT_SETTINGS, permadeath: true });
+  });
+
+  it('locks the permadeath switch once the game has started', async () => {
+    render(<CampaignSettingsPanel settings={{ ...DEFAULT_SETTINGS, permadeath: true }} isOwner started onSave={async () => {}} />);
+    expect(screen.getByText('เปิด')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'แก้ไขการตั้งค่า' }));
+    expect(screen.getByLabelText(/โหมดตายจริง/)).toBeDisabled();
+  });
 });

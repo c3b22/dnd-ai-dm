@@ -10,6 +10,8 @@ export interface CampaignSettings {
   difficulty: Difficulty;
   diceEnabled: boolean;
   reorderPolicy: ReorderPolicy;
+  /** Permanent death: stored and shown only for now; the game does not act on it yet. Owner sets it before the game starts. */
+  permadeath: boolean;
 }
 
 export const DEFAULT_SETTINGS: CampaignSettings = {
@@ -18,6 +20,7 @@ export const DEFAULT_SETTINGS: CampaignSettings = {
   difficulty: 'normal',
   diceEnabled: true,
   reorderPolicy: 'self',
+  permadeath: false,
 };
 
 export const ROUND_SECONDS_OPTIONS = [0, 60, 120, 180, 300, 600, 900, 1800];
@@ -62,6 +65,7 @@ export function normalizeSettings(raw: unknown): CampaignSettings {
     reorderPolicy: REORDER_OPTIONS.includes(source.reorderPolicy as ReorderPolicy)
       ? (source.reorderPolicy as ReorderPolicy)
       : DEFAULT_SETTINGS.reorderPolicy,
+    permadeath: typeof source.permadeath === 'boolean' ? source.permadeath : DEFAULT_SETTINGS.permadeath,
   };
 }
 
@@ -95,6 +99,10 @@ export function parseSettingsPatch(raw: unknown): Partial<CampaignSettings> | nu
       case 'reorderPolicy':
         if (!REORDER_OPTIONS.includes(value as ReorderPolicy)) return null;
         patch.reorderPolicy = value as ReorderPolicy;
+        break;
+      case 'permadeath':
+        if (typeof value !== 'boolean') return null;
+        patch.permadeath = value;
         break;
       default:
         return null;

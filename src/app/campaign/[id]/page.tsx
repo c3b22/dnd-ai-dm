@@ -532,6 +532,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
           <CampaignSettingsPanel
             settings={settings}
             isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
+            started={Boolean(startedAt)}
             onSave={handleSaveSettings}
           />
           <QuestLog facts={facts} />

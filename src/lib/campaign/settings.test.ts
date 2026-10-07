@@ -19,6 +19,13 @@ describe('normalizeSettings', () => {
       normalizeSettings({ roundSeconds: 120, difficulty: 'hard', narrationLength: 'epic', diceEnabled: 'yes' })
     ).toEqual({ ...DEFAULT_SETTINGS, roundSeconds: 120, difficulty: 'hard' });
   });
+
+  it('defaults permadeath to off and only accepts a real boolean', () => {
+    expect(DEFAULT_SETTINGS.permadeath).toBe(false);
+    expect(normalizeSettings({}).permadeath).toBe(false);
+    expect(normalizeSettings({ permadeath: true }).permadeath).toBe(true);
+    expect(normalizeSettings({ permadeath: 'yes' }).permadeath).toBe(false);
+  });
 });
 
 describe('parseSettingsPatch', () => {
@@ -27,6 +34,11 @@ describe('parseSettingsPatch', () => {
       roundSeconds: 0,
       diceEnabled: false,
     });
+  });
+
+  it('validates the permadeath switch', () => {
+    expect(parseSettingsPatch({ permadeath: true })).toEqual({ permadeath: true });
+    expect(parseSettingsPatch({ permadeath: 'on' })).toBeNull();
   });
 
   it('rejects unknown keys, bad values and empty updates', () => {
