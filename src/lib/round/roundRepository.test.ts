@@ -763,3 +763,43 @@ describe('scroll target (F5e)', () => {
     expect(context.actions[0]).toMatchObject({ playerId: 'p1', useItemId: 'scroll_spark', itemTarget: 'หมาป่า' });
   });
 });
+
+describe('createSupabaseRoundRepository permanent death (H3a)', () => {
+  const dead = { id: 'p2', displayName: 'Aria', weaponId: null, hp: 0, maxHp: 10, status: 'dead' as const, revivesSinceSanctuary: 0 };
+
+  it('saveCorpses inserts one row per corpse with campaign, name, items and gold', async () => {
+    const inserted: { table: string; rows: unknown }[] = [];
+    const client: any = { from: (table: string) => ({ insert: (rows: unknown) => { inserted.push({ table, rows }); return Promise.resolve({ error: null }); } }) };
+    const items = [{ itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon' as const, equipped: true }];
+    await createSupabaseRoundRepository(client).saveCorpses!('camp-1', [{ playerId: 'p2', name: 'Aria', items, gold: 35 }]);
+    expect(inserted).toEqual([{ table: 'campaign_corpses', rows: [{ campaign_id: 'camp-1', name: 'Aria', items, gold: 35 }] }]);
+  });
+
+  it('saveCorpses throws when the table is missing so the round keeps the pack', async () => {
+    const client: any = { from: () => ({ insert: () => Promise.resolve({ error: new Error('no table') }) }) };
+    await expect(createSupabaseRoundRepository(client).saveCorpses!('camp-1', [{ playerId: 'p2', name: 'Aria', items: [], gold: 0 }])).rejects.toThrow('no table');
+  });
+
+  it('saves status dead, and falls back to downed when the database does not know that status yet', async () => {
+    const rpcCalls: any[] = [];
+    const client: any = {
+      rpc: (_name: string, args: any) => {
+        rpcCalls.push(args);
+        return Promise.resolve({ error: rpcCalls.length === 1 ? new Error('violates check constraint') : null });
+      },
+      from: () => ({ update: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
+    };
+    await createSupabaseRoundRepository(client).saveCharacterState('camp-1', [dead], false);
+    expect(rpcCalls.map((a) => a.changes[0].status)).toEqual(['dead', 'downed']);
+  });
+
+  it('reads status dead from the players table', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [{ id: 'p2', display_name: 'Aria', weapon_id: null, hp: 0, max_hp: 10, status: 'dead', revives_since_sanctuary: 0 }],
+    });
+    const ctx = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(ctx.characters[0].status).toBe('dead');
+  });
+});

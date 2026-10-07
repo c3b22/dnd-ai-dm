@@ -18,6 +18,7 @@ import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
 import { changedDeathSaves, runDeathSaves, settleDeathSaves, type DeathSaveRoll } from '@/lib/character/deathSaves';
 import { DEATH_SAVE_SKILL } from '@/lib/character/skillLabels';
 import type { RollSummaryEntry } from './roundRepository';
+import { applyPermadeath, type Corpse } from '@/lib/character/permadeath';
 import type { Character } from '@/lib/character/types';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
@@ -73,6 +74,7 @@ export async function processRound(
   let deathSaveRolls: DeathSaveRoll[] = [];
   let deathSaveChanges: string[] = [];
   let roundCharacters: Character[] = [];
+  let corpses: Corpse[] = [];
   let diceEnabled = true;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
@@ -80,6 +82,9 @@ export async function processRound(
   let scrolls: ReturnType<typeof applyScrollActions>;
   try {
     context = await deps.repository.getRoundContext(roundId);
+    // H3a: a permanently dead character cannot act; their action (e.g. from a stale client) never reaches the AI.
+    const deadIds = new Set(context.characters.filter((c) => c.status === 'dead').map((c) => c.id));
+    if (deadIds.size > 0) context = { ...context, actions: context.actions.filter((a) => !(a.playerId && deadIds.has(a.playerId))) };
     if (context.tagsApplied) {
       // An earlier attempt already generated this round's narration and applied its HP/
       // inventory/gold tags, then failed or timed out before closing (claimRound's staleness
@@ -118,6 +123,13 @@ export async function processRound(
     deathSaveRolls = deaths.outcomes;
     deathSaveChanges = deaths.changes;
     roundCharacters = deaths.characters;
+    // H3a: only in rooms with permadeath does a third failed save (without a charm) kill for good.
+    if (settings.permadeath && deaths.died.length > 0) {
+      const permanent = applyPermadeath(deaths.characters, scrolls.inventories, deaths.died);
+      roundCharacters = permanent.characters;
+      corpses = permanent.corpses;
+      deathSaveChanges = [...deathSaveChanges, ...permanent.changes];
+    }
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
     rolled = context.actions.map((action) => {
       const note = action.playerId
@@ -264,7 +276,27 @@ export async function processRound(
           /* best-effort */
         }
       }
-      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
+      // H3a: the corpse is written first; only once it exists do the pack and gold leave the dead character.
+      let corpsesSaved = false;
+      if (corpses.length > 0 && deps.repository.saveCorpses) {
+        try {
+          await deps.repository.saveCorpses(context.campaignId, corpses);
+          corpsesSaved = true;
+        } catch {
+          /* best-effort: without the table the dead character keeps their things */
+        }
+      }
+      const finalInventories = { ...inventoryResult.inventories };
+      const corpseIds: string[] = [];
+      if (corpsesSaved) {
+        for (const corpse of corpses) {
+          if ((context.inventories[corpse.playerId] ?? []).length > 0 || corpse.items.length > 0) {
+            finalInventories[corpse.playerId] = [];
+            corpseIds.push(corpse.playerId);
+          }
+        }
+      }
+      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds, ...corpseIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
       if (changedIds.length > 0) {
         try {
@@ -272,7 +304,7 @@ export async function processRound(
             context.campaignId,
             changedIds.map((playerId) => ({
               playerId,
-              items: inventoryResult.inventories[playerId] ?? [],
+              items: finalInventories[playerId] ?? [],
               // What this round assumed the pack looked like when it started; lets the repository
               // detect a shop purchase or trade that landed mid-round instead of overwriting it.
               baseItems: context.inventories[playerId] ?? [],
@@ -290,7 +322,9 @@ export async function processRound(
           /* best-effort, like the facts */
         }
       }
-      const goldChanges = Object.entries(economy.goldDeltas)
+      const goldDeltas: Record<string, number> = { ...economy.goldDeltas };
+      if (corpsesSaved) for (const corpse of corpses) if (corpse.gold > 0) goldDeltas[corpse.playerId] = (goldDeltas[corpse.playerId] ?? 0) - corpse.gold;
+      const goldChanges = Object.entries(goldDeltas)
         .filter(([, delta]) => delta !== 0)
         .map(([playerId, delta]) => ({ playerId, delta }));
       if (goldChanges.length > 0) {

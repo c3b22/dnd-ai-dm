@@ -3,7 +3,8 @@ import type { SkillId } from './classes';
 import type { ItemEffects } from '@/lib/inventory/effects';
 import type { DeathSaves } from './deathSaves';
 
-export type CharacterStatus = 'active' | 'downed';
+/** `dead` = permanent death (H3a, rooms with permadeath only). */
+export type CharacterStatus = 'active' | 'downed' | 'dead';
 
 export interface Character {
   id: string;

@@ -52,9 +52,11 @@ export function characterPrompt(
     ...characters.map((c) => {
       const weapon = weaponFor(c.weaponId);
       const state =
-        c.status === 'downed'
-          ? "DOWNED (cannot act; only a teammate's action can get them back up)"
-          : 'standing';
+        c.status === 'dead'
+          ? 'DEAD for good (permanent death: gone from the story, cannot act, and [[revive]] cannot bring them back; do not narrate them acting)'
+          : c.status === 'downed'
+            ? "DOWNED (cannot act; only a teammate's action can get them back up)"
+            : 'standing';
       const cls = classOf(c.classId);
       return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
     }),

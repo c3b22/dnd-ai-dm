@@ -24,7 +24,7 @@ export interface RoundPlayer {
   /** Unspent ability score improvements (level 4 and 8); absent/0 means none. */
   abilityChoicesLeft?: number;
   items: InventoryItem[];
-  status: 'active' | 'downed';
+  status: 'active' | 'downed' | 'dead';
   gold: number;
 }
 
@@ -67,7 +67,7 @@ export async function fetchRoundPlayers(
     xp: Number(p.xp ?? 0),
     classId: (p.class_id ?? null) as string | null,
     abilityCooldown: Number(p.ability_cooldown ?? 0),
-    status: p.status as 'active' | 'downed',
+    status: p.status as 'active' | 'downed' | 'dead',
     gold: Number(p.gold ?? 0),
     abilities: withAbilities ? normalizeAbilities(p.abilities) : undefined,
     abilityChoicesLeft: withAbilities

@@ -1133,3 +1133,91 @@ describe('processRound death saves (H1)', () => {
     await expect(processRound(old.d, 'round-1')).resolves.toMatchObject({ processed: true });
   });
 });
+
+describe('processRound permanent death (H3a)', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+  const dying = { id: 'p2', displayName: 'Aria', weaponId: null, hp: 0, maxHp: 10, status: 'downed' as const, revivesSinceSanctuary: 0, gold: 35, deathSaves: { successes: 0, failures: 2, stable: false, dead: false } };
+  const sword = { itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon', equipped: true };
+
+  function setup(characters: unknown[], permadeath: boolean, extra: Record<string, unknown> = {}, actions: unknown[] = [{ playerDisplayName: 'Prem', playerId: 'p1', actionText: 'Guard Aria' }]) {
+    const repository = createFakeRepository({
+      saveDeathSaves: vi.fn().mockResolvedValue(undefined),
+      saveCorpses: vi.fn().mockResolvedValue(undefined),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], actions, characters,
+        inventories: { p1: [], p2: [sword] }, settings: { permadeath }, pendingWipe: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '', ...extra,
+      }),
+    });
+    const generateNarration = vi.fn().mockImplementation(async () => fakeStream(['Quiet.']));
+    const d: ProcessRoundDeps = { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration, rollDie: () => 3, rollSides: () => 4 };
+    return { repository, d, generateNarration };
+  }
+
+  it('permadeath on: the third failure makes the character dead and moves pack and gold to a corpse', async () => {
+    const { repository, d } = setup([prem, dying], true);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'dead', hp: 0 })]), false);
+    expect(repository.saveCorpses).toHaveBeenCalledWith('camp-1', [{ playerId: 'p2', name: 'Aria', items: [sword], gold: 35 }]);
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p2', items: [], baseItems: [sword] }]);
+    expect(repository.applyGold).toHaveBeenCalledWith([{ playerId: 'p2', delta: -35 }]);
+    const stats = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(stats.some((l) => l.includes('ตายถาวร'))).toBe(true);
+  });
+
+  it('permadeath off: same situation leaves the character downed, no corpse, pack and gold untouched', async () => {
+    const { repository, d } = setup([prem, dying], false);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'downed' })]), false);
+    expect(repository.saveCorpses).not.toHaveBeenCalled();
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('permadeath on: a worn revive charm still saves the character from dying', async () => {
+    const charm = { itemId: 'charm_revive', customName: '', quantity: 1, slot: 'accessory', equipped: true };
+    const { repository, d } = setup([prem, { ...dying, reviveCharm: { itemId: 'charm_revive', reviveHp: 1 } }], true, { inventories: { p1: [], p2: [charm] } });
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'active', hp: 1 })]), false);
+    expect(repository.saveCorpses).not.toHaveBeenCalled();
+  });
+
+  it('permadeath on: if the corpse cannot be saved the pack and gold stay with the character', async () => {
+    const { repository, d } = setup([prem, dying], true);
+    vi.mocked(repository.saveCorpses!).mockRejectedValue(new Error('no table'));
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('a [[revive]] aimed at a dead character is ignored without failing the round', async () => {
+    const dead = { ...dying, status: 'dead' as const, deathSaves: { successes: 0, failures: 3, stable: false, dead: true } };
+    const { repository, d } = setup([prem, dead], true);
+    (d.generateNarration as any).mockImplementation(async () => fakeStream(['Light.\n[[revive: Aria]]']));
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'dead' })]), false);
+  });
+
+  it('actions from a dead character never reach the AI or the message log', async () => {
+    const dead = { ...dying, status: 'dead' as const, deathSaves: { successes: 0, failures: 3, stable: false, dead: true } };
+    const actions = [
+      { playerDisplayName: 'Prem', playerId: 'p1', actionText: 'Look around' },
+      { playerDisplayName: 'Aria', playerId: 'p2', actionText: 'ZOMBIE-ACTION' },
+    ];
+    const { repository, d, generateNarration } = setup([prem, dead], true, {}, actions);
+    await processRound(d, 'round-1');
+
+    expect(vi.mocked(generateNarration).mock.calls.every(([prompt]) => !String(prompt).includes('ZOMBIE-ACTION'))).toBe(true);
+    expect(vi.mocked(repository.insertPlayerActionMessages).mock.calls[0][2]).toEqual([expect.objectContaining({ playerId: 'p1' })]);
+  });
+
+  it('the AI is told a permanently dead character is gone', async () => {
+    const dead = { ...dying, status: 'dead' as const };
+    const { d, generateNarration } = setup([prem, dead], true);
+    await processRound(d, 'round-1');
+    expect(String(vi.mocked(generateNarration).mock.calls[0][0])).toMatch(/Aria.*DEAD/);
+  });
+});

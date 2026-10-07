@@ -3,6 +3,7 @@ import type { StoredMessage, RoundAction } from './assemblePrompt';
 import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
 import type { Character } from '@/lib/character/types';
+import type { Corpse } from '@/lib/character/permadeath';
 import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
 import { equippedWeaponId, armorReduction, equippedSkillBonuses, equippedItemEffects, equippedReviveCharm } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
@@ -84,6 +85,8 @@ export interface RoundRepository {
   saveCharacterState(campaignId: string, characters: Character[], pendingWipe: boolean): Promise<void>;
   /** H1: persists the death save tally. Optional so older fakes keep working; tolerates a missing column. */
   saveDeathSaves?(characters: Character[]): Promise<void>;
+  /** H3a: stores the corpses (pack + gold) of permanently dead characters. Optional so older fakes keep working; throws when the table is missing. */
+  saveCorpses?(campaignId: string, corpses: Corpse[]): Promise<void>;
   saveInventories(
     campaignId: string,
     changes: { playerId: string; items: InventoryItem[]; baseItems: InventoryItem[] }[]
@@ -244,7 +247,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
           ...(equippedReviveCharm(inventories[row.id] ?? []) ? { reviveCharm: equippedReviveCharm(inventories[row.id] ?? []) } : {}),
           hp: row.hp as number,
           maxHp: effectiveMaxHp(row.max_hp as number, Number(row.xp ?? 0)),
-          status: row.status as 'active' | 'downed',
+          status: row.status as Character['status'],
           revivesSinceSanctuary: row.revives_since_sanctuary as number,
           gold: Number(row.gold ?? 0),
           xp: Number(row.xp ?? 0),
@@ -321,19 +324,26 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
       // leaves no one's HP changed instead of leaving whichever players were processed first out
       // of sync with the rest.
       if (characters.length > 0) {
-        const { error } = await supabase.rpc('apply_changes', {
-          changes: characters.map((c) => ({
-            playerId: c.id,
-            goldDelta: 0,
-            items: null,
-            hp: c.hp,
-            maxHp: baseMaxHp(c.maxHp, c.xp ?? 0),
-            xp: c.xp ?? 0,
-            abilityCooldown: c.abilityCooldown ?? 0,
-            status: c.status,
-            revivesSinceSanctuary: c.revivesSinceSanctuary,
-          })),
-        });
+        const call = (status: (c: Character) => string) =>
+          supabase.rpc('apply_changes', {
+            changes: characters.map((c) => ({
+              playerId: c.id,
+              goldDelta: 0,
+              items: null,
+              hp: c.hp,
+              maxHp: baseMaxHp(c.maxHp, c.xp ?? 0),
+              xp: c.xp ?? 0,
+              abilityCooldown: c.abilityCooldown ?? 0,
+              status: status(c),
+              revivesSinceSanctuary: c.revivesSinceSanctuary,
+            })),
+          });
+        let { error } = await call((c) => c.status);
+        // H3a: a database that has not got the 'dead' status yet (migration pending) rejects the whole
+        // call; save everyone else's HP anyway and keep the dead character downed, as before permadeath.
+        if (error && characters.some((c) => c.status === 'dead')) {
+          ({ error } = await call((c) => (c.status === 'dead' ? 'downed' : c.status)));
+        }
         if (error) throw error;
       }
       const { error } = await supabase
@@ -348,6 +358,14 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         const { error } = await supabase.from('players').update({ death_saves: c.deathSaves ?? null }).eq('id', c.id);
         if (error) throw error;
       }
+    },
+
+    async saveCorpses(campaignId, corpses) {
+      if (corpses.length === 0) return;
+      const { error } = await supabase
+        .from('campaign_corpses')
+        .insert(corpses.map((c) => ({ campaign_id: campaignId, name: c.name, items: c.items, gold: c.gold })));
+      if (error) throw error;
     },
 
     async saveInventories(campaignId, changes) {
