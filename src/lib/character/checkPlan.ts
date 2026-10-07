@@ -1,6 +1,6 @@
 import { SKILL_ABILITIES, SKILL_IDS, classOf, proficiencyBonus, type SkillId } from './classes';
 import { abilityModifier, normalizeAbilities } from './constants';
-import { resolveCheck, type Advantage } from './check';
+import { resolveCheck, shiftAdvantage, type Advantage } from './check';
 import { levelForXp } from './leveling';
 import type { Character } from './types';
 
@@ -126,7 +126,13 @@ export function parseCheckPlan(raw: string): CheckPlan {
 }
 
 /** Rolls and resolves each planned check on the server. One check per known player; others are ignored. */
-export function runChecks(planned: PlannedCheck[], characters: Character[], rollDie: () => number): CheckOutcome[] {
+export function runChecks(
+  planned: PlannedCheck[],
+  characters: Character[],
+  rollDie: () => number,
+  /** K4: skills a spell gave advantage on this round (RoundEffects.skillAdvantage, by player id). */
+  skillAdvantage: Record<string, readonly SkillId[]> = {}
+): CheckOutcome[] {
   const byName = new Map(characters.map((c) => [c.displayName.toLowerCase(), c]));
   const seen = new Set<string>();
   const out: CheckOutcome[] = [];
@@ -139,14 +145,15 @@ export function runChecks(planned: PlannedCheck[], characters: Character[], roll
     const proficient = classOf(character.classId)?.skills.includes(check.skill) ?? false;
     const ability = abilities[SKILL_ABILITIES[check.skill]];
     const itemBonus = (character.skillBonuses?.[check.skill] ?? 0) + (character.itemEffects?.setSkillBonus ?? 0);
-    const dice = check.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
-    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage: check.advantage, bonus: itemBonus });
-    const die = check.advantage === 'advantage' ? Math.max(...dice) : check.advantage === 'disadvantage' ? Math.min(...dice) : dice[0];
+    const advantage = skillAdvantage[character.id]?.includes(check.skill) ? shiftAdvantage(check.advantage, 'up') : check.advantage;
+    const dice = advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
+    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage, bonus: itemBonus });
+    const die = advantage === 'advantage' ? Math.max(...dice) : advantage === 'disadvantage' ? Math.min(...dice) : dice[0];
     out.push({
       playerDisplayName: character.displayName,
       skill: check.skill,
       dc: check.dc,
-      advantage: check.advantage,
+      advantage,
       dice,
       die,
       modifier: abilityModifier(ability),

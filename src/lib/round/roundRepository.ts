@@ -79,6 +79,21 @@ export interface RollSummaryEntry {
     hit: boolean;
     critical: 'success' | 'failure' | null;
   };
+  /** K4: present when this roll is one die of a spell (an attack roll against the enemy's AC, or the enemy's saving throw against the spell's DC). */
+  spell?: {
+    name: string;
+    target: string;
+    kind: 'attack' | 'save';
+    /** Everything added to the d20: the caster's attack bonus, or the enemy's save bonus. */
+    bonus: number;
+    total: number;
+    /** Attack: the enemy's AC. Save: the spell's DC. */
+    dc: number;
+    /** Attack: it hit. Save: the enemy saved. */
+    success: boolean;
+    critical: 'success' | 'failure' | null;
+    pips: number;
+  };
   /** I2: present when this roll is an enemy attacking a player; `playerDisplayName` is then the enemy's name. */
   enemyAttack?: {
     target: string;

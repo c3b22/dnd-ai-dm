@@ -65,6 +65,8 @@ export function applyAbilityActions(
     const user = next.find((c) => c.id === action.playerId);
     if (!user) continue;
     const cls = classOf(user.classId);
+    // K4: the mage's main ability (arcane surge) rides on a spell cast and is resolved with it (applySpellActions).
+    if (cls?.id === 'mage') continue;
     const fail = (reason = 'it was not ready') => {
       notes[user.id] = `tried to use ${cls ? cls.ability.nameTh : 'a class ability'} but ${reason}`;
     };
@@ -153,9 +155,11 @@ export function tickCooldowns(
   characters: Character[],
   eventful: boolean,
   used: string[],
-  usedExtra: { playerId: string; abilityId: string; cooldown: number }[] = []
+  usedExtra: { playerId: string; abilityId: string; cooldown: number }[] = [],
+  /** K4 quicken_rhythm: playerId -> rounds taken off every cooldown still running, after this round's tick (floor 0). */
+  cooldownCut: Record<string, number> = {}
 ): Character[] {
-  return characters.map((c) => {
+  const ticked = characters.map((c) => {
     const drop = 1 + (c.itemEffects?.effects.includes('quick_tempo') ? QUICK_TEMPO_EXTRA : 0);
     let cooldown = c.abilityCooldown ?? 0;
     if (eventful) cooldown = Math.max(0, cooldown - drop);
@@ -170,5 +174,12 @@ export function tickCooldowns(
     }
     for (const u of mine) if (u.cooldown > 0) map[u.abilityId] = u.cooldown;
     return { ...c, abilityCooldown: cooldown, abilityCooldowns: map };
+  });
+  return ticked.map((c) => {
+    const cut = cooldownCut[c.id] ?? 0;
+    if (cut <= 0) return c;
+    const map: Record<string, number> = {};
+    for (const [id, left] of Object.entries(c.abilityCooldowns ?? {})) if (left - cut > 0) map[id] = left - cut;
+    return { ...c, abilityCooldown: Math.max(0, (c.abilityCooldown ?? 0) - cut), ...(c.abilityCooldowns ? { abilityCooldowns: map } : {}) };
   });
 }

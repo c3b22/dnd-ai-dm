@@ -5,6 +5,7 @@ import { normalizeSettings } from '@/lib/campaign/settings';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
 import { applyAbilityActions, eventfulRound, tickCooldowns } from '@/lib/character/applyAbilities';
+import { applySpellActions } from '@/lib/character/applySpells';
 import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/leveling';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
@@ -99,6 +100,9 @@ export async function processRound(
   let potions: ReturnType<typeof applyPotionActions>;
   let abilities: ReturnType<typeof applyAbilityActions>;
   let scrolls: ReturnType<typeof applyScrollActions>;
+  let spells: ReturnType<typeof applySpellActions>;
+  /** The fight as this round's spells and scrolls left it, before the players' attacks. */
+  let roundEncounter: Encounter | null = null;
   try {
     context = await deps.repository.getRoundContext(roundId);
     // H3a: a permanently dead character cannot act; their action (e.g. from a stale client) never reaches the AI.
@@ -136,9 +140,13 @@ export async function processRound(
     abilities = applyAbilityActions(potions.characters, context.actions, rollSides);
     // F5e: scrolls cut pips off the targeted enemy before narration; like potions nothing is saved until the end.
     scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
+    // K4: spells resolve after scrolls on the same working encounter (pips, statuses, slots); like everything above,
+    // nothing is saved until the end. They roll with the server's d20 even at a table without dice rolls.
+    spells = applySpellActions({ characters: abilities.characters, actions: context.actions, encounter: scrolls.encounter, rollDie: rollD20 });
+    roundEncounter = spells.encounter;
     // H1: downed characters roll a death save before narration (dice tables only, like every other roll).
     // Unsaved until the end, like potions; a nat 20 stands the character up before the DM narrates.
-    const deaths = diceEnabled ? runDeathSaves(abilities.characters, rollDie) : { characters: abilities.characters, outcomes: [], changes: [] as string[], died: [] as string[], charmsSpent: [] as { characterId: string; itemId: string }[] };
+    const deaths = diceEnabled ? runDeathSaves(spells.characters, rollDie) : { characters: spells.characters, outcomes: [], changes: [] as string[], died: [] as string[], charmsSpent: [] as { characterId: string; itemId: string }[] };
     // F5g: a charm that just revived its wearer is spent: remove it from the pack now (saved with the other
     // inventory changes at the end) so the narration prompt and every later step already see it gone.
     const spentCharms = deaths.charmsSpent;
@@ -164,7 +172,7 @@ export async function processRound(
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
     rolled = context.actions.map((action) => {
       const note = action.playerId
-        ? [potions.notes[action.playerId], scrolls.notes[action.playerId], abilities.notes[action.playerId]].filter(Boolean).join('; ') || undefined
+        ? [potions.notes[action.playerId], scrolls.notes[action.playerId], abilities.notes[action.playerId], spells.notes[action.playerId]].filter(Boolean).join('; ') || undefined
         : undefined;
       const a = { ...action, note };
       if (!diceEnabled) return a;
@@ -182,7 +190,7 @@ export async function processRound(
         context.adventure,
         context.sceneInstructionText,
         settings,
-        { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter, corpses: context.corpses ?? [] },
+        { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: roundEncounter, corpses: context.corpses ?? [] },
         context.facts ?? [],
         { planChecks, enemyAttacks: enemyAttackResults, ...(restRequest ? { rest: { kind: restRequest.kind, answer: restAnswer } } : {}) }
       );
@@ -201,17 +209,19 @@ export async function processRound(
         // C8: attacks on enemies resolve first (their damage was already rolled above); a player
         // who attacks does not also get a skill check this round.
         const damageByName = new Map(rolled.map((a) => [a.playerDisplayName.toLowerCase(), a.damage]));
+        // A caster who cast a spell this round spent their action on it: no weapon attack on top.
+        const casterNames = new Set(roundCharacters.filter((c) => spells.casters.includes(c.id)).map((c) => c.displayName.toLowerCase()));
         attackOutcomes =
           first.kind === 'checks'
-            ? runAttacks(first.attacks, roundCharacters, scrolls.encounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
+            ? runAttacks(first.attacks.filter((a) => !casterNames.has(a.player.toLowerCase())), roundCharacters, roundEncounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie, spells.effects)
             : [];
         const attackers = new Set(attackOutcomes.map((o) => o.playerDisplayName.toLowerCase()));
         const outcomes =
           first.kind === 'checks'
-            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), roundCharacters, rollDie)
+            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), roundCharacters, rollDie, spells.effects.skillAdvantage)
             : [];
         // I2: enemy attacks roll against the players' AC before the narration, then the DM narrates the real result.
-        enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, scrolls.encounter, rollDie, rollSides, applyAttackOutcomes(scrolls.encounter, attackOutcomes)) : [];
+        enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, roundEncounter, rollDie, rollSides, applyAttackOutcomes(roundEncounter, attackOutcomes), spells.effects) : [];
         if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0 || restAnswer) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
           const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
@@ -235,12 +245,19 @@ export async function processRound(
   }
 
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
-  if (diceEnabled) {
+  // K4: each spell die is its own line (attack roll or enemy save); the caster's plain action die is dropped for them.
+  const spellEntries = spells.rolls.map((r): RollSummaryEntry => ({
+    playerDisplayName: r.playerDisplayName,
+    roll: r.die,
+    spell: { name: r.spellNameTh, target: r.target, kind: r.kind, bonus: r.bonus, total: r.total, dc: r.dc, success: r.success, critical: r.critical, pips: r.pips },
+  }));
+  const spellRollers = new Set(spells.rolls.map((r) => r.playerDisplayName.toLowerCase()));
+  if (diceEnabled || spellEntries.length > 0) {
     await deps.repository
       .insertRollSummary(
         context.campaignId,
         roundId,
-        [...rolled.map((r): RollSummaryEntry => {
+        [...(diceEnabled ? rolled.filter((r) => !spellRollers.has(r.playerDisplayName.toLowerCase())) : []).map((r): RollSummaryEntry => {
           const c = r.check;
           if (r.attack) {
             const a = r.attack;
@@ -252,7 +269,7 @@ export async function processRound(
             roll: c.die,
             check: { skill: c.skill, dc: c.dc, advantage: c.advantage, dice: c.dice, modifier: c.modifier, proficiency: c.proficiency, total: c.total, success: c.success, critical: c.critical },
           };
-        }), ...enemyAttackOutcomes.map(enemyAttackEntry), ...deathSaveRolls.map(deathSaveEntry)]
+        }), ...spellEntries, ...enemyAttackOutcomes.map(enemyAttackEntry), ...deathSaveRolls.map(deathSaveEntry)]
       )
       .catch(() => {});
   }
@@ -292,12 +309,12 @@ export async function processRound(
       const plannedHits = applyEnemyAttackOutcomes(roundCharacters, enemyAttackOutcomes, wardUsed, abilities.guards);
       const tagHits =
         enemyAttackOutcomes.length === 0
-          ? applyEnemyAttackTags(plannedHits.characters, roundStart, tags, rollD20, deps.rollSides ?? randomDie, wardUsed, abilities.guards)
+          ? applyEnemyAttackTags(plannedHits.characters, roundStart, tags, rollD20, deps.rollSides ?? randomDie, wardUsed, abilities.guards, spells.effects)
           : { characters: plannedHits.characters, changes: [] as string[], outcomes: [] as EnemyAttackOutcome[] };
       const poisonedIds = [...enemyAttackOutcomes, ...tagHits.outcomes].filter((o) => o.venomous).map((o) => o.playerId);
       const enemyAttacks = { characters: tagHits.characters, changes: [...plannedHits.changes, ...tagHits.changes] };
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
-      const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
+      const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : roundEncounter, attackOutcomes);
       const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
       const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
       // H3c: the corpse's things move to the looter; the corpse row is only written back after the pack save below.
@@ -320,11 +337,18 @@ export async function processRound(
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
+      // K4: the round-only spell bonuses (roundAcBonus / roundWard) end with the round and are never handed to the repository.
       const finalCharacters = settleDeathSaves(tickCooldowns(
         rest.characters,
         eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
-        abilities.used
-      ));
+        [...abilities.used, ...spells.surgeUsed],
+        [],
+        spells.effects.cooldownCut
+      )).map(({ roundAcBonus: _ac, roundWard: _ward, ...c }) => {
+        void _ac;
+        void _ward;
+        return c;
+      });
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
       // K2: best-effort; a missing players.ability_cooldowns column just means the extra cooldowns do not carry over.
       if (deps.repository.saveAbilityCooldowns && finalCharacters.some((c) => c.abilityCooldowns)) {
@@ -335,10 +359,13 @@ export async function processRound(
         }
       }
       // J3: best-effort; a missing short_rests_used / rest_vote column just means nothing carries over.
-      // K3: a rest gives spent spell slots back; best-effort like the rest of the extra columns.
-      if (rest.spellSlotsChanged.length > 0 && deps.repository.saveSpellSlotsUsed) {
+      // K3/K4: slots spent by this round's spells and slots a rest gave back; best-effort like the rest of the extra columns.
+      const slotWrites = finalCharacters.filter(
+        (c) => c.classId === 'mage' && (c.spellSlotsUsed ?? 0) !== (context.characters.find((x) => x.id === c.id)?.spellSlotsUsed ?? 0)
+      );
+      if (slotWrites.length > 0 && deps.repository.saveSpellSlotsUsed) {
         try {
-          await deps.repository.saveSpellSlotsUsed(rest.spellSlotsChanged);
+          await deps.repository.saveSpellSlotsUsed(slotWrites);
         } catch {
           /* best-effort */
         }
@@ -448,7 +475,7 @@ export async function processRound(
       // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
       // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
       const before = storedEncounter;
-      const after = advanceEncounter(sceneChanged ? null : before, applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : scrolls.encounter, attackOutcomes), tags), poisonedIds);
+      const after = advanceEncounter(sceneChanged ? null : before, applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : roundEncounter, attackOutcomes), tags), poisonedIds);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         try {
           await deps.repository.setEncounter(context.campaignId, after);
@@ -471,6 +498,7 @@ export async function processRound(
         ...potions.changes,
         ...scrolls.changes,
         ...abilities.changes,
+        ...spells.changes,
         ...enemyAttacks.changes,
         ...lifesteal.changes,
         ...result.changes,

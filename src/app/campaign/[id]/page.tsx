@@ -10,7 +10,8 @@ import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
 import { RespawnForm } from '@/components/RespawnForm';
 import { respawnLevel } from '@/lib/character/respawnLevel';
-import type { AbilityChoice } from '@/lib/character/leveling';
+import { levelForXp, type AbilityChoice } from '@/lib/character/leveling';
+import { SPELLS, SPELL_IDS, mageSpellSlots } from '@/lib/character/spells';
 import { EncounterPanel } from '@/components/EncounterPanel';
 import { RestPanel } from '@/components/RestPanel';
 import { fetchRestState, requestRest, subscribeToRestVote } from '@/lib/supabase/restVoteClient';
@@ -350,7 +351,32 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   }
 
   const myClass = classOf(me?.classId);
-  const abilityProp = myClass
+  // K4: the mage casts spells instead of pressing a plain ability button; the arcane surge is a switch in the spell menu.
+  const spellMenu =
+    me && myClass?.id === 'mage'
+      ? (() => {
+          const max = mageSpellSlots(levelForXp(me.xp ?? 0));
+          return {
+            slotsLeft: max - Math.min(max, me.spellSlotsUsed ?? 0),
+            slotsMax: max,
+            list: SPELL_IDS.map((id) => ({ id, nameTh: SPELLS[id].nameTh, descTh: SPELLS[id].descTh, slots: SPELLS[id].slots, target: SPELLS[id].target })),
+            enemies: (encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name),
+            allies: players.filter((p) => p.status === 'active').map((p) => ({ id: p.id, name: p.displayName, isSelf: p.id === playerId })),
+            surge: { nameTh: myClass.ability.nameTh, cooldown: me.abilityCooldown ?? 0 },
+          };
+        })()
+      : undefined;
+
+  async function handleCastSpell(spellId: string, target: { allyId?: string | null; enemy?: string | null }, surge: boolean) {
+    if (!roundId) return;
+    const spell = SPELLS[spellId as keyof typeof SPELLS];
+    const targetName = target.enemy ?? players.find((p) => p.id === target.allyId)?.displayName;
+    const text = `ร่าย${spell?.nameTh ?? 'เวท'}${targetName ? ` ใส่ ${targetName}` : ''}${surge ? ' ด้วยเวทไหลล้น' : ''}`;
+    await submitAction(roundId, playerId, text, undefined, undefined, undefined, { spellId, targetId: target.allyId, enemy: target.enemy, surge });
+    refreshPlayers();
+  }
+
+  const abilityProp = myClass && myClass.id !== 'mage'
     ? {
         nameTh: myClass.ability.nameTh,
         target: myClass.ability.target,
@@ -499,6 +525,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
               ability={abilityProp}
               onUseAbility={handleUseAbility}
+              spells={spellMenu}
+              onCastSpell={handleCastSpell}
               disabledReason={
                 players.find((p) => p.id === playerId)?.status === 'downed'
                   ? 'คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง'

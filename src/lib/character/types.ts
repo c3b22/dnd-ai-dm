@@ -53,4 +53,8 @@ export interface Character {
   deathSaves?: DeathSaves | null;
   /** J2/J3: short rests taken since the last long rest; absent = 0. */
   shortRestsUsed?: number;
+  /** K4: AC bonus of a spell cast this round (RoundEffects.acBonus). Transient: set while a round is processed, never saved. */
+  roundAcBonus?: number;
+  /** K4: extra damage reduction on the first hit of this round from a spell (RoundEffects.ward). Transient, never saved. */
+  roundWard?: number;
 }

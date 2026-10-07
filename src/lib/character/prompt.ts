@@ -1,6 +1,7 @@
 import { ABILITY_KEYS, abilityModifier, diceLabel, normalizeAbilities, weaponFor } from './constants';
 import { classOf, skillModifier } from './classes';
 import { levelForXp } from './leveling';
+import { spellSlotsOf } from './spells';
 import { armorClass } from '@/lib/combat/armorClass';
 import type { Character } from './types';
 
@@ -59,7 +60,8 @@ export function characterPrompt(
             ? "DOWNED (cannot act; only a teammate's action can get them back up)"
             : 'standing';
       const cls = classOf(c.classId);
-      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, AC ${armorClass(c)}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
+      const slots = spellSlotsOf(c);
+      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, AC ${armorClass(c)}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}${slots ? `, spell slots ${slots.current}/${slots.max} (the server spends them; cantrips are free)` : ''}`;
     }),
     'Ability modifiers (use them to set sensible DCs: easier for what a character is good at, harder for what they are bad at; the server adds the modifier to the roll, so never add it yourself):',
     ...characters.map(abilityLine),

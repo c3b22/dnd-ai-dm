@@ -1,4 +1,5 @@
-import { resolveCheck, type Advantage } from '@/lib/character/check';
+import { resolveCheck, shiftAdvantage, type Advantage } from '@/lib/character/check';
+import type { RoundEffects } from '@/lib/character/spells';
 import { abilityModifier, normalizeAbilities, weaponFor } from '@/lib/character/constants';
 import { proficiencyBonus } from '@/lib/character/classes';
 import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
@@ -114,7 +115,9 @@ export function runAttacks(
   characters: Character[],
   encounter: Encounter | null,
   damageOf: (character: Character) => number | undefined,
-  rollDie: () => number
+  rollDie: () => number,
+  /** K4: this round's spell effects: advantage from a blessing, `exposed` enemies. */
+  effects?: RoundEffects
 ): AttackOutcome[] {
   if (!encounter) return [];
   const seen = new Set<string>();
@@ -125,10 +128,14 @@ export function runAttacks(
   // (a planned advantage just cancels out).
   const frightened = (encounter.round ?? 1) === FEARSOME_ROUND && encounter.enemies.some((e) => isLive(e) && hasTrait(e, 'fearsome'));
   for (const planAttack of planned) {
-    const attack = frightened ? { ...planAttack, advantage: planAttack.advantage === 'advantage' ? ('none' as const) : ('disadvantage' as const) } : planAttack;
-    const character = findByDisplayName(characters, attack.player);
-    const target = findActiveEnemy(enemies, attack.target);
+    const character = findByDisplayName(characters, planAttack.player);
+    const target = findActiveEnemy(enemies, planAttack.target);
     if (!character || !target || character.status !== 'active' || seen.has(character.id)) continue;
+    // K4: a blessing or an exposed target gives advantage (one source is enough, it does not stack); fearsome then takes one step back.
+    let advantage = planAttack.advantage;
+    if (effects?.advantage.has(character.id) || effects?.enemy[target.name]?.includes('exposed')) advantage = shiftAdvantage(advantage, 'up');
+    if (frightened) advantage = shiftAdvantage(advantage, 'down');
+    const attack = { ...planAttack, advantage };
     seen.add(character.id);
     const dice = attack.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
     const damage = damageOf(character) ?? 0;
@@ -219,6 +226,8 @@ export interface EnemyAttackOutcome {
   damage: number;
   /** I4 pack: the roll was made with advantage (two dice, the higher kept). */
   advantage?: boolean;
+  /** K4 dazed: the roll was made with disadvantage (two dice, the lower kept). */
+  disadvantage?: boolean;
   /** I4 venomous: the enemy has it and hit, so the player is poisoned for the next round. */
   venomous?: boolean;
 }
@@ -243,7 +252,9 @@ export function runEnemyAttacks(
   rollDie: () => number,
   rollSides: (sides: number) => number,
   /** I4: the encounter after this round's player attacks; pack looks here for mates still standing (default: `encounter`). */
-  survivors?: Encounter | null
+  survivors?: Encounter | null,
+  /** K4: this round's spell effects: a `stunned` enemy does not attack, a `dazed` one attacks with disadvantage. */
+  effects?: RoundEffects
 ): EnemyAttackOutcome[] {
   if (!encounter) return [];
   const used = new Map<string, Set<string>>(); // enemy name -> player ids it already attacked this round
@@ -253,21 +264,26 @@ export function runEnemyAttacks(
     const enemy = findActiveEnemy(encounter.enemies, attack.enemy);
     const target = findByDisplayName(characters, attack.player);
     if (!enemy || !target || target.status !== 'active') continue;
+    if (effects?.enemy[enemy.name]?.includes('stunned')) continue;
     const targets = used.get(enemy.name) ?? new Set<string>();
     const limit = signatureRound && enemy.tier === 'boss' && hasTrait(enemy, 'boss_signature') ? BOSS_SIGNATURE_TARGETS : 1;
     if (targets.size >= limit || targets.has(target.id)) continue;
     targets.add(target.id);
     used.set(enemy.name, targets);
     const mates = (survivors ?? encounter).enemies.some((e) => e.name !== enemy.name && isLive(e));
-    const advantage = hasTrait(enemy, 'pack') && mates;
+    const pack = hasTrait(enemy, 'pack') && mates;
+    const dazed = effects?.enemy[enemy.name]?.includes('dazed') ?? false;
+    // pack (advantage) and dazed (disadvantage) cancel into one ordinary roll.
+    const advantage = pack && !dazed;
+    const disadvantage = dazed && !pack;
     const first = rollDie();
-    const die = advantage ? Math.max(first, rollDie()) : first;
+    const die = advantage ? Math.max(first, rollDie()) : disadvantage ? Math.min(first, rollDie()) : first;
     const ac = armorClass(target);
     const r = resolveEnemyAttack({ die, tier: enemy.tier, ac });
     const spec = ENEMY_DAMAGE_DICE[enemy.tier];
     const dice = r.hit ? rollDice(r.critical === 'success' ? { ...spec, count: spec.count * 2 } : spec, rollSides) : 0;
     const damage = r.hit && hasTrait(enemy, 'brute') ? dice + BRUTE_DAMAGE_BONUS : dice;
-    out.push({ enemy: enemy.name, tier: enemy.tier, playerId: target.id, playerDisplayName: target.displayName, die, bonus: r.bonus, total: r.total, ac, hit: r.hit, critical: r.critical, damage, ...(advantage ? { advantage } : {}), venomous: r.hit && hasTrait(enemy, 'venomous') });
+    out.push({ enemy: enemy.name, tier: enemy.tier, playerId: target.id, playerDisplayName: target.displayName, die, bonus: r.bonus, total: r.total, ac, hit: r.hit, critical: r.critical, damage, ...(advantage ? { advantage } : {}), ...(disadvantage ? { disadvantage } : {}), venomous: r.hit && hasTrait(enemy, 'venomous') });
   }
   return out;
 }
@@ -330,10 +346,11 @@ export function applyEnemyAttackTags(
   rollDie: () => number,
   rollSides: (sides: number) => number,
   wardUsed: Set<string> = new Set(),
-  guards: Record<string, string> = {}
+  guards: Record<string, string> = {},
+  effects?: RoundEffects
 ): { characters: Character[]; changes: string[]; outcomes: EnemyAttackOutcome[] } {
   const planned = tags.flatMap((t) => (t.kind === 'enemy_attack' ? [{ enemy: t.enemy, player: t.player }] : []));
-  const outcomes = runEnemyAttacks(planned, characters, encounter, rollDie, rollSides);
+  const outcomes = runEnemyAttacks(planned, characters, encounter, rollDie, rollSides, undefined, effects);
   return { ...applyEnemyAttackOutcomes(characters, outcomes, wardUsed, guards), outcomes };
 }
 

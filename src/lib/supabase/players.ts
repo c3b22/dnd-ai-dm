@@ -19,6 +19,8 @@ export interface RoundPlayer {
   classId?: string | null;
   /** Eventful rounds left before the class ability is ready. */
   abilityCooldown?: number;
+  /** K3/K4: spell slots a mage has spent since the last rest; absent/0 means none (also when the column is not readable yet). */
+  spellSlotsUsed?: number;
   /** Ability scores; absent when the column is not readable yet. */
   abilities?: AbilityScores;
   /** Unspent ability score improvements (level 4 and 8); absent/0 means none. */
@@ -44,6 +46,15 @@ export async function fetchRoundPlayers(
   }
   if (error) throw error;
 
+  // K4: spell slots spent in their own query: players.spell_slots_used may not exist yet, which must not hide the players above.
+  const slotsById = new Map<string, number>();
+  try {
+    const { data: slotRows, error: slotError } = await load('id, spell_slots_used');
+    if (!slotError) for (const row of (slotRows ?? []) as any[]) slotsById.set(row.id as string, Number(row.spell_slots_used ?? 0));
+  } catch {
+    /* unreadable means no slots spent */
+  }
+
   // A database without the inventory table (migration not applied yet) plays with empty packs.
   const inventories = await fetchCampaignInventories(campaignId).catch(() => ({}) as Inventories);
 
@@ -67,6 +78,7 @@ export async function fetchRoundPlayers(
     xp: Number(p.xp ?? 0),
     classId: (p.class_id ?? null) as string | null,
     abilityCooldown: Number(p.ability_cooldown ?? 0),
+    spellSlotsUsed: slotsById.get(p.id as string) ?? 0,
     status: p.status as 'active' | 'downed' | 'dead',
     gold: Number(p.gold ?? 0),
     abilities: withAbilities ? normalizeAbilities(p.abilities) : undefined,
@@ -85,6 +97,7 @@ export async function fetchRoundPlayers(
     xp: p.xp,
     classId: p.classId,
     abilityCooldown: p.abilityCooldown,
+    spellSlotsUsed: p.spellSlotsUsed,
     items: p.items,
     status: p.status,
     gold: p.gold,

@@ -15,6 +15,12 @@ import { proficiencyBonus } from './classes';
 
 export type Advantage = 'none' | 'advantage' | 'disadvantage';
 
+/** K4: one more source of advantage (`up`) or disadvantage (`down`) on top of a roll's current state; opposite sources cancel. */
+export function shiftAdvantage(current: Advantage, direction: 'up' | 'down'): Advantage {
+  if (direction === 'up') return current === 'disadvantage' ? 'none' : 'advantage';
+  return current === 'advantage' ? 'none' : 'disadvantage';
+}
+
 export interface CheckInput {
   d20s: readonly number[];
   ability: number;

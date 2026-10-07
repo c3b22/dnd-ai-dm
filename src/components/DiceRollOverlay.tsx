@@ -60,6 +60,43 @@ export function checkFormula(c: Pick<DiceCheckView, 'die' | 'modifier' | 'profic
   return `${c.die}${part(c.modifier)}${c.proficiency ? part(c.proficiency) : ''} = ${c.total}`;
 }
 
+/** K4: one die of a spell: the caster's attack roll against the enemy's AC, or the enemy's saving throw against the spell's DC. */
+export interface DiceSpellView {
+  playerDisplayName: string;
+  spell: string;
+  target: string;
+  kind: 'attack' | 'save';
+  die: number;
+  /** Added to the d20: the caster's attack bonus, or the enemy's save bonus. */
+  bonus: number;
+  total: number;
+  /** Attack: the enemy's AC. Save: the spell's DC. */
+  dc: number;
+  /** Attack: it hit. Save: the enemy saved. */
+  success: boolean;
+  critical: 'success' | 'failure' | null;
+  pips: number;
+}
+
+/** "12 + 4 = 16" : the d20 and what is added to it. */
+export function spellFormula(s: Pick<DiceSpellView, 'die' | 'bonus' | 'total'>): string {
+  return `${s.die} ${s.bonus < 0 ? '-' : '+'} ${Math.abs(s.bonus)} = ${s.total}`;
+}
+
+/** "เทียบ AC 13" / "เทียบเซฟ DC 12". */
+export function spellAgainst(s: Pick<DiceSpellView, 'kind' | 'dc'>): string {
+  return s.kind === 'attack' ? `เทียบ AC ${s.dc}` : `เทียบเซฟ DC ${s.dc}`;
+}
+
+/** What the roll did, in Thai: a hit takes pips, a failed save takes pips or a status, a saved one does nothing. */
+export function spellOutcome(s: Pick<DiceSpellView, 'kind' | 'success' | 'critical' | 'pips'>): string {
+  if (s.kind === 'attack') return s.success ? `โดน${s.critical === 'success' ? ' (คริติคอล)' : ''} −${s.pips} pip` : 'พลาด';
+  return s.success ? 'ผ่านเซฟ ไม่เป็นอะไร' : s.pips > 0 ? `ไม่ผ่านเซฟ −${s.pips} pip` : 'ไม่ผ่านเซฟ';
+}
+
+/** The spell is working for the caster: an attack that hit, or a save the enemy failed. */
+export const spellWorked = (s: Pick<DiceSpellView, 'kind' | 'success'>): boolean => (s.kind === 'attack' ? s.success : !s.success);
+
 export interface DiceRollOverlayProps {
   values: number[];
   /** Skill checks among the rolls, if any; shown with the result once the dice settle. */
@@ -68,6 +105,8 @@ export interface DiceRollOverlayProps {
   attacks?: DiceAttackView[];
   /** Enemy attacks among the rolls (I2), shown as "enemy -> player, total vs AC". */
   enemyAttacks?: DiceEnemyAttackView[];
+  /** Spell dice among the rolls (K4), shown as "caster casts spell -> enemy, total vs AC / DC". */
+  spells?: DiceSpellView[];
   onComplete: () => void;
 }
 
@@ -78,7 +117,7 @@ const SETTLE_PAUSE_MS = 900;
 // until this overlay completes, so give up and reveal everything instead of hanging the table.
 const MAX_ROLL_MS = 10_000;
 
-export function DiceRollOverlay({ values, checks, attacks, enemyAttacks, onComplete }: DiceRollOverlayProps) {
+export function DiceRollOverlay({ values, checks, attacks, enemyAttacks, spells, onComplete }: DiceRollOverlayProps) {
   const doneRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -155,7 +194,7 @@ export function DiceRollOverlay({ values, checks, attacks, enemyAttacks, onCompl
       {landed && (
         <div className="dice-result" aria-live="polite">
           {values.join(', ')}
-          {((checks && checks.length > 0) || (attacks && attacks.length > 0) || (enemyAttacks && enemyAttacks.length > 0)) && (
+          {((checks && checks.length > 0) || (attacks && attacks.length > 0) || (enemyAttacks && enemyAttacks.length > 0) || (spells && spells.length > 0)) && (
             <ul className="dice-checks">
               {(checks ?? []).map((c, i) => (
                 <li key={i} className={`dice-check ${c.success ? 'pass' : 'fail'}`}>
@@ -167,6 +206,11 @@ export function DiceRollOverlay({ values, checks, attacks, enemyAttacks, onCompl
                 <li key={`attack-${i}`} className={`dice-check ${a.hit ? 'pass' : 'fail'}`}>
                   <strong>{a.playerDisplayName}</strong> → {a.target} · {attackFormula(a)} เทียบ AC {a.ac} ·{' '}
                   {a.hit ? (a.critical === 'success' ? 'โดน (คริติคอล)' : 'โดน') : 'พลาด'}
+                </li>
+              ))}
+              {(spells ?? []).map((s, i) => (
+                <li key={`spell-${i}`} className={`dice-check ${spellWorked(s) ? 'pass' : 'fail'}`}>
+                  <strong>{s.playerDisplayName}</strong> ร่าย{s.spell} → {s.target} · {spellFormula(s)} {spellAgainst(s)} · {spellOutcome(s)}
                 </li>
               ))}
               {(enemyAttacks ?? []).map((a, i) => (

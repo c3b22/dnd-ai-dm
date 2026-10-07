@@ -14,6 +14,8 @@ export interface ArmorClassInput {
   armorReduction?: number;
   /** Weight of the worn armor (decides the DEX cap); absent means no armor. */
   armorWeight?: number;
+  /** K4: AC bonus a spell gives for this round only (Character.roundAcBonus). */
+  roundAcBonus?: number;
 }
 
 /** DEX bonus allowed by the worn armor: none/light uncapped, medium at most +2, heavy never positive. */
@@ -25,5 +27,5 @@ function dexBonus(dexMod: number, armorWeight: number | undefined): number {
 
 export function armorClass(c: ArmorClassInput): number {
   const dexMod = abilityModifier(normalizeAbilities(c.abilities).DEX);
-  return BASE_AC + dexBonus(dexMod, c.armorWeight) + AC_PER_REDUCTION * (c.armorReduction ?? 0);
+  return BASE_AC + dexBonus(dexMod, c.armorWeight) + AC_PER_REDUCTION * (c.armorReduction ?? 0) + (c.roundAcBonus ?? 0);
 }

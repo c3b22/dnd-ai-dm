@@ -92,7 +92,7 @@ function attackText(a: AttackOutcome): string {
 function enemyAttackText(o: EnemyAttackOutcome): string {
   const crit = o.critical === 'success' ? ', natural 20' : o.critical === 'failure' ? ', natural 1' : '';
   const result = !o.hit ? 'MISS, the player is unharmed' : o.critical === 'success' ? 'CRITICAL HIT, a brutal wound' : 'HIT, the player is wounded';
-  return `- ${o.enemy} attacks ${o.playerDisplayName}: d20 ${o.die} + ${o.bonus} = ${o.total}${crit} vs armor class ${o.ac}${o.advantage ? ' (rolled with advantage, the pack presses in)' : ''} -> ${result}${o.venomous ? ', and the venom seeps in (the player will feel it next round)' : ''}`;
+  return `- ${o.enemy} attacks ${o.playerDisplayName}: d20 ${o.die} + ${o.bonus} = ${o.total}${crit} vs armor class ${o.ac}${o.advantage ? ' (rolled with advantage, the pack presses in)' : o.disadvantage ? ' (rolled with disadvantage, the enemy is dazed)' : ''} -> ${result}${o.venomous ? ', and the venom seeps in (the player will feel it next round)' : ''}`;
 }
 
 function checkText(c: CheckOutcome): string {
@@ -181,6 +181,9 @@ export function assemblePrompt(
     })(),
     ...(actions.some((a) => a.check || a.attack)
       ? ['', 'Skill checks and attacks above are final and decided by the server: narrate each SUCCESS or HIT as the player achieving what they tried and each FAILURE or MISS as it going wrong or falling short. Never re-roll or change them.']
+      : []),
+    ...(actions.some((a) => a.spellId)
+      ? ['', 'Spells cast above are resolved by the server (see the server note on each action): narrate every effect, hit, miss, resisted spell, stunned or dazed enemy and protection exactly as the note says, spend no extra spell slots, invent no numbers, and never use hurt/enemy tags for the spell itself. A refused cast simply fizzles.']
       : []),
     ...(options.enemyAttacks && options.enemyAttacks.length > 0
       ? ['', 'Enemy attacks this round, rolled and final (decided by the server; narrate each HIT as the enemy landing the blow and each MISS as it failing; never state damage numbers, never use an enemy_attack tag for them):', ...options.enemyAttacks.map(enemyAttackText)]
