@@ -1221,3 +1221,61 @@ describe('processRound permanent death (H3a)', () => {
     expect(String(vi.mocked(generateNarration).mock.calls[0][0])).toMatch(/Aria.*DEAD/);
   });
 });
+
+describe('processRound looting corpses (H3c)', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 5 };
+  const potions = { itemId: 'potion_minor', customName: '', quantity: 2, slot: null, equipped: false };
+  const corpses = [{ id: 'c1', name: 'Aria', items: [potions], gold: 35 }];
+
+  function setup(extra: Record<string, unknown> = {}, narration = 'Prem searches.\n[[loot: Aria | Prem]]') {
+    const repository = createFakeRepository({
+      saveCorpseLoot: vi.fn().mockResolvedValue(undefined),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], actions: [{ playerDisplayName: 'Prem', playerId: 'p1', actionText: 'Search Aria' }],
+        characters: [prem], inventories: { p1: [] }, settings: { permadeath: true }, pendingWipe: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '', corpses, ...extra,
+      }),
+    });
+    const generateNarration = vi.fn().mockImplementation(async () => fakeStream([narration]));
+    const d: ProcessRoundDeps = { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration, rollDie: () => 3, rollSides: () => 4 };
+    return { repository, d, generateNarration };
+  }
+
+  it('tells the AI which corpses are in the room', async () => {
+    const { d, generateNarration } = setup();
+    await processRound(d, 'round-1');
+    const prompt = String(vi.mocked(generateNarration).mock.calls[0][0]);
+    expect(prompt).toContain('Aria');
+    expect(prompt).toContain('[[loot: CorpseName | PlayerName]]');
+  });
+
+  it('moves the items and gold to the looter and deletes the emptied corpse', async () => {
+    const { repository, d } = setup();
+    await processRound(d, 'round-1');
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [expect.objectContaining({ itemId: 'potion_minor', quantity: 2 })], baseItems: [] }]);
+    expect(repository.applyGold).toHaveBeenCalledWith([{ playerId: 'p1', delta: 35 }]);
+    expect(repository.saveCorpseLoot).toHaveBeenCalledWith([{ id: 'c1', items: [], gold: 0, empty: true }]);
+    expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('Aria'))).toBe(true);
+  });
+
+  it('ignores a loot tag with an unknown corpse', async () => {
+    const { repository, d } = setup({}, 'x\n[[loot: Nobody | Prem]]');
+    await processRound(d, 'round-1');
+    expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the corpse or give gold when the looter pack cannot be saved', async () => {
+    const { repository, d } = setup();
+    vi.mocked(repository.saveInventories).mockRejectedValue(new Error('db down'));
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('works like before when the repository has no corpse support', async () => {
+    const { repository, d } = setup({ corpses: undefined });
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
+  });
+});

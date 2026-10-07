@@ -19,6 +19,7 @@ import { changedDeathSaves, runDeathSaves, settleDeathSaves, type DeathSaveRoll 
 import { DEATH_SAVE_SKILL } from '@/lib/character/skillLabels';
 import type { RollSummaryEntry } from './roundRepository';
 import { applyPermadeath, type Corpse } from '@/lib/character/permadeath';
+import { applyLootTags } from '@/lib/character/loot';
 import type { Character } from '@/lib/character/types';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
@@ -151,7 +152,7 @@ export async function processRound(
         context.adventure,
         context.sceneInstructionText,
         settings,
-        { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter },
+        { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter, corpses: context.corpses ?? [] },
         context.facts ?? [],
         { planChecks }
       );
@@ -255,6 +256,11 @@ export async function processRound(
       const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
       const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
       const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
+      // H3c: the corpse's things move to the looter; the corpse row is only written back after the pack save below.
+      const lootable = context.corpses ?? [];
+      const lootResult = lootable.length > 0 && deps.repository.saveCorpseLoot
+        ? applyLootTags(result.characters, inventoryResult.inventories, lootable, tags)
+        : null;
       const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
@@ -286,7 +292,7 @@ export async function processRound(
           /* best-effort: without the table the dead character keeps their things */
         }
       }
-      const finalInventories = { ...inventoryResult.inventories };
+      const finalInventories = { ...(lootResult?.inventories ?? inventoryResult.inventories) };
       const corpseIds: string[] = [];
       if (corpsesSaved) {
         for (const corpse of corpses) {
@@ -296,8 +302,9 @@ export async function processRound(
           }
         }
       }
-      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds, ...corpseIds])];
+      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds, ...(lootResult?.changedPlayerIds ?? []), ...corpseIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
+      let packSaved = changedIds.length === 0;
       if (changedIds.length > 0) {
         try {
           await deps.repository.saveInventories(
@@ -310,8 +317,20 @@ export async function processRound(
               baseItems: context.inventories[playerId] ?? [],
             }))
           );
+          packSaved = true;
         } catch {
           /* best-effort, like the rest of the mechanics */
+        }
+      }
+      // H3c: looted things leave the corpse only once the looter's pack is saved, so a failure can duplicate
+      // (a retry of the tag is blocked by the claim) but never destroys items; gold follows the same gate.
+      let lootGold: Record<string, number> = {};
+      if (lootResult && lootResult.corpseUpdates.length > 0 && packSaved) {
+        lootGold = lootResult.goldDeltas;
+        try {
+          await deps.repository.saveCorpseLoot!(lootResult.corpseUpdates);
+        } catch {
+          /* best-effort */
         }
       }
       // F5f: remember which magic items were handed out. Best-effort: a missing table must not matter.
@@ -323,6 +342,7 @@ export async function processRound(
         }
       }
       const goldDeltas: Record<string, number> = { ...economy.goldDeltas };
+      for (const [playerId, delta] of Object.entries(lootGold)) goldDeltas[playerId] = (goldDeltas[playerId] ?? 0) + delta;
       if (corpsesSaved) for (const corpse of corpses) if (corpse.gold > 0) goldDeltas[corpse.playerId] = (goldDeltas[corpse.playerId] ?? 0) - corpse.gold;
       const goldChanges = Object.entries(goldDeltas)
         .filter(([, delta]) => delta !== 0)
@@ -371,6 +391,7 @@ export async function processRound(
         ...result.changes,
         ...xpResult.changes,
         ...inventoryResult.changes,
+        ...(lootResult?.changes ?? []),
         ...economy.changes,
       ]);
     } catch {

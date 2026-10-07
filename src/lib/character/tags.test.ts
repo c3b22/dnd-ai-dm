@@ -190,6 +190,15 @@ describe('gold, pay and shop tags', () => {
       expect(bad.cleanText).toBe('x');
     });
 
+    it('parses loot (corpse | player) and hides a malformed one', () => {
+      const r = parseCharacterTags('เก็บของ'+NL+'[[loot: Aria | Prem]]');
+      expect(r.tags).toEqual([{ kind: 'loot', corpse: 'Aria', name: 'Prem' }]);
+      expect(r.cleanText).toBe('เก็บของ');
+      const bad = parseCharacterTags('x'+NL+'[[loot: Aria]]'+NL+'[[loot]]');
+      expect(bad.tags).toEqual([]);
+      expect(bad.cleanText).toBe('x');
+    });
+
     it('does not confuse enemy_hurt with hurt or enemy', () => {
       const { tags } = parseCharacterTags('[[hurt: Prem | light]][[enemy_hurt: Orc | medium]]');
       expect(tags).toEqual([

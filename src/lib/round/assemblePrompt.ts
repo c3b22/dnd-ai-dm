@@ -11,6 +11,7 @@ import { characterPrompt } from '@/lib/character/prompt';
 import { sanctuaryFor } from '@/lib/character/sanctuaries';
 import type { Character } from '@/lib/character/types';
 import { inventoryPrompt } from '@/lib/inventory/prompt';
+import { corpsePrompt, type LootableCorpse } from '@/lib/character/loot';
 import type { Inventories } from '@/lib/inventory/types';
 import { economyPrompt } from '@/lib/economy/prompt';
 import type { ShopState } from '@/lib/economy/apply';
@@ -79,7 +80,7 @@ export function assemblePrompt(
   adventure: Adventure | null = null,
   sceneInstructionText = '',
   settings: CampaignSettings = DEFAULT_SETTINGS,
-  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null },
+  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null; corpses?: LootableCorpse[] },
   facts: CampaignFact[] = [],
   options: AssembleOptions = {}
 ): string {
@@ -124,11 +125,13 @@ export function assemblePrompt(
             sanctuaryFor(adventure?.id ?? null)
           );
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
+          const corpseBlock = corpsePrompt(characterState.corpses ?? []);
           const economy = economyPrompt(characterState.characters, characterState.shop ?? null);
           const combat = combatPrompt(characterState.encounter ?? null, settings.diceEnabled && characterState.characters.length > 0);
           return [
             ...(block.length ? [...block, ''] : []),
             ...(inventory.length ? [...inventory, ''] : []),
+            ...(corpseBlock.length ? [...corpseBlock, ''] : []),
             ...(economy.length ? [...economy, ''] : []),
             ...combat,
             '',

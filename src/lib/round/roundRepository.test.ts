@@ -19,6 +19,7 @@ function createFakeSupabase(options: {
   currentEncounter?: unknown;
   factRows?: unknown[];
   factsError?: boolean;
+  corpseRows?: unknown[];
   messageRows?: { role: string; content: string }[];
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
@@ -97,6 +98,9 @@ function createFakeSupabase(options: {
         return {
           select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: options.factRows ?? [], error: null }) }) }),
         };
+      }
+      if (table === 'campaign_corpses' && options.corpseRows) {
+        return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: options.corpseRows, error: null }) }) }) };
       }
       if (table === 'messages') {
         const builder: any = {
@@ -801,5 +805,45 @@ describe('createSupabaseRoundRepository permanent death (H3a)', () => {
     });
     const ctx = await createSupabaseRoundRepository(client).getRoundContext('round-1');
     expect(ctx.characters[0].status).toBe('dead');
+  });
+});
+
+describe('createSupabaseRoundRepository corpse looting (H3c)', () => {
+  it('getRoundContext reads corpses that still hold something and skips empty ones', async () => {
+    const items = [{ itemId: 'potion_minor', customName: '', quantity: 1, slot: null, equipped: false }];
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      corpseRows: [{ id: 'c1', name: 'Aria', items, gold: 3 }, { id: 'c2', name: 'Bo', items: [], gold: 0 }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.corpses).toEqual([{ id: 'c1', name: 'Aria', items, gold: 3 }]);
+  });
+
+  it('getRoundContext has no corpses when the table is missing', async () => {
+    const { client } = createFakeSupabase({ roundsById: { 'round-1': { campaign_id: 'camp-1' } }, campaignSummary: null });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.corpses).toEqual([]);
+  });
+
+  it('saveCorpseLoot deletes an emptied corpse and updates a partly looted one', async () => {
+    const calls: unknown[] = [];
+    const client: any = {
+      from: (table: string) => ({
+        delete: () => ({ eq: (c: string, v: string) => { calls.push({ table, op: 'delete', c, v }); return Promise.resolve({ error: null }); } }),
+        update: (row: unknown) => ({ eq: (c: string, v: string) => { calls.push({ table, op: 'update', row, c, v }); return Promise.resolve({ error: null }); } }),
+      }),
+    };
+    const left = [{ itemId: 'potion_minor', customName: '', quantity: 3, slot: null, equipped: false }];
+    await createSupabaseRoundRepository(client).saveCorpseLoot!([{ id: 'c1', items: [], gold: 0, empty: true }, { id: 'c2', items: left, gold: 0, empty: false }]);
+    expect(calls).toEqual([
+      { table: 'campaign_corpses', op: 'delete', c: 'id', v: 'c1' },
+      { table: 'campaign_corpses', op: 'update', row: { items: left, gold: 0 }, c: 'id', v: 'c2' },
+    ]);
+  });
+
+  it('saveCorpseLoot throws on a database error', async () => {
+    const client: any = { from: () => ({ delete: () => ({ eq: () => Promise.resolve({ error: new Error('x') }) }) }) };
+    await expect(createSupabaseRoundRepository(client).saveCorpseLoot!([{ id: 'c1', items: [], gold: 0, empty: true }])).rejects.toThrow('x');
   });
 });

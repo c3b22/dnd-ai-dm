@@ -4,6 +4,7 @@ import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
 import type { Character } from '@/lib/character/types';
 import type { Corpse } from '@/lib/character/permadeath';
+import type { CorpseUpdate, LootableCorpse } from '@/lib/character/loot';
 import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
 import { equippedWeaponId, armorReduction, equippedSkillBonuses, equippedItemEffects, equippedReviveCharm } from '@/lib/inventory/rules';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
@@ -45,6 +46,8 @@ export interface RoundContext {
   tagsApplied: boolean;
   /** Magic item ids this room already received (F5f); null/absent when the table is missing. */
   magicGiven?: string[] | null;
+  /** H3c: corpses in this room that still hold something; [] / absent when the table is missing. */
+  corpses?: LootableCorpse[];
 }
 
 /** One line of the posted roll summary; `check` is present when the roll was a skill check. */
@@ -87,6 +90,8 @@ export interface RoundRepository {
   saveDeathSaves?(characters: Character[]): Promise<void>;
   /** H3a: stores the corpses (pack + gold) of permanently dead characters. Optional so older fakes keep working; throws when the table is missing. */
   saveCorpses?(campaignId: string, corpses: Corpse[]): Promise<void>;
+  /** H3c: writes back what is left on looted corpses (an emptied one is deleted). Optional so older fakes keep working; throws on failure. */
+  saveCorpseLoot?(updates: CorpseUpdate[]): Promise<void>;
   saveInventories(
     campaignId: string,
     changes: { playerId: string; items: InventoryItem[]; baseItems: InventoryItem[] }[]
@@ -108,6 +113,23 @@ export interface RoundRepository {
   ): Promise<void>;
   closeRoundAndOpenNext(campaignId: string, roundId: string): Promise<string>;
   setCurrentScene(campaignId: string, sceneId: string): Promise<void>;
+}
+
+/** H3c: best-effort; a database without campaign_corpses (migration 0028 pending) just has nothing to loot. */
+async function loadCorpses(supabase: SupabaseClient, campaignId: string): Promise<LootableCorpse[]> {
+  try {
+    const { data, error } = await supabase
+      .from('campaign_corpses')
+      .select('id, name, items, gold')
+      .eq('campaign_id', campaignId)
+      .order('created_at', { ascending: true });
+    if (error || !data) return [];
+    return (data as any[])
+      .map((r) => ({ id: String(r.id), name: String(r.name), items: (Array.isArray(r.items) ? r.items : []) as InventoryItem[], gold: Math.max(0, Number(r.gold ?? 0)) }))
+      .filter((c) => c.items.length > 0 || c.gold > 0);
+  } catch {
+    return [];
+  }
 }
 
 export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRepository {
@@ -265,6 +287,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         currentEncounter: normalizeEncounter(encounterRow?.current_encounter),
         facts: await loadFacts(supabase, campaignId),
         magicGiven: await loadMagicGiven(supabase, campaignId),
+        corpses: await loadCorpses(supabase, campaignId),
         tagsApplied: Boolean(round.tags_applied_at),
         // Actions reach the DM in the order the players chose for this round.
         actions: sortByTurnOrder(
@@ -366,6 +389,15 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
         .from('campaign_corpses')
         .insert(corpses.map((c) => ({ campaign_id: campaignId, name: c.name, items: c.items, gold: c.gold })));
       if (error) throw error;
+    },
+
+    async saveCorpseLoot(updates) {
+      for (const u of updates) {
+        const { error } = u.empty
+          ? await supabase.from('campaign_corpses').delete().eq('id', u.id)
+          : await supabase.from('campaign_corpses').update({ items: u.items, gold: u.gold }).eq('id', u.id);
+        if (error) throw error;
+      }
     },
 
     async saveInventories(campaignId, changes) {
