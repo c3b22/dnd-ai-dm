@@ -4,7 +4,7 @@ import { findByDisplayName } from '@/lib/character/names';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE } from './constants';
+import { CRIT_SURGE_EXTRA_PIPS, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE } from './constants';
 import { damageEnemy, findActiveEnemy, type Encounter } from './encounter';
 
 export interface AttackOutcome {
@@ -38,6 +38,8 @@ export function resolveAttack(input: {
   tier: EnemyTier;
   damage: number;
   maxDamage: number;
+  /** F5j1 X1: a natural 20 removes one extra pip. */
+  critSurge?: boolean;
 }): { dc: number; die: number; hit: boolean; critical: 'success' | 'failure' | null; pips: number } {
   const advantage = input.advantage ?? 'none';
   const dc = HIT_THRESHOLD[input.tier];
@@ -46,7 +48,7 @@ export function resolveAttack(input: {
   const die = advantage === 'advantage' ? Math.max(...used) : advantage === 'disadvantage' ? Math.min(...used) : used[0];
   if (!result.success) return { dc, die, hit: false, critical: result.critical, pips: 0 };
   const heavy = result.critical === 'success' || input.damage >= input.maxDamage * HEAVY_DAMAGE_RATIO;
-  return { dc, die, hit: true, critical: result.critical, pips: heavy ? HEAVY_PIPS : HIT_PIPS };
+  return { dc, die, hit: true, critical: result.critical, pips: (heavy ? HEAVY_PIPS : HIT_PIPS) + (result.critical === 'success' && input.critSurge ? CRIT_SURGE_EXTRA_PIPS : 0) };
 }
 
 const maxDamageOf = (character: Character): number => {
@@ -78,7 +80,7 @@ export function runAttacks(
     const dice = attack.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
     const damage = damageOf(character) ?? 0;
     const maxDamage = maxDamageOf(character);
-    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage });
+    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, critSurge: character.itemEffects?.effects.includes('crit_surge') });
     if (r.hit) damageEnemy(target, r.pips);
     out.push({
       playerId: character.id,

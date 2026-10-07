@@ -44,6 +44,37 @@ const enc = (...enemies: Encounter['enemies']): Encounter => ({ enemies });
 const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
 const boss = { name: 'มังกร', tier: 'boss' as const, pip: 5, maxPip: 5, fled: false };
 
+describe('crit_surge (F5j1)', () => {
+  const surge = { effects: ['crit_surge' as const], setTheme: null, setSkillBonus: 0 };
+  const plan = [{ player: 'Prem', target: 'มังกร', advantage: 'none' as const }];
+
+  it('nat 20 with crit_surge removes 3 pips; without it still 2', () => {
+    expect(resolveAttack({ d20s: [20], tier: 'normal', damage: 1, maxDamage: 8, critSurge: true }).pips).toBe(3);
+    expect(resolveAttack({ d20s: [20], tier: 'normal', damage: 1, maxDamage: 8 }).pips).toBe(2);
+    expect(resolveAttack({ d20s: [20], tier: 'normal', damage: 1, maxDamage: 8, critSurge: false }).pips).toBe(2);
+  });
+
+  it('crit_surge does not change non-crit hits, heavy blows or misses', () => {
+    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 6, maxDamage: 8, critSurge: true }).pips).toBe(2);
+    expect(resolveAttack({ d20s: [10], tier: 'normal', damage: 1, maxDamage: 8, critSurge: true }).pips).toBe(1);
+    expect(resolveAttack({ d20s: [1], tier: 'normal', damage: 8, maxDamage: 8, critSurge: true }).pips).toBe(0);
+  });
+
+  it('runAttacks reads itemEffects of the attacker', () => {
+    const [a] = runAttacks(plan, [hero({ itemEffects: surge })], enc(boss), () => 1, () => 20);
+    const [b] = runAttacks(plan, [hero()], enc(boss), () => 1, () => 20);
+    expect(a.pips).toBe(3);
+    expect(b.pips).toBe(2);
+  });
+
+  it('a full-pip boss keeps at least 1 pip even from 3 pips', () => {
+    const small = { ...boss, pip: 3, maxPip: 3 } as Encounter['enemies'][number];
+    const [o] = runAttacks(plan, [hero({ itemEffects: surge })], enc(small), () => 1, () => 20);
+    expect(o).toMatchObject({ pips: 3, defeated: false });
+    expect(applyAttackOutcomes(enc(small), [o])?.enemies[0].pip).toBe(1);
+  });
+});
+
 describe('runAttacks', () => {
   const plan = (target: string) => [{ player: 'Prem', target, advantage: 'none' as const }];
 
