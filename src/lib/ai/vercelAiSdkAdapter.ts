@@ -32,6 +32,23 @@ export const realGeminiDeps: GeminiClientDeps = {
       return { textStream: await bufferTextOrThrow(result.fullStream) };
     } catch (error) {
       console.error('gemini call failed', { model, promptChars: prompt.length, ms: Date.now() - startedAt, aborted: signal.aborted });
+      // The stream carries no detail when Gemini refuses a prompt, so ask the REST API once more
+      // for its promptFeedback/finishReason. Diagnostic only; never changes the outcome.
+      const raw = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? '' },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] }),
+          signal: AbortSignal.timeout(8_000),
+        }
+      )
+        .then(async (res) => {
+          const json = (await res.json()) as { promptFeedback?: unknown; candidates?: { finishReason?: string; safetyRatings?: unknown }[]; error?: unknown };
+          return { status: res.status, promptFeedback: json.promptFeedback, finishReason: json.candidates?.[0]?.finishReason, safetyRatings: json.candidates?.[0]?.safetyRatings, error: json.error };
+        })
+        .catch((e) => ({ diagnosticFailed: String(e) }));
+      console.error('gemini raw diagnostic', JSON.stringify(raw));
       throw error;
     }
   },
