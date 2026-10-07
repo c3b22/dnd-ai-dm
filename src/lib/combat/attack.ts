@@ -4,7 +4,8 @@ import { findByDisplayName } from '@/lib/character/names';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
-import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE } from './constants';
+import { CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_DAMAGE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD } from './constants';
+import { KEEN_EYE_DEFAULT } from '@/lib/inventory/effects';
 import { damageEnemy, findActiveEnemy, type Encounter } from './encounter';
 
 export interface AttackOutcome {
@@ -40,9 +41,11 @@ export function resolveAttack(input: {
   maxDamage: number;
   /** F5j1 X1: a natural 20 removes one extra pip. */
   critSurge?: boolean;
+  /** F5j3 X3: lowers the enemy's hit threshold by this much (never below 2). */
+  keenEye?: number;
 }): { dc: number; die: number; hit: boolean; critical: 'success' | 'failure' | null; pips: number } {
   const advantage = input.advantage ?? 'none';
-  const dc = HIT_THRESHOLD[input.tier];
+  const dc = Math.max(MIN_HIT_THRESHOLD, HIT_THRESHOLD[input.tier] - (input.keenEye ?? 0));
   const result = resolveCheck({ d20s: input.d20s, ability: 10, proficient: false, level: 1, dc, advantage });
   const used = advantage === 'none' ? input.d20s.slice(0, 1) : input.d20s.slice(0, 2);
   const die = advantage === 'advantage' ? Math.max(...used) : advantage === 'disadvantage' ? Math.min(...used) : used[0];
@@ -50,6 +53,9 @@ export function resolveAttack(input: {
   const heavy = result.critical === 'success' || input.damage >= input.maxDamage * HEAVY_DAMAGE_RATIO;
   return { dc, die, hit: true, critical: result.critical, pips: (heavy ? HEAVY_PIPS : HIT_PIPS) + (result.critical === 'success' && input.critSurge ? CRIT_SURGE_EXTRA_PIPS : 0) };
 }
+
+const keenEyeOf = (character: Character): number =>
+  character.itemEffects?.effects.includes('keen_eye') ? (character.itemEffects.keenEye ?? KEEN_EYE_DEFAULT) : 0;
 
 const maxDamageOf = (character: Character): number => {
   const { count, sides, bonus } = weaponFor(character.weaponId).dice;
@@ -80,7 +86,7 @@ export function runAttacks(
     const dice = attack.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
     const damage = damageOf(character) ?? 0;
     const maxDamage = maxDamageOf(character);
-    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, critSurge: character.itemEffects?.effects.includes('crit_surge') });
+    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) });
     if (r.hit) damageEnemy(target, r.pips);
     out.push({
       playerId: character.id,

@@ -33,6 +33,8 @@ export interface MagicItem {
   mechanic: MagicMechanic;
   /** Optional special mechanic (F5j0); at most one. */
   effect?: ItemEffectId;
+  /** Optional strength of `effect` (e.g. keen_eye 1-2). */
+  effectValue?: number;
   /** Optional set theme, e.g. 'เงา'; a matching weapon + armor + accessory gives the set bonus. */
   theme?: string;
 }

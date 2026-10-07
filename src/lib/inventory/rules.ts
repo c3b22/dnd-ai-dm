@@ -129,7 +129,7 @@ export function equippedItemEffects(items: InventoryItem[]): ItemEffects {
   for (const i of items) {
     if (!i.equipped || !i.slot) continue;
     const magic = MAGIC_ITEMS.find((m) => m.id === i.itemId);
-    worn.push({ slot: i.slot, effect: magic?.effect, theme: magic?.theme });
+    worn.push({ slot: i.slot, effect: magic?.effect, effectValue: magic?.effectValue, theme: magic?.theme });
   }
   return aggregateEffects(worn);
 }

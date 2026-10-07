@@ -20,3 +20,5 @@ export const HEAVY_DAMAGE_RATIO = 0.75;
 export const ENEMY_DAMAGE: Record<EnemyTier, number> = { minion: 2, normal: 4, strong: 6, boss: 8 };
 /** Armor can never reduce an enemy hit below this. */
 export const MIN_ENEMY_DAMAGE = 1;
+/** The hit threshold never drops below this, even with keen_eye (nat 1 still always misses). */
+export const MIN_HIT_THRESHOLD = 2;

@@ -30,3 +30,13 @@ describe('aggregateEffects', () => {
     ]).setTheme).toBeNull();
   });
 });
+
+describe('keen_eye value (F5j3)', () => {
+  it('defaults to 1, takes the strongest worn value once, clamps to 1-2, absent without keen_eye', async () => {
+    const { aggregateEffects } = await import('./effects');
+    expect(aggregateEffects([{ slot: 'weapon', effect: 'keen_eye' }]).keenEye).toBe(1);
+    expect(aggregateEffects([{ slot: 'weapon', effect: 'keen_eye', effectValue: 1 }, { slot: 'accessory', effect: 'keen_eye', effectValue: 2 }]).keenEye).toBe(2);
+    expect(aggregateEffects([{ slot: 'weapon', effect: 'keen_eye', effectValue: 5 }]).keenEye).toBe(2);
+    expect('keenEye' in aggregateEffects([{ slot: 'weapon', effect: 'lifesteal' }])).toBe(false);
+  });
+});

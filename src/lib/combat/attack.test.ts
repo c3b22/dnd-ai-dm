@@ -206,3 +206,28 @@ describe('applyEnemyAttacks', () => {
     expect(input[0].hp).toBe(20);
   });
 });
+
+describe('keen_eye (F5j3)', () => {
+  const eye = (keenEye?: number) => ({ effects: ['keen_eye' as const], setTheme: null, setSkillBonus: 0, ...(keenEye ? { keenEye } : {}) });
+  const plan = [{ player: 'Prem', target: 'มังกร', advantage: 'none' as const }];
+
+  it('lowers the threshold by 1 or 2: boss 15 -> 14 / 13', () => {
+    expect(resolveAttack({ d20s: [14], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 1 })).toMatchObject({ hit: true, dc: 14 });
+    expect(resolveAttack({ d20s: [13], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 1 })).toMatchObject({ hit: false });
+    expect(resolveAttack({ d20s: [13], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 2 })).toMatchObject({ hit: true, dc: 13 });
+    expect(resolveAttack({ d20s: [12], tier: 'boss', damage: 1, maxDamage: 8, keenEye: 2 })).toMatchObject({ hit: false });
+  });
+
+  it('nat 1 still always misses and the threshold never drops below 2', () => {
+    expect(resolveAttack({ d20s: [1], tier: 'minion', damage: 8, maxDamage: 8, keenEye: 99 })).toMatchObject({ hit: false, critical: 'failure', dc: 2 });
+    expect(resolveAttack({ d20s: [2], tier: 'minion', damage: 1, maxDamage: 8, keenEye: 99 })).toMatchObject({ hit: true, dc: 2 });
+  });
+
+  it('runAttacks uses the wearer value, defaults to 1 and ignores non-wearers', () => {
+    const at = (c: Character, die: number) => runAttacks(plan, [c], enc(boss), () => 1, () => die)[0];
+    expect(at(hero({ itemEffects: eye(2) }), 13)).toMatchObject({ hit: true, dc: 13 });
+    expect(at(hero({ itemEffects: eye() }), 14)).toMatchObject({ hit: true, dc: 14 });
+    expect(at(hero({ itemEffects: eye() }), 13).hit).toBe(false);
+    expect(at(hero(), 14)).toMatchObject({ hit: false, dc: 15 });
+  });
+});
