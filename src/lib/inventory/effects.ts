@@ -21,6 +21,9 @@ export const DEEP_PACK_MAX = 5;
 /** X7 lucky_purse: extra gold on every gold-tag reward (default 2). */
 export const LUCKY_PURSE_DEFAULT = 2;
 
+/** X8 quick_tempo: extra cooldown rounds shaved off on every eventful round (fixed, no per-item value). */
+export const QUICK_TEMPO_EXTRA = 1;
+
 export interface EquippedEffectItem {
   slot: Slot;
   effect?: ItemEffectId;
