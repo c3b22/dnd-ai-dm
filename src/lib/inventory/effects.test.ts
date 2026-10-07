@@ -60,3 +60,11 @@ describe('deep_pack value (F5j5)', () => {
     expect('deepPack' in aggregateEffects([{ slot: 'accessory', effect: 'ward' }])).toBe(false);
   });
 });
+
+describe('aggregateEffects lucky_purse', () => {
+  it('defaults to 2 and takes the strongest worn value', () => {
+    expect(aggregateEffects([{ slot: 'accessory', effect: 'lucky_purse' }]).luckyPurse).toBe(2);
+    expect(aggregateEffects([{ slot: 'accessory', effect: 'lucky_purse', effectValue: 4 }, { slot: 'weapon', effect: 'lucky_purse', effectValue: 3 }]).luckyPurse).toBe(4);
+    expect(aggregateEffects([{ slot: 'accessory' }]).luckyPurse).toBeUndefined();
+  });
+});

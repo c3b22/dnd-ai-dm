@@ -1,6 +1,7 @@
 import { findByDisplayName } from '@/lib/character/names';
 import type { CharacterTag } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
+import { LUCKY_PURSE_DEFAULT } from '@/lib/inventory/effects';
 import { rollGold } from './gold';
 import { buyPrice } from './prices';
 
@@ -14,7 +15,7 @@ export type ShopAction = { action: 'open'; shop: ShopState } | { action: 'close'
 const MAX_MERCHANT_NAME = 40;
 
 export function applyEconomyTags(
-  characters: Pick<Character, 'id' | 'displayName' | 'gold'>[],
+  characters: Pick<Character, 'id' | 'displayName' | 'gold' | 'itemEffects'>[],
   tags: CharacterTag[],
   rollDie: (sides: number) => number
 ): { goldDeltas: Record<string, number>; changes: string[]; shop: ShopAction } {
@@ -37,7 +38,11 @@ export function applyEconomyTags(
 
     const target = findByDisplayName(characters, tag.name);
     if (!target) continue;
-    const rolled = rollGold(tag.tier, rollDie);
+    let rolled = rollGold(tag.tier, rollDie);
+    // X7 lucky_purse: bonus on gold-tag rewards only (not pay, sales or trades)
+    if (tag.kind === 'gold' && target.itemEffects?.effects.includes('lucky_purse')) {
+      rolled += target.itemEffects.luckyPurse ?? LUCKY_PURSE_DEFAULT;
+    }
     const available = (target.gold ?? 0) + (deltas[target.id] ?? 0);
 
     if (tag.kind === 'gold') {

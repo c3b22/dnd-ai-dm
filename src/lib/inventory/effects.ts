@@ -18,6 +18,9 @@ export const WARD_MAX = 3;
 export const DEEP_PACK_DEFAULT = 3;
 export const DEEP_PACK_MAX = 5;
 
+/** X7 lucky_purse: extra gold on every gold-tag reward (default 2). */
+export const LUCKY_PURSE_DEFAULT = 2;
+
 export interface EquippedEffectItem {
   slot: Slot;
   effect?: ItemEffectId;
@@ -40,6 +43,8 @@ export interface ItemEffects {
   ward?: number;
   /** deep_pack only: extra carry capacity (3-5, default 3; the strongest worn item wins). Absent without deep_pack. */
   deepPack?: number;
+  /** lucky_purse only: extra gold per gold-tag reward (default 2; the strongest worn item wins). Absent without lucky_purse. */
+  luckyPurse?: number;
 }
 
 export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffects {
@@ -59,6 +64,10 @@ export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffec
   if (effects.includes('deep_pack')) {
     const values = equippedItems.filter((i) => i.effect === 'deep_pack').map((i) => i.effectValue ?? DEEP_PACK_DEFAULT);
     result.deepPack = Math.min(DEEP_PACK_MAX, Math.max(DEEP_PACK_DEFAULT, ...values));
+  }
+  if (effects.includes('lucky_purse')) {
+    const values = equippedItems.filter((i) => i.effect === 'lucky_purse').map((i) => i.effectValue ?? LUCKY_PURSE_DEFAULT);
+    result.luckyPurse = Math.max(LUCKY_PURSE_DEFAULT, ...values);
   }
   return result;
 }
