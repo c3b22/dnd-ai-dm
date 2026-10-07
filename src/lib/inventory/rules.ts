@@ -133,6 +133,16 @@ export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<Ski
   return bonuses;
 }
 
+/** F5g: the revive charm worn in the accessory slot, or null. */
+export function equippedReviveCharm(items: InventoryItem[]): { itemId: string; reviveHp: number } | null {
+  for (const i of items) {
+    if (!i.equipped || i.slot !== 'accessory') continue;
+    const entry = catalogEntry(i.itemId);
+    if (entry?.kind === 'charm') return { itemId: i.itemId, reviveHp: entry.reviveHp };
+  }
+  return null;
+}
+
 /** Special effects and set bonus from worn magic items (F5j0). */
 export function equippedItemEffects(items: InventoryItem[]): ItemEffects {
   const worn: EquippedEffectItem[] = [];

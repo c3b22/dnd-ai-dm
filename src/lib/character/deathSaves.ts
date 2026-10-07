@@ -8,9 +8,10 @@
  * "Dead" here keeps the existing meaning of downed: the character stays `downed` with hp 0 and
  * can still be brought back by `[[revive]]` or a wipe/sanctuary. Nobody disappears for good
  * (permadeath is H2/H3). Every place that reacts to the third failure goes through
- * `onDeathSavesFailed`, the one hook F5g (revival charm) and H3a (permadeath) attach to.
+ * `onDeathSavesFailed`, the one hook F5g (revival charm, implemented) and H3a (permadeath) attach to.
  */
 import { resolveCheck } from './check';
+import { catalogEntry } from '@/lib/inventory/catalog';
 import type { Character } from './types';
 
 export const DEATH_SAVE_DC = 10;
@@ -53,8 +54,20 @@ export function resolveDeathSave(current: DeathSaves, die: number): DeathSaveRes
   return { outcome: check.success ? 'pass' : 'fail', saves, check };
 }
 
-/** The single point where "3 failed death saves" is handled. Today: a log line, nothing is lost. */
-export function onDeathSavesFailed(character: Character): { changes: string[] } {
+/**
+ * The single point where "3 failed death saves" is handled. A worn revive charm (F5g) stands the
+ * wearer up at the charm's HP and is spent (`revive`); otherwise a log line, nothing is lost.
+ */
+export function onDeathSavesFailed(character: Character): { changes: string[]; revive?: { itemId: string; hp: number } } {
+  const charm = character.reviveCharm;
+  if (charm) {
+    const hp = Math.max(1, Math.min(character.maxHp, charm.reviveHp));
+    const label = catalogEntry(charm.itemId)?.nameTh ?? 'เครื่องราง';
+    return {
+      changes: [`${character.displayName} สิ้นใจ แต่${label}แตกสลายและดึงกลับมาด้วย ${hp} HP (เครื่องรางสลายไปแล้ว)`],
+      revive: { itemId: charm.itemId, hp },
+    };
+  }
   return { changes: [`${character.displayName} สิ้นใจ (ยังชุบได้ด้วยการคืนชีพหรือสถานที่ปลอดภัย)`] };
 }
 
@@ -77,10 +90,11 @@ export function canRollDeathSave(c: Character): boolean {
 export function runDeathSaves(
   characters: Character[],
   rollDie: () => number
-): { characters: Character[]; outcomes: DeathSaveRoll[]; changes: string[]; died: string[] } {
+): { characters: Character[]; outcomes: DeathSaveRoll[]; changes: string[]; died: string[]; charmsSpent: { characterId: string; itemId: string }[] } {
   const outcomes: DeathSaveRoll[] = [];
   const changes: string[] = [];
   const died: string[] = [];
+  const charmsSpent: { characterId: string; itemId: string }[] = [];
   const next = characters.map((c) => {
     if (!canRollDeathSave(c)) return c;
     const die = rollDie();
@@ -93,8 +107,13 @@ export function runDeathSaves(
     }
     const updated = { ...c, deathSaves: r.saves };
     if (r.outcome === 'dead') {
+      const failed = onDeathSavesFailed(updated);
+      changes.push(`${c.displayName} ทอยเอาชีวิตรอด ${die} ล้มเหลว (${tally})`, ...failed.changes);
+      if (failed.revive) {
+        charmsSpent.push({ characterId: c.id, itemId: failed.revive.itemId });
+        return { ...c, hp: failed.revive.hp, status: 'active' as const, deathSaves: null, reviveCharm: null };
+      }
       died.push(c.id);
-      changes.push(`${c.displayName} ทอยเอาชีวิตรอด ${die} ล้มเหลว (${tally})`, ...onDeathSavesFailed(updated).changes);
     } else if (r.outcome === 'stable') {
       changes.push(`${c.displayName} ทอยเอาชีวิตรอด ${die} ผ่าน (${tally}) อาการทรงตัวแล้ว`);
     } else {
@@ -102,7 +121,7 @@ export function runDeathSaves(
     }
     return updated;
   });
-  return { characters: next, outcomes, changes, died };
+  return { characters: next, outcomes, changes, died, charmsSpent };
 }
 
 /** Anyone active again (revive, sanctuary, wipe, nat 20) starts fresh next time they fall. */

@@ -33,6 +33,8 @@ export interface Character {
   backstory?: string | null;
   personality?: string | null;
   goal?: string | null;
+  /** F5g: the revive charm worn in the accessory slot (see equippedReviveCharm); null/absent = none. */
+  reviveCharm?: { itemId: string; reviveHp: number } | null;
   /** H1 death save tally while downed; null/absent = none. */
   deathSaves?: DeathSaves | null;
 }

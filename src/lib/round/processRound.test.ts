@@ -1101,6 +1101,25 @@ describe('processRound death saves (H1)', () => {
     expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
   });
 
+  it('F5g: a worn revive charm brings the character back on the third failure and is removed from the pack', async () => {
+    const charmRow = { itemId: 'charm_revive', customName: '', quantity: 1, slot: 'accessory', equipped: true };
+    const worn = { ...aria, deathSaves: { successes: 0, failures: 2, stable: false, dead: false }, reviveCharm: { itemId: 'charm_revive', reviveHp: 1 } };
+    const { repository, d } = setup([prem, worn], 3, { inventories: { p2: [charmRow] } });
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'active', hp: 1 })]), false);
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p2', items: [], baseItems: [charmRow] }]);
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
+    const stats = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(stats.some((l) => l.includes('เครื่องราง'))).toBe(true);
+  });
+
+  it('F5g: without a charm the third failure still leaves the pack untouched', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 0, failures: 2, stable: false, dead: false } }], 3, { inventories: { p2: [] } });
+    await processRound(d, 'round-1');
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+  });
+
   it('does not roll when dice are off, and a missing saveDeathSaves or failing write never breaks the round', async () => {
     const off = setup([prem, aria], 12, { settings: { diceEnabled: false } });
     await processRound(off.d, 'round-1');

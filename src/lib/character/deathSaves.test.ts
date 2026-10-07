@@ -88,6 +88,39 @@ describe('runDeathSaves', () => {
   });
 });
 
+describe('F5g revive charm', () => {
+  const failing = { successes: 0, failures: 2, stable: false, dead: false };
+  it('a worn charm revives at its HP on the third failure and is reported spent', () => {
+    const c = down({ deathSaves: failing, reviveCharm: { itemId: 'charm_revive', reviveHp: 1 } });
+    const r = runDeathSaves([c], () => 2);
+    expect(r.characters[0]).toMatchObject({ status: 'active', hp: 1, deathSaves: null, reviveCharm: null });
+    expect(r.died).toEqual([]);
+    expect(r.charmsSpent).toEqual([{ characterId: 'p1', itemId: 'charm_revive' }]);
+    expect(r.changes.join(' ')).toContain('เครื่องราง');
+  });
+  it('revive HP is capped at max HP', () => {
+    const c = down({ maxHp: 2, deathSaves: failing, reviveCharm: { itemId: 'charm_crossing', reviveHp: 3 } });
+    expect(runDeathSaves([c], () => 2).characters[0].hp).toBe(2);
+  });
+  it('without a charm behaviour is unchanged', () => {
+    const r = runDeathSaves([down({ deathSaves: failing })], () => 2);
+    expect(r.characters[0]).toMatchObject({ status: 'downed', hp: 0 });
+    expect(r.characters[0].deathSaves?.dead).toBe(true);
+    expect(r.died).toEqual(['p1']);
+    expect(r.charmsSpent).toEqual([]);
+  });
+  it('a charm does nothing before the third failure', () => {
+    const r = runDeathSaves([down({ reviveCharm: { itemId: 'charm_revive', reviveHp: 1 } })], () => 5);
+    expect(r.characters[0].status).toBe('downed');
+    expect(r.charmsSpent).toEqual([]);
+  });
+  it('onDeathSavesFailed reports the revive', () => {
+    const out = onDeathSavesFailed(down({ reviveCharm: { itemId: 'charm_phoenix', reviveHp: 2 } }));
+    expect(out.revive).toEqual({ itemId: 'charm_phoenix', hp: 2 });
+    expect(onDeathSavesFailed(down()).revive).toBeUndefined();
+  });
+});
+
 describe('settleDeathSaves', () => {
   it('clears the tally of anyone who is active again', () => {
     const out = settleDeathSaves([

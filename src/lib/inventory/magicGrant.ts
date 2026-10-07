@@ -9,7 +9,7 @@ const KIND_FOR_TYPE: Record<MagicTagType, MagicItem['mechanic']['kind']> = {
   weapon: 'weapon', armor: 'armor', accessory: 'accessory', potion: 'consumable', scroll: 'scroll',
 };
 
-/** Items a [[magic]] tag may draw from: right rarity, right type (any when null), and actually in the catalog (charms are not yet). */
+/** Items a [[magic]] tag may draw from: right rarity, right type (any when null), and actually in the catalog (charms included since F5g, reachable only with no type given). */
 export function magicPool(rarity: MagicTagRarity, itemType: MagicTagType | null): MagicItem[] {
   return MAGIC_ITEMS.filter(
     (i) => i.rarity === rarity && i.id in CATALOG && (itemType === null || i.mechanic.kind === KIND_FOR_TYPE[itemType])

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   armorReduction, equipItem, equippedArmorId, equippedSkillBonuses, equippedWeaponId, giveItem, itemLabel,
-  takeItem, unequipSlot, useConsumable, weightOf,
+  takeItem, unequipSlot, useConsumable, weightOf, equippedReviveCharm,
 } from './rules';
 import type { InventoryItem } from './types';
 
@@ -203,5 +203,26 @@ describe('per-player carry capacity (F5j5)', () => {
     expect(r.result).toBe('full');
     expect(r.items).toBe(items);
     expect(takeItem(items, 'potion_minor').taken).toBe(true);
+  });
+});
+
+describe('revive charm (F5g)', () => {
+  const charm = item({ itemId: 'charm_phoenix', slot: 'accessory', equipped: true });
+  it('auto-equips into the free accessory slot and weighs nothing', () => {
+    const given = giveItem([], 'charm_revive').items;
+    expect(given[0]).toMatchObject({ slot: 'accessory', equipped: true });
+    expect(weightOf(given)).toBe(0);
+  });
+  it('is found only when worn', () => {
+    expect(equippedReviveCharm([charm])).toEqual({ itemId: 'charm_phoenix', reviveHp: 2 });
+    expect(equippedReviveCharm([{ ...charm, equipped: false }])).toBeNull();
+    expect(equippedReviveCharm([item({ itemId: 'acc_acrobat', slot: 'accessory', equipped: true })])).toBeNull();
+    expect(equippedReviveCharm([])).toBeNull();
+  });
+  it('gives no skill bonus', () => {
+    expect(equippedSkillBonuses([charm])).toEqual({});
+  });
+  it('is removed from the pack with takeItem', () => {
+    expect(takeItem([charm], 'charm_phoenix').items).toEqual([]);
   });
 });

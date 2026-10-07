@@ -9,6 +9,7 @@ import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/level
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
+import { takeItem } from '@/lib/inventory/rules';
 import { applyEnemyTags } from '@/lib/combat/encounter';
 import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
@@ -101,7 +102,19 @@ export async function processRound(
     scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
     // H1: downed characters roll a death save before narration (dice tables only, like every other roll).
     // Unsaved until the end, like potions; a nat 20 stands the character up before the DM narrates.
-    const deaths = diceEnabled ? runDeathSaves(abilities.characters, rollDie) : { characters: abilities.characters, outcomes: [], changes: [] as string[], died: [] as string[] };
+    const deaths = diceEnabled ? runDeathSaves(abilities.characters, rollDie) : { characters: abilities.characters, outcomes: [], changes: [] as string[], died: [] as string[], charmsSpent: [] as { characterId: string; itemId: string }[] };
+    // F5g: a charm that just revived its wearer is spent: remove it from the pack now (saved with the other
+    // inventory changes at the end) so the narration prompt and every later step already see it gone.
+    const spentCharms = deaths.charmsSpent;
+    if (spentCharms.length > 0) {
+      const inventories = { ...scrolls.inventories };
+      const changed = new Set(scrolls.changedPlayerIds);
+      for (const { characterId, itemId } of spentCharms) {
+        inventories[characterId] = takeItem(inventories[characterId] ?? [], itemId).items;
+        changed.add(characterId);
+      }
+      scrolls = { ...scrolls, inventories, changedPlayerIds: [...changed] };
+    }
     deathSaveRolls = deaths.outcomes;
     deathSaveChanges = deaths.changes;
     roundCharacters = deaths.characters;
