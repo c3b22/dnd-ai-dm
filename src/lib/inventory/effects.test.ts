@@ -50,3 +50,13 @@ describe('ward value (F5j4)', () => {
     expect('ward' in aggregateEffects([{ slot: 'armor', effect: 'keen_eye' }])).toBe(false);
   });
 });
+
+describe('deep_pack value (F5j5)', () => {
+  it('defaults to 3, strongest worn value, clamps to 3-5, absent without deep_pack', async () => {
+    const { aggregateEffects } = await import('./effects');
+    expect(aggregateEffects([{ slot: 'accessory', effect: 'deep_pack' }]).deepPack).toBe(3);
+    expect(aggregateEffects([{ slot: 'accessory', effect: 'deep_pack', effectValue: 4 }]).deepPack).toBe(4);
+    expect(aggregateEffects([{ slot: 'accessory', effect: 'deep_pack', effectValue: 9 }]).deepPack).toBe(5);
+    expect('deepPack' in aggregateEffects([{ slot: 'accessory', effect: 'ward' }])).toBe(false);
+  });
+});

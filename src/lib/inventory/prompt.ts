@@ -1,7 +1,7 @@
 import type { Character } from '@/lib/character/types';
 import { CARRY_CAPACITY, CATALOG } from './catalog';
 import { MAGIC_ITEMS } from './magicItems';
-import { itemLabel, weightOf } from './rules';
+import { carryCapacityOf, itemLabel, weightOf } from './rules';
 import type { Inventories } from './types';
 
 const MAGIC_IDS = new Set(MAGIC_ITEMS.map((i) => i.id));
@@ -16,7 +16,7 @@ export function inventoryPrompt(characters: Character[], inventories: Inventorie
     .join(', ');
 
   return [
-    `Inventories (managed by the game server; each player carries at most ${CARRY_CAPACITY} weight):`,
+    `Inventories (managed by the game server; each player carries at most ${CARRY_CAPACITY} weight unless a worn item says more; the per-player limit is shown below):`,
     ...characters.map((c) => {
       const items = inventories[c.id] ?? [];
       const list = items.length
@@ -24,7 +24,7 @@ export function inventoryPrompt(characters: Character[], inventories: Inventorie
             .map((i) => `${itemLabel(i)}${i.quantity > 1 ? ` x${i.quantity}` : ''}${i.equipped ? ' (equipped)' : ''}`)
             .join(', ')
         : 'nothing';
-      return `- ${c.displayName}: ${list}; weight ${weightOf(items)}/${CARRY_CAPACITY}`;
+      return `- ${c.displayName}: ${list}; weight ${weightOf(items)}/${carryCapacityOf(items)}`;
     }),
     '',
     'Hand items out or take them away with tags, each on its own line after your narration. The server checks them:',

@@ -167,3 +167,41 @@ describe('equippedItemEffects (F5j0)', () => {
     expect(equippedItemEffects(items)).toEqual({ effects: [], setTheme: null, setSkillBonus: 0 });
   });
 });
+
+describe('per-player carry capacity (F5j5)', () => {
+  it('is 10 without deep_pack and 10 + value with it', async () => {
+    const { carryCapacity, carryCapacityOf } = await import('./rules');
+    expect(carryCapacity()).toBe(10);
+    expect(carryCapacity({ effects: [], setTheme: null, setSkillBonus: 0 })).toBe(10);
+    expect(carryCapacity({ effects: ['deep_pack'], setTheme: null, setSkillBonus: 0, deepPack: 3 })).toBe(13);
+    expect(carryCapacityOf([sword])).toBe(10);
+    expect(carryCapacityOf([])).toBe(10);
+  });
+
+  it('giveItem uses the capacity parameter and defaults to the old limit', () => {
+    // Fill to exactly the default limit with potions, then one more only fits with a larger capacity.
+    let items: InventoryItem[] = [];
+    for (let n = 0; n < 200; n++) {
+      const r = giveItem(items, 'potion_minor');
+      if (r.result === 'full') break;
+      items = r.items;
+    }
+    expect(weightOf(items)).toBeLessThanOrEqual(10);
+    expect(giveItem(items, 'potion_minor').result).toBe('full');
+    expect(giveItem(items, 'potion_minor', '', 13).result).toBe('added');
+  });
+
+  it('after losing capacity the pack keeps its items but accepts nothing new', () => {
+    let items: InventoryItem[] = [];
+    for (let n = 0; n < 200; n++) {
+      const r = giveItem(items, 'potion_minor', '', 13);
+      if (r.result === 'full') break;
+      items = r.items;
+    }
+    expect(weightOf(items)).toBeGreaterThan(10);
+    const r = giveItem(items, 'potion_minor');
+    expect(r.result).toBe('full');
+    expect(r.items).toBe(items);
+    expect(takeItem(items, 'potion_minor').taken).toBe(true);
+  });
+});

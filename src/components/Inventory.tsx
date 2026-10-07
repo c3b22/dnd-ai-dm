@@ -1,6 +1,6 @@
-import { CARRY_CAPACITY, catalogEntry } from '@/lib/inventory/catalog';
+import { catalogEntry } from '@/lib/inventory/catalog';
 import { magicInfo } from '@/lib/inventory/magicDescribe';
-import { itemLabel, weightOf } from '@/lib/inventory/rules';
+import { carryCapacityOf, itemLabel, weightOf } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
 
 export interface InventoryProps {
@@ -23,14 +23,15 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
   );
   const weight = weightOf(items);
+  const capacity = carryCapacityOf(items);
   return (
     <section className="card" aria-label="กระเป๋า">
       <h3>กระเป๋า</h3>
       <div className="inv-weight">
         <div className="hp-track" aria-hidden="true">
-          <i className="hp-fill" style={{ width: `${Math.min(100, (weight / CARRY_CAPACITY) * 100)}%` }} />
+          <i className="hp-fill" style={{ width: `${Math.min(100, (weight / capacity) * 100)}%` }} />
         </div>
-        <span className="hp-num">น้ำหนัก {weight}/{CARRY_CAPACITY}</span>
+        <span className="hp-num">น้ำหนัก {weight}/{capacity}</span>
       </div>
       <p className="inv-gold">ทอง {gold}</p>
       {items.length === 0 ? (

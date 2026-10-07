@@ -15,6 +15,15 @@ export function itemLabel(item: { itemId: string; customName: string }): string 
   return catalogEntry(item.itemId)?.nameTh ?? item.itemId;
 }
 
+/** Carry capacity of one character: the base plus any worn deep_pack (F5j5). Equals CARRY_CAPACITY without one. */
+export function carryCapacity(effects?: ItemEffects): number {
+  return CARRY_CAPACITY + (effects?.deepPack ?? 0);
+}
+
+export function carryCapacityOf(items: InventoryItem[]): number {
+  return carryCapacity(equippedItemEffects(items));
+}
+
 export function weightOf(items: InventoryItem[]): number {
   return items.reduce((sum, i) => sum + (catalogEntry(i.itemId)?.weight ?? 0) * i.quantity, 0);
 }
@@ -24,7 +33,8 @@ export type GiveResult = 'added' | 'full' | 'unknown';
 export function giveItem(
   items: InventoryItem[],
   itemId: string,
-  customName = ''
+  customName = '',
+  capacity: number = carryCapacityOf(items)
 ): { items: InventoryItem[]; result: GiveResult; label: string } {
   if (itemId === STORY_ITEM_ID) {
     const title = customName.trim().slice(0, MAX_STORY_TITLE);
@@ -48,7 +58,7 @@ export function giveItem(
 
   const entry = catalogEntry(itemId);
   if (!entry) return { items, result: 'unknown', label: '' };
-  if (weightOf(items) + entry.weight > CARRY_CAPACITY) return { items, result: 'full', label: entry.nameTh };
+  if (weightOf(items) + entry.weight > capacity) return { items, result: 'full', label: entry.nameTh };
 
   const existing = items.find((i) => i.itemId === itemId);
   if (existing) {

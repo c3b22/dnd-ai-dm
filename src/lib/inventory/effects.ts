@@ -14,6 +14,10 @@ export const KEEN_EYE_MAX = 2;
 export const WARD_DEFAULT = 2;
 export const WARD_MAX = 3;
 
+/** X6 deep_pack: extra carry capacity (3-5, default 3). */
+export const DEEP_PACK_DEFAULT = 3;
+export const DEEP_PACK_MAX = 5;
+
 export interface EquippedEffectItem {
   slot: Slot;
   effect?: ItemEffectId;
@@ -34,6 +38,8 @@ export interface ItemEffects {
   keenEye?: number;
   /** ward only: extra reduction on the first hit of a round (2-3, default 2; the strongest worn item wins). Absent without ward. */
   ward?: number;
+  /** deep_pack only: extra carry capacity (3-5, default 3; the strongest worn item wins). Absent without deep_pack. */
+  deepPack?: number;
 }
 
 export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffects {
@@ -49,6 +55,10 @@ export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffec
   if (effects.includes('ward')) {
     const values = equippedItems.filter((i) => i.effect === 'ward').map((i) => i.effectValue ?? WARD_DEFAULT);
     result.ward = Math.min(WARD_MAX, Math.max(WARD_DEFAULT, ...values));
+  }
+  if (effects.includes('deep_pack')) {
+    const values = equippedItems.filter((i) => i.effect === 'deep_pack').map((i) => i.effectValue ?? DEEP_PACK_DEFAULT);
+    result.deepPack = Math.min(DEEP_PACK_MAX, Math.max(DEEP_PACK_DEFAULT, ...values));
   }
   return result;
 }
