@@ -5,7 +5,7 @@ import { applyAbilityActions, tickCooldowns, type AbilityAction } from '@/lib/ch
 import { BASE_MAX_HP, LEVEL_XP_THRESHOLDS, weaponFor } from '@/lib/character/constants';
 import type { AbilityKey } from '@/lib/character/constants';
 import type { PlannedAttack } from '@/lib/character/checkPlan';
-import { CLASSES, CLASS_IDS, startingAbilities, type ClassId } from '@/lib/character/classes';
+import { CLASSES, startingAbilities, type ClassId } from '@/lib/character/classes';
 import { rollDice } from '@/lib/character/dice';
 import { applyAbilityChoice, levelDamageBonus, levelForXp, levelHpBonus } from '@/lib/character/leveling';
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
@@ -59,9 +59,12 @@ const CLASS_ARMOR: Record<ClassId, { reduction: number; weight: number }> = {
   archer: { reduction: 1, weight: 1 },
   cleric: { reduction: 2, weight: 2 },
   rogue: { reduction: 1, weight: 1 },
+  mage: { reduction: 0, weight: 0 },
 };
 /** The ability a player spends their ability score improvements on. */
-const PRIMARY_ABILITY: Record<ClassId, AbilityKey> = { warrior: 'STR', archer: 'DEX', cleric: 'WIS', rogue: 'DEX' };
+const PRIMARY_ABILITY: Record<ClassId, AbilityKey> = { warrior: 'STR', archer: 'DEX', cleric: 'WIS', rogue: 'DEX', mage: 'INT' };
+/** I5 balance runs keep the original four-class party; the mage is not simulated (spells have no tactics model yet). */
+const SIM_CLASS_IDS: readonly ClassId[] = ['warrior', 'archer', 'cleric', 'rogue'];
 
 /**
  * One character per class at `level`: xp from the level table, HP like effectiveMaxHp, the class's starting
@@ -72,7 +75,7 @@ export function buildParty(level: number, armor: ArmorProfile): Character[] {
   const xp = LEVEL_XP_THRESHOLDS[level - 1] ?? 0;
   const lvl = levelForXp(xp);
   const maxHp = BASE_MAX_HP + levelHpBonus(lvl);
-  return CLASS_IDS.map((classId) => {
+  return SIM_CLASS_IDS.map((classId) => {
     let abilities = startingAbilities(classId);
     const improvements = [4, 8].filter((l) => lvl >= l).length;
     for (let i = 0; i < improvements; i++) {

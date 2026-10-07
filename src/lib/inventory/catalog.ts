@@ -26,6 +26,7 @@ const BASE_CATALOG = {
   shortbow: { kind: 'weapon', nameTh: WEAPONS.shortbow.nameTh, weight: 2 },
   staff: { kind: 'weapon', nameTh: WEAPONS.staff.nameTh, weight: 2 },
   dagger: { kind: 'weapon', nameTh: WEAPONS.dagger.nameTh, weight: 1 },
+  wand: { kind: 'weapon', nameTh: WEAPONS.wand.nameTh, weight: 1 },
   armor_light: { kind: 'armor', nameTh: 'เกราะหนัง', weight: 1, reduction: 1 },
   armor_medium: { kind: 'armor', nameTh: 'เกราะโซ่', weight: 2, reduction: 2 },
   armor_heavy: { kind: 'armor', nameTh: 'เกราะเหล็ก', weight: 3, reduction: 3 },

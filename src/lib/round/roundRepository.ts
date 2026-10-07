@@ -115,6 +115,8 @@ export interface RoundRepository {
   saveAbilityCooldowns?(characters: Character[]): Promise<void>;
   /** J3: persists players.short_rests_used. Optional so older fakes keep working; tolerates a missing column. */
   saveShortRestsUsed?(characters: Character[]): Promise<void>;
+  /** K3: persists players.spell_slots_used after a rest. Optional so older fakes keep working; tolerates a missing column. */
+  saveSpellSlotsUsed?(characters: Character[]): Promise<void>;
   /** J3: consumes the rest vote (campaigns.rest_vote = null). Optional so older fakes keep working; tolerates a missing column. */
   clearRestVote?(campaignId: string): Promise<void>;
   /** H3a: stores the corpses (pack + gold) of permanently dead characters. Optional so older fakes keep working; throws when the table is missing. */
@@ -451,6 +453,13 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     async saveShortRestsUsed(characters) {
       for (const c of characters) {
         const { error } = await supabase.from('players').update({ short_rests_used: c.shortRestsUsed ?? 0 }).eq('id', c.id);
+        if (error) throw error;
+      }
+    },
+
+    async saveSpellSlotsUsed(characters) {
+      for (const c of characters) {
+        const { error } = await supabase.from('players').update({ spell_slots_used: c.spellSlotsUsed ?? 0 }).eq('id', c.id);
         if (error) throw error;
       }
     },

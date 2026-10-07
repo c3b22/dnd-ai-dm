@@ -13,6 +13,7 @@ export const WEAPON_ATTACK_ABILITIES: Record<string, readonly AbilityKey[]> = {
   dagger: ['STR', 'DEX'],
   shortbow: ['DEX'],
   staff: ['WIS'],
+  wand: ['INT'],
   fists: ['STR'],
 };
 
@@ -36,6 +37,8 @@ export const ENEMY_DAMAGE_DICE: Record<EnemyTier, DiceSpec> = {
   strong: { count: 2, sides: 4, bonus: 2 },
   boss: { count: 2, sides: 6, bonus: 2 },
 };
+/** K3: an enemy's saving throw is d20 + this bonus against a spell's DC (nat 20 always saves, nat 1 always fails). */
+export const ENEMY_SAVE_BONUS: Record<EnemyTier, number> = { minion: 0, normal: 2, strong: 4, boss: 6 };
 /** Ward and the warrior's guard can never reduce an enemy hit below this. */
 export const MIN_ENEMY_DAMAGE = 1;
 /** The hit threshold never drops below this, even with keen_eye (nat 1 still always misses). */

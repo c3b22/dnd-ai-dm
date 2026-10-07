@@ -13,7 +13,7 @@ export type MagicRarity = (typeof MAGIC_RARITIES)[number];
 export const MAGIC_RARITY_TH: Record<MagicRarity, string> = { uncommon: 'ไม่ธรรมดา', rare: 'หายาก', legendary: 'ตำนาน' };
 
 export const MAGIC_MECHANIC_KINDS = ['weapon', 'armor', 'consumable', 'scroll', 'accessory', 'charm'] as const;
-export type MagicWeaponId = 'shortsword' | 'shortbow' | 'staff' | 'dagger';
+export type MagicWeaponId = 'shortsword' | 'shortbow' | 'staff' | 'dagger' | 'wand';
 
 export type MagicMechanic =
   | { kind: 'weapon'; weaponId: MagicWeaponId; damageBonus: number }
@@ -49,12 +49,13 @@ const L: R = 'legendary';
 
 // --- weapons: bonus +1/+2/+3 by rarity; price ~3x the ordinary weapon (sword/bow 30, dagger/staff 20) ---
 const WEAPON_BONUS: Record<R, number> = { uncommon: 1, rare: 2, legendary: 3 };
-const WEAPON_WEIGHT: Record<MagicWeaponId, number> = { shortsword: 2, shortbow: 2, staff: 2, dagger: 1 };
+const WEAPON_WEIGHT: Record<MagicWeaponId, number> = { shortsword: 2, shortbow: 2, staff: 2, dagger: 1, wand: 1 };
 const WEAPON_PRICE: Record<MagicWeaponId, Record<R, number>> = {
   shortsword: { uncommon: 90, rare: 150, legendary: 350 },
   shortbow: { uncommon: 90, rare: 150, legendary: 350 },
   staff: { uncommon: 60, rare: 150, legendary: 350 },
   dagger: { uncommon: 60, rare: 150, legendary: 350 },
+  wand: { uncommon: 60, rare: 150, legendary: 350 },
 };
 const weapon = (weaponId: MagicWeaponId, id: string, nameTh: string, rarity: R, flavorTh: string): MagicItem => ({
   id: `${weaponId}_${id}`, nameTh, flavorTh, rarity,

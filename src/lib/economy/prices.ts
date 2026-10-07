@@ -5,6 +5,7 @@ const BASE_PRICES = {
   potion_major: 25,
   staff: 20,
   dagger: 20,
+  wand: 20,
   shortsword: 30,
   shortbow: 30,
   armor_light: 25,

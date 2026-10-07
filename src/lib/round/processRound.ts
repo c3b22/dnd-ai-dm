@@ -311,7 +311,7 @@ export async function processRound(
       // J3: only an "ok" from the DM rests the team (and never after a wipe); "interrupted" or no field means no rest.
       const rest = restRequest && restAnswer === 'ok' && !result.wiped
         ? applyTeamRest(xpResult.characters, restRequest.kind, deps.rollSides ?? randomDie)
-        : { characters: xpResult.characters, changes: [] as string[], shortRestChanged: [] as Character[] };
+        : { characters: xpResult.characters, changes: [] as string[], shortRestChanged: [] as Character[], spellSlotsChanged: [] as Character[] };
       const restChanges = restRequest && restAnswer === 'ok' && !result.wiped
         ? [`ทีมพัก${restRequest.kind === 'long' ? 'ยาว' : 'สั้น'}`, ...rest.changes]
         : restRequest && restAnswer === 'interrupted'
@@ -335,6 +335,14 @@ export async function processRound(
         }
       }
       // J3: best-effort; a missing short_rests_used / rest_vote column just means nothing carries over.
+      // K3: a rest gives spent spell slots back; best-effort like the rest of the extra columns.
+      if (rest.spellSlotsChanged.length > 0 && deps.repository.saveSpellSlotsUsed) {
+        try {
+          await deps.repository.saveSpellSlotsUsed(rest.spellSlotsChanged);
+        } catch {
+          /* best-effort */
+        }
+      }
       if (rest.shortRestChanged.length > 0 && deps.repository.saveShortRestsUsed) {
         try {
           await deps.repository.saveShortRestsUsed(rest.shortRestChanged);

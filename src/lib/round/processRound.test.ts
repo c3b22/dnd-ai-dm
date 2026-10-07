@@ -1458,6 +1458,19 @@ describe('processRound team rest (J3)', () => {
     expect(stats(repo).join(' ')).toContain('พักยาว');
   });
 
+  it('ok rest gives a mage its spent spell slots back and persists them (K3)', async () => {
+    const mage = { ...hurt, classId: 'mage', weaponId: 'wand', spellSlotsUsed: 2 };
+    const repo = make(vote('short'), { characters: [mage, downed] });
+    repo.saveSpellSlotsUsed = vi.fn().mockResolvedValue(undefined);
+    await run(repo, '{"narration":"พัก","rest":"ok"}');
+    expect(savedState(repo)[0].spellSlotsUsed).toBe(1);
+    expect(vi.mocked(repo.saveSpellSlotsUsed!).mock.calls[0][0].map((c) => [c.id, c.spellSlotsUsed])).toEqual([['p1', 1]]);
+    const interrupted = make(vote('short'), { characters: [mage, downed] });
+    interrupted.saveSpellSlotsUsed = vi.fn().mockResolvedValue(undefined);
+    await run(interrupted, '{"narration":"พัก","rest":"interrupted"}');
+    expect(interrupted.saveSpellSlotsUsed).not.toHaveBeenCalled();
+  });
+
   it('ok with checks in the JSON: the rest still applies and the second call tells the DM it was approved', async () => {
     const repo = make(vote('long'));
     const generate = await run(repo, '{"checks":[],"rest":"ok"}', 'พักสงบ');

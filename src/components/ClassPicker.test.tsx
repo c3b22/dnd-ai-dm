@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ClassPicker } from './ClassPicker';
 
 describe('ClassPicker', () => {
-  it('offers the four classes with weapon, damage dice and ability and marks the chosen one', () => {
+  it('offers the original four classes with weapon, damage dice and ability and marks the chosen one', () => {
     render(<ClassPicker value="archer" onChange={() => {}} />);
 
     expect(screen.getByRole('button', { name: /นักรบ/ })).toHaveAttribute('aria-pressed', 'false');
@@ -22,5 +22,16 @@ describe('ClassPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: /โจร/ }));
 
     expect(onChange).toHaveBeenCalledWith('rogue');
+  });
+});
+
+describe('ClassPicker mage (K3)', () => {
+  it('offers the mage with the wand and its main ability, and reports the pick', () => {
+    const onChange = vi.fn();
+    render(<ClassPicker value="warrior" onChange={onChange} />);
+    expect(screen.getByText(/ไม้กายสิทธิ์/)).toBeInTheDocument();
+    expect(screen.getByText(/เวทไหลล้น/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /นักเวท/ }));
+    expect(onChange).toHaveBeenCalledWith('mage');
   });
 });
