@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { normalizeEncounter } from '@/lib/combat/encounter';
 import { SHORT_REST_MAX_PER_LONG_REST } from '@/lib/character/restConstants';
 import { findOwnerId } from './turnOrder';
+import { CAMPAIGN_ENDED_MESSAGE, isCampaignEnded } from './campaignEnd';
 import {
   RestVoteError,
   agreeRest,
@@ -56,6 +57,8 @@ export async function handleRestAction(
   );
   const me = (players ?? []).find((p) => p.user_id === params.userId);
   if (!me) throw new RestVoteError('not_member', 404, 'คุณไม่ได้อยู่ในห้องนี้');
+
+  if (await isCampaignEnded(supabase, params.campaignId)) throw new RestVoteError('ended', 409, CAMPAIGN_ENDED_MESSAGE);
 
   const roundId = campaign.current_round_id ?? null;
   const existing = normalizeRestVote(campaign.rest_vote, roundId);

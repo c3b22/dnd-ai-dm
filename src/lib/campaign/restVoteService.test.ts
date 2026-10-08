@@ -56,6 +56,14 @@ const mk = (over: Partial<World> = {}): World => ({
   ...over,
 });
 
+describe('ended campaign (L2)', () => {
+  it('answers 409 to propose and leaves the vote untouched', async () => {
+    const w = mk({ campaign: { id: 'c1', current_round_id: 'r1', current_encounter: null, rest_vote: null, status: 'ended' } });
+    await expect(run(w, 'u1', 'propose', 'short')).rejects.toMatchObject({ status: 409 });
+    expect(w.updates).toEqual([]);
+  });
+});
+
 const run = (w: World, userId: string, action: 'propose' | 'agree' | 'cancel', kind?: 'short' | 'long') =>
   handleRestAction(fakeClient(w), { campaignId: 'c1', userId, action, kind });
 

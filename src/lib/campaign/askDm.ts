@@ -4,6 +4,7 @@ import { getSceneAsync } from '@/lib/scenes/scenes';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { parseSceneTag } from '@/lib/scenes/scenes';
 import { STORY_MESSAGE_ROLES } from '@/lib/messages/roles';
+import { CAMPAIGN_ENDED_MESSAGE, isCampaignEnded } from './campaignEnd';
 
 type Client = ReturnType<typeof createServiceRoleClient>;
 
@@ -14,7 +15,7 @@ const HISTORY_LIMIT = 12;
 export class AskDmError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 429 | 502 = 400
+    readonly status: 400 | 403 | 409 | 429 | 502 = 400
   ) {
     super(message);
   }
@@ -90,6 +91,8 @@ export async function askDm(
     .maybeSingle();
   if (playerError) throw playerError;
   if (!player) throw new AskDmError('only campaign members can ask the DM', 403);
+
+  if (await isCampaignEnded(supabase, params.campaignId)) throw new AskDmError(CAMPAIGN_ENDED_MESSAGE, 409);
 
   const question = typeof params.question === 'string' ? params.question.trim() : '';
   if (!question) throw new AskDmError('question is empty', 400);

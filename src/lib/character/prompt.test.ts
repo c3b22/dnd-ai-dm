@@ -47,6 +47,12 @@ describe('characterPrompt', () => {
     expect(statusLines.join('\n')).not.toMatch(/XP/);
   });
 
+  it('teaches [[campaign_end]] as a last-act-only tag', () => {
+    const text = characterPrompt(party, false, undefined).join(' ');
+    expect(text).toContain('[[campaign_end]]');
+    expect(text).toMatch(/final act/);
+  });
+
   it('shows the class next to the level and nothing extra for a classless player', () => {
     const text = characterPrompt([{ ...party[0], xp: 150, classId: 'warrior' }, party[1]], false, undefined).join(String.fromCharCode(10));
     expect(text).toContain('Prem (Lv 3, นักรบ):');

@@ -136,6 +136,15 @@ describe('gold, pay and shop tags', () => {
     });
   });
 
+  describe('campaign_end (L2)', () => {
+    it('parses [[campaign_end]] and strips it from the narration', () => {
+      expect(parseCharacterTags('ตอนจบ\n[[campaign_end]]')).toEqual({ tags: [{ kind: 'campaign_end' }], cleanText: 'ตอนจบ' });
+    });
+    it('hides a malformed variant without applying it', () => {
+      expect(parseCharacterTags('จบ [[campaign_end: now]]')).toEqual({ tags: [], cleanText: 'จบ' });
+    });
+  });
+
   describe('enemy tags', () => {
     it('parses enemy, enemy_hurt, enemy_flee and combat_end in reading order', () => {
       const text = 'หมาป่าโผล่มา\n[[enemy: หมาป่า | normal]]\n[[enemy_hurt: หมาป่า | heavy]]\n[[enemy_flee: หมาป่า]]\n[[combat_end]]';

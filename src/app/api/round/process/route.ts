@@ -5,6 +5,7 @@ import { createSupabaseRoundRepository } from '@/lib/round/roundRepository';
 import { processRound } from '@/lib/round/processRound';
 import { generateNarration } from '@/lib/ai/geminiClient';
 import { realGeminiDeps } from '@/lib/ai/vercelAiSdkAdapter';
+import { CAMPAIGN_ENDED_MESSAGE, isCampaignEnded } from '@/lib/campaign/campaignEnd';
 
 // Explicit Vercel function timeout (seconds). Kept below claimRound's 90s stale-reclaim
 // window so a timed-out attempt is only re-claimed after it has definitely stopped.
@@ -17,6 +18,12 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
+  // L2: an ended campaign takes no new action, so its leftover pending round is never processed.
+  const { data: roundRow } = await supabase.from('rounds').select('campaign_id').eq('id', roundId).maybeSingle();
+  const roundCampaignId = (roundRow as { campaign_id?: string } | null)?.campaign_id;
+  if (roundCampaignId && (await isCampaignEnded(supabase, roundCampaignId))) {
+    return NextResponse.json({ error: CAMPAIGN_ENDED_MESSAGE }, { status: 409 });
+  }
   try {
     const result = await processRound(
       {

@@ -107,6 +107,7 @@ export function characterPrompt(
     '  [[revive: PlayerName]] - a downed player was helped back up by a teammate',
     '  [[xp: small]] (or medium, large) - the whole party earned experience. Award it only when the party overcame an obstacle, solved a problem, or genuinely advanced the story, not every round: small for a minor step, medium for a notable one, large for a major one. At most one per round.',
     '  [[milestone]] - the party closed a major event or scene of the story. Rare; at most one per round. Never state XP or level numbers in your narration.',
+    '  [[campaign_end]] - the whole campaign is over. Use it ONLY once the party has reached the final act and has resolved the main story; never for a side quest, a single scene or a mere pause. The server ignores it while a fight is on or before enough rounds have been played in this chapter. When you use it, write the closing scene of the story in that same narration.',
     ...(sanctuary
       ? [`  [[sanctuary]] only when the party is at: ${sanctuary}. Never use it anywhere else.`]
       : []),

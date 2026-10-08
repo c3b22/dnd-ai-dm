@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { persistCampaignStats, type StatsDelta } from '@/lib/campaign/stats';
+import { persistCampaignStats, type CampaignStats, type StatsDelta } from '@/lib/campaign/stats';
 import type { StoredMessage, RoundAction } from './assemblePrompt';
 import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
@@ -151,7 +151,9 @@ export interface RoundRepository {
   /** Records magic items handed out this round (F5f). Optional so older fakes keep working. */
   saveMagicGiven?(campaignId: string, itemIds: string[]): Promise<void>;
   /** L1: adds one round's numbers to campaigns.stats. Optional so older fakes keep working; throws when the column is missing (the caller swallows it). */
-  addCampaignStats?(campaignId: string, delta: StatsDelta): Promise<void>;
+  addCampaignStats?(campaignId: string, delta: StatsDelta): Promise<CampaignStats | void>;
+  /** L2: marks the campaign ended (campaigns.status = 'ended'). Optional so older fakes keep working; throws when the column is missing. */
+  endCampaign?(campaignId: string): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -553,7 +555,12 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
     },
 
     async addCampaignStats(campaignId, delta) {
-      await persistCampaignStats(supabase, campaignId, delta);
+      return persistCampaignStats(supabase, campaignId, delta);
+    },
+
+    async endCampaign(campaignId) {
+      const { error } = await supabase.from('campaigns').update({ status: 'ended' }).eq('id', campaignId);
+      if (error) throw error;
     },
 
     async insertStatsSummary(campaignId, roundId, changes) {

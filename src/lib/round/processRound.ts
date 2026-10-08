@@ -24,7 +24,8 @@ import { applyLootTags } from '@/lib/character/loot';
 import type { Character } from '@/lib/character/types';
 import { applyTeamRest } from '@/lib/character/applyRest';
 import type { RestAnswer } from '@/lib/character/checkPlan';
-import { defeatedThisRound, countStatusChanges, goldEarned } from '@/lib/campaign/stats';
+import { defeatedThisRound, countStatusChanges, goldEarned, type CampaignStats } from '@/lib/campaign/stats';
+import { shouldEndCampaign } from '@/lib/campaign/campaignEnd';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
   let text = '';
@@ -506,10 +507,11 @@ export async function processRound(
       }
       // L1: campaign totals. Best-effort in its own try: a missing campaigns.stats column or any failure here
       // must never stall the round (and the tags claim above keeps a retry from counting twice).
+      let statsNow: CampaignStats | null = null;
       if (deps.repository.addCampaignStats) {
         try {
           const { downs, deaths } = countStatusChanges(context.characters, finalCharacters);
-          await deps.repository.addCampaignStats(context.campaignId, {
+          const updated = await deps.repository.addCampaignStats(context.campaignId, {
             rounds: 1,
             defeated: defeatedThisRound(sceneChanged ? null : before, sceneChanged ? null : applyAttackOutcomes(roundEncounter, attackOutcomes), tags),
             gold: goldEarned(economy.goldDeltas),
@@ -518,6 +520,16 @@ export async function processRound(
             deaths,
             nat20: rolled.filter((r) => r.check?.die === 20).length,
           });
+          statsNow = updated ?? null;
+        } catch {
+          /* best-effort */
+        }
+      }
+      // L2: the DM's [[campaign_end]] only counts with no fight left and enough rounds in this chapter. Best-effort
+      // like the stats; if the status column is missing the room simply stays open.
+      if (deps.repository.endCampaign && shouldEndCampaign({ tags, encounter: after, stats: statsNow })) {
+        try {
+          await deps.repository.endCampaign(context.campaignId);
         } catch {
           /* best-effort */
         }

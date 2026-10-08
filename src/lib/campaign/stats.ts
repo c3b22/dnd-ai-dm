@@ -13,6 +13,8 @@ export interface CampaignStats {
   downs: number;
   deaths: number;
   nat20: number;
+  /** L2: `rounds` as the current chapter began (set by the sequel flow, L5); absent = 0. Rounds in this chapter = rounds - chapterBase. */
+  chapterBase?: number;
 }
 
 /** What one round adds to the totals. */
@@ -45,6 +47,7 @@ export function normalizeStats(raw: unknown): CampaignStats {
   base.downs = count(r.downs);
   base.deaths = count(r.deaths);
   base.nat20 = count(r.nat20);
+  if (count(r.chapterBase) > 0) base.chapterBase = count(r.chapterBase);
   return base;
 }
 
@@ -60,6 +63,7 @@ export function addStats(current: CampaignStats, delta: StatsDelta): CampaignSta
     downs: current.downs + count(delta.downs),
     deaths: current.deaths + count(delta.deaths),
     nat20: current.nat20 + count(delta.nat20),
+    ...(current.chapterBase ? { chapterBase: current.chapterBase } : {}),
   };
 }
 
@@ -122,10 +126,11 @@ export function goldEarned(deltas: Record<string, number>): number {
  * Reads, adds and writes campaigns.stats. Throws when the column is missing or a call fails; the caller
  * (processRound) swallows that, so a broken stats update never stalls a round.
  */
-export async function persistCampaignStats(supabase: SupabaseClient, campaignId: string, delta: StatsDelta): Promise<void> {
+export async function persistCampaignStats(supabase: SupabaseClient, campaignId: string, delta: StatsDelta): Promise<CampaignStats> {
   const { data, error } = await supabase.from('campaigns').select('stats').eq('id', campaignId).single();
   if (error) throw error;
   const next = addStats(normalizeStats((data as { stats?: unknown } | null)?.stats), delta);
   const { error: updateError } = await supabase.from('campaigns').update({ stats: next }).eq('id', campaignId);
   if (updateError) throw updateError;
+  return next;
 }

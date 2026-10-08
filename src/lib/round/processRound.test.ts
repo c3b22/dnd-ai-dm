@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { processRound, ProcessRoundDeps } from './processRound';
 import type { RoundRepository } from './roundRepository';
 import { allowedScenes } from '@/lib/scenes/scenes';
+import { emptyStats } from '@/lib/campaign/stats';
 
 async function* fakeStream(chunks: string[]) {
   for (const chunk of chunks) yield chunk;
@@ -1573,5 +1574,59 @@ describe('processRound campaign stats (L1)', () => {
   it('works with a repository that has no stats support', async () => {
     const result = await run(make(undefined), 'เงียบสงบ');
     expect(result).toMatchObject({ processed: true });
+  });
+});
+
+describe('processRound campaign end (L2)', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const stats = (rounds: number, chapterBase?: number) => ({ ...emptyStats(), rounds, ...(chapterBase ? { chapterBase } : {}) });
+  const make = (rounds: number, over: object = {}, chapterBase?: number) => {
+    const endCampaign = vi.fn().mockResolvedValue(undefined);
+    const repository = createFakeRepository({
+      endCampaign,
+      addCampaignStats: vi.fn().mockResolvedValue(stats(rounds, chapterBase)),
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'ปิดฉาก', playerId: 'p1', useItemId: null }], ...over })),
+    });
+    return { repository, endCampaign };
+  };
+  const run = (repository: RoundRepository, narration = 'ตอนจบ\n[[campaign_end]]') =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('ends the campaign after enough rounds with no fight', async () => {
+    const { repository, endCampaign } = make(15);
+    await run(repository);
+    expect(endCampaign).toHaveBeenCalledWith('camp-1');
+  });
+
+  it('ignores the tag before 15 rounds in this chapter', async () => {
+    const { repository, endCampaign } = make(14);
+    await run(repository);
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('counts only the rounds of the current chapter', async () => {
+    const { repository, endCampaign } = make(20, {}, 10);
+    await run(repository);
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('ignores the tag while a fight is still on', async () => {
+    const { repository, endCampaign } = make(30, { currentEncounter: { enemies: [wolf] } });
+    await run(repository);
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('does nothing without the tag', async () => {
+    const { repository, endCampaign } = make(30);
+    await run(repository, 'เงียบสงบ');
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('still closes the round when ending fails (status column missing)', async () => {
+    const { repository, endCampaign } = make(30);
+    endCampaign.mockRejectedValue(new Error('column "status" does not exist'));
+    const result = await run(repository);
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
   });
 });
