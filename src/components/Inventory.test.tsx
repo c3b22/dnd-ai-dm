@@ -158,3 +158,35 @@ describe('Inventory special mechanics (F5j10)', () => {
     expect(screen.getByText('ธีมเงา')).toBeInTheDocument();
   });
 });
+
+describe('Inventory scrolls (M1)', () => {
+  const scrollItem: InventoryItem = { itemId: 'scroll_spark', customName: '', quantity: 1, slot: null, equipped: false };
+  const wolves = ['หมาป่า', 'เจ้าป่า'];
+
+  it('hides the scroll button when there is no encounter', () => {
+    const { rerender } = render(<Inventory items={[scrollItem]} gold={0} canAct onEquip={() => {}} onDrink={() => {}} onUseScroll={() => {}} />);
+    expect(screen.queryByRole('button', { name: /ใช้ม้วน/ })).toBeNull();
+    rerender(<Inventory items={[scrollItem]} gold={0} canAct enemies={[]} onEquip={() => {}} onDrink={() => {}} onUseScroll={() => {}} />);
+    expect(screen.queryByRole('button', { name: /ใช้ม้วน/ })).toBeNull();
+  });
+
+  it('reads the scroll at the first enemy by default', () => {
+    const onUseScroll = vi.fn();
+    render(<Inventory items={[scrollItem]} gold={0} canAct enemies={wolves} onEquip={() => {}} onDrink={() => {}} onUseScroll={onUseScroll} />);
+    fireEvent.click(screen.getByRole('button', { name: /ใช้ม้วน/ }));
+    expect(onUseScroll).toHaveBeenCalledWith('scroll_spark', 'หมาป่า');
+  });
+
+  it('reads the scroll at the chosen enemy', () => {
+    const onUseScroll = vi.fn();
+    render(<Inventory items={[scrollItem]} gold={0} canAct enemies={wolves} onEquip={() => {}} onDrink={() => {}} onUseScroll={onUseScroll} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'เจ้าป่า' } });
+    fireEvent.click(screen.getByRole('button', { name: /ใช้ม้วน/ }));
+    expect(onUseScroll).toHaveBeenCalledWith('scroll_spark', 'เจ้าป่า');
+  });
+
+  it('disables the scroll button when the player cannot act', () => {
+    render(<Inventory items={[scrollItem]} gold={0} canAct={false} enemies={wolves} onEquip={() => {}} onDrink={() => {}} onUseScroll={() => {}} />);
+    expect(screen.getByRole('button', { name: /ใช้ม้วน/ })).toBeDisabled();
+  });
+});

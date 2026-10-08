@@ -397,6 +397,18 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  // M1: a scroll is read at a live enemy; the name travels as the action's item_target (migration 0024).
+  async function handleUseScroll(itemId: string, enemy: string) {
+    if (!roundId) return;
+    const item = me?.items.find((i) => i.itemId === itemId);
+    try {
+      await submitAction(roundId, playerId, `ใช้${item ? itemLabel(item) : 'ม้วนคัมภีร์'} ใส่ ${enemy}`, itemId, undefined, enemy);
+    } catch {
+      /* the refresh below shows whether the action landed */
+    }
+    refreshPlayers();
+  }
+
   const myClass = classOf(me?.classId);
   // K4: the mage casts spells instead of pressing a plain ability button; the arcane surge is a switch in the spell menu.
   const spellMenu =
@@ -643,6 +655,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               fullHp={me.hp >= me.maxHp}
               onEquip={handleEquip}
               onDrink={handleDrink}
+              enemies={(encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name)}
+              onUseScroll={handleUseScroll}
             />
           )}
           {!ended && shop && me && (

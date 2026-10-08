@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { catalogEntry } from '@/lib/inventory/catalog';
 import { magicInfo, setStatusTh } from '@/lib/inventory/magicDescribe';
 import { carryCapacityOf, itemLabel, weightOf } from '@/lib/inventory/rules';
@@ -12,12 +13,35 @@ export interface InventoryProps {
   fullHp?: boolean;
   onEquip: (itemId: string, action: 'equip' | 'unequip') => void;
   onDrink: (itemId: string) => void;
+  /** M1: names of the live enemies in the current encounter. Empty/undefined = no fight, so scrolls get no button. */
+  enemies?: string[];
+  /** M1: read a scroll at the chosen enemy (sent as the action's item_target). */
+  onUseScroll?: (itemId: string, enemy: string) => void;
+}
+
+function ScrollUse({ label, itemId, enemies, disabled, onUse }: {
+  label: string; itemId: string; enemies: string[]; disabled: boolean; onUse: (itemId: string, enemy: string) => void;
+}) {
+  const [picked, setPicked] = useState('');
+  const target = enemies.includes(picked) ? picked : enemies[0];
+  return (
+    <>
+      <select aria-label={`เป้าหมายของ ${label}`} value={target} onChange={(e) => setPicked(e.target.value)}>
+        {enemies.map((name) => (
+          <option key={name} value={name}>{name}</option>
+        ))}
+      </select>
+      <button type="button" className="qa" aria-label={`ใช้ม้วน ${label}`} disabled={disabled} onClick={() => onUse(itemId, target)}>
+        ใช้ม้วน
+      </button>
+    </>
+  );
 }
 
 const KIND_ORDER: Record<string, number> = { weapon: 0, armor: 1, accessory: 2, consumable: 3 };
 const rank = (item: InventoryItem) => KIND_ORDER[catalogEntry(item.itemId)?.kind ?? ''] ?? 4;
 
-export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDrink }: InventoryProps) {
+export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDrink, enemies, onUseScroll }: InventoryProps) {
   // The database returns rows in no particular order, so the list would jump around after every change.
   const items = [...unsorted].sort(
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
@@ -69,6 +93,9 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
                   >
                     {item.equipped ? 'ถอด' : 'สวม'}
                   </button>
+                )}
+                {kind === 'scroll' && onUseScroll && enemies && enemies.length > 0 && (
+                  <ScrollUse label={label} itemId={item.itemId} enemies={enemies} disabled={!canAct} onUse={onUseScroll} />
                 )}
                 {kind === 'consumable' && (
                   <button
