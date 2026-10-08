@@ -190,3 +190,85 @@ describe('Inventory scrolls (M1)', () => {
     expect(screen.getByRole('button', { name: /ใช้ม้วน/ })).toBeDisabled();
   });
 });
+
+describe('Inventory item tooltip (O1)', () => {
+  const armor: InventoryItem = { itemId: 'armor_medium', customName: '', quantity: 1, slot: 'armor', equipped: false };
+  const magicSword = MAGIC_ITEMS.find((i) => i.mechanic.kind === 'weapon' && i.theme)!;
+  const magicRow: InventoryItem = { itemId: magicSword.id, customName: '', quantity: 1, slot: 'weapon', equipped: true };
+  const setup = (items: InventoryItem[]) =>
+    render(<Inventory items={items} gold={0} canAct onEquip={() => {}} onDrink={() => {}} />);
+  const row = (name: RegExp) => screen.getByText(name).closest('li')!;
+
+  it('shows dice and weight when a plain weapon row is hovered, and hides on leave', () => {
+    setup([bow]);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    const li = row(/ธนูสั้น/);
+    fireEvent.mouseEnter(li);
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveTextContent('1d6');
+    expect(tip).toHaveTextContent('น้ำหนัก 2');
+    expect(li).toHaveAttribute('aria-describedby', tip.id);
+    fireEvent.mouseLeave(li);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('shows the same on keyboard focus, and the row is focusable', () => {
+    setup([bow]);
+    const li = row(/ธนูสั้น/);
+    expect(li).toHaveAttribute('tabindex', '0');
+    fireEvent.focus(li);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('1d6');
+  });
+
+  it('shows armor reduction and potion heal', () => {
+    setup([armor, potion]);
+    fireEvent.mouseEnter(row(/เกราะโซ่/));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('ลดดาเมจที่ได้รับ 2');
+    fireEvent.mouseEnter(row(/ยาฟื้นฟูเล็ก/));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('ฟื้นฟู 1d6+1 HP');
+  });
+
+  it('shows rarity, mechanic and set status for a magic item', () => {
+    setup([magicRow]);
+    fireEvent.mouseEnter(row(new RegExp(magicSword.nameTh)));
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveTextContent(`ธีม${magicSword.theme}`);
+    expect(tip).toHaveTextContent(/ดาเมจ \+\d/);
+    expect(tip).toHaveTextContent(/ขาด:/);
+  });
+
+  it('shows no invented numbers for a story item', () => {
+    setup([key]);
+    fireEvent.mouseEnter(row(/Rusty Key/));
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveTextContent('Rusty Key');
+    expect(tip.textContent).not.toMatch(/\d/);
+  });
+
+  it('closes on Escape', () => {
+    setup([bow]);
+    const li = row(/ธนูสั้น/);
+    fireEvent.focus(li);
+    fireEvent.keyDown(li, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('opens only one tooltip at a time', () => {
+    setup([sword, bow]);
+    fireEvent.mouseEnter(row(/ดาบสั้น/));
+    fireEvent.mouseEnter(row(/ธนูสั้น/));
+    expect(screen.getAllByRole('tooltip')).toHaveLength(1);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('ธนูสั้น');
+  });
+
+  it('toggles on tap of the name without firing equip', () => {
+    const onEquip = vi.fn();
+    render(<Inventory items={[bow]} gold={0} canAct onEquip={onEquip} onDrink={() => {}} />);
+    const name = document.querySelector('.inv-name')!;
+    fireEvent.click(name);
+    expect(screen.getByRole('tooltip')).toBeInTheDocument();
+    fireEvent.click(name);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+});

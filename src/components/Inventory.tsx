@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ItemTooltip } from './ItemTooltip';
 import { catalogEntry } from '@/lib/inventory/catalog';
 import { magicInfo, setStatusTh } from '@/lib/inventory/magicDescribe';
 import { carryCapacityOf, itemLabel, weightOf } from '@/lib/inventory/rules';
@@ -47,6 +48,18 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
     (a, b) => rank(a) - rank(b) || Number(b.equipped) - Number(a.equipped) || itemLabel(a).localeCompare(itemLabel(b))
   );
   const worn = items.filter((i) => i.equipped);
+  // O1: one tooltip at a time. `hover` follows mouse/keyboard focus; `pinned` is the touch tap-to-toggle on the name.
+  const [hover, setHover] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const openKey = pinned ?? hover;
+  useEffect(() => {
+    if (pinned === null) return;
+    const close = (e: Event) => {
+      if (!(e.target as Element | null)?.closest?.('.inv-row')) setPinned(null);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [pinned]);
   const weight = weightOf(items);
   const capacity = carryCapacityOf(items);
   return (
@@ -67,9 +80,29 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
             const label = itemLabel(item);
             const kind = catalogEntry(item.itemId)?.kind;
             const magic = magicInfo(item.itemId);
+            const key = `${item.itemId}|${item.customName}`;
+            const tipId = `item-tip-${key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+            const open = openKey === key;
             return (
-              <li key={`${item.itemId}|${item.customName}`} className="inv-row">
-                <span className="inv-name">
+              <li
+                key={key}
+                className={`inv-row${open ? ' is-open' : ''}`}
+                tabIndex={0}
+                aria-describedby={open ? tipId : undefined}
+                onMouseEnter={() => setHover(key)}
+                onMouseLeave={() => setHover((h) => (h === key ? null : h))}
+                onFocus={() => setHover(key)}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover((h) => (h === key ? null : h));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setHover(null);
+                    setPinned(null);
+                  }
+                }}
+              >
+                <span className="inv-name" onClick={() => setPinned((p) => (p === key ? null : key))}>
                   {label}
                   {item.quantity > 1 ? ` ×${item.quantity}` : ''}
                   {item.equipped && <b className="badge-worn">สวมอยู่</b>}
@@ -84,6 +117,7 @@ export function Inventory({ items: unsorted, gold, canAct, fullHp, onEquip, onDr
                     </span>
                   )}
                 </span>
+                {open && <ItemTooltip id={tipId} item={item} worn={worn} />}
                 {(kind === 'weapon' || kind === 'armor' || kind === 'accessory') && (
                   <button
                     type="button"
