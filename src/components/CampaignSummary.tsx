@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CampaignStats } from '@/lib/campaign/stats';
 import type { CampaignFact } from '@/lib/memory/types';
 import type { RoundPlayer } from '@/lib/supabase/players';
@@ -13,10 +14,27 @@ export interface CampaignSummaryProps {
   stats: CampaignStats | null;
   players: RoundPlayer[];
   facts: CampaignFact[];
+  /** L5: shown to the table owner only; resolves when the next chapter has started, rejects with a readable message otherwise. */
+  onContinue?: () => Promise<void>;
 }
 
 // All text (epilogue, names, item names) is rendered as React text children, so it is escaped.
-export function CampaignSummary({ epilogue, stats, players, facts }: CampaignSummaryProps) {
+export function CampaignSummary({ epilogue, stats, players, facts, onContinue }: CampaignSummaryProps) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function handleContinue() {
+    if (!onContinue || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onContinue();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'สร้างภาคต่อไม่สำเร็จ ลองใหม่อีกครั้ง');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const epilogueText = epilogue?.replace(EPILOGUE_MARKER, '').trim() ?? '';
   const defeated = stats ? stats.defeated.minion + stats.defeated.normal + stats.defeated.strong + stats.defeated.boss : 0;
 
@@ -74,6 +92,19 @@ export function CampaignSummary({ epilogue, stats, players, facts }: CampaignSum
       )}
 
       <QuestLog facts={facts} />
+
+      {onContinue && (
+        <div className="summary-continue">
+          <button type="button" onClick={handleContinue} disabled={busy}>
+            {busy ? 'DM กำลังเขียนภาคต่อ…' : 'ผจญภัยต่อ (ภาคต่อ)'}
+          </button>
+          {error && (
+            <p role="alert" className="status">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

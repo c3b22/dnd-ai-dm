@@ -48,7 +48,7 @@ import { submitAction } from '@/lib/supabase/submitAction';
 import { classOf } from '@/lib/character/classes';
 import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
 import { itemLabel } from '@/lib/inventory/rules';
-import { fetchPendingTrades, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
+import { fetchPendingTrades, requestSequel, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
 import type { TradeTerms } from '@/lib/economy/trade';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
@@ -106,6 +106,19 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const autoProcessedRound = useRef<string | null>(null);
   const [asksUsed, setAsksUsed] = useState(0);
 
+  // Separate query so a database without the scene columns still loads the campaign.
+  const refreshAdventure = useCallback(() => {
+    supabaseBrowserClient
+      .from('campaigns')
+      .select('adventure_id, current_scene_id')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setAdventureId(data?.adventure_id ?? null);
+        setSceneId(data?.current_scene_id ?? null);
+      });
+  }, [campaignId]);
+
   const triggerProcessing = useCallback((currentRoundId: string) => {
     setProcessing(true);
     triggerRoundProcessing(currentRoundId).finally(() => setProcessing(false));
@@ -127,16 +140,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         setLoadingCampaign(false);
       });
 
-    // Separate query so a database without the scene columns still loads the campaign.
-    supabaseBrowserClient
-      .from('campaigns')
-      .select('adventure_id, current_scene_id')
-      .eq('id', campaignId)
-      .maybeSingle()
-      .then(({ data }) => {
-        setAdventureId(data?.adventure_id ?? null);
-        setSceneId(data?.current_scene_id ?? null);
-      });
+    refreshAdventure();
 
     // Separate, tolerant query so a database without the economy columns still loads the campaign.
     supabaseBrowserClient
@@ -244,21 +248,34 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     return subscribeToFacts(campaignId, refreshFacts);
   }, [campaignId, refreshFacts]);
 
+  const wasEnded = useRef(false);
   const refreshEnd = useCallback(() => {
     fetchCampaignEnd(campaignId)
       .then((state) => {
+        // L5: a sequel flips the room back to active with a new adventure; pick that up.
+        if (wasEnded.current && !state.ended) {
+          setEpilogue(null);
+          refreshAdventure();
+        }
+        wasEnded.current = state.ended;
         setEnded(state.ended);
         setEndStats(state.stats);
         if (state.ended) fetchEpilogue(campaignId).then(setEpilogue).catch(() => {});
       })
       .catch(() => {});
-  }, [campaignId]);
+  }, [campaignId, refreshAdventure]);
   useEffect(() => {
     refreshEnd();
     return subscribeToCampaignEnd(campaignId, refreshEnd);
   }, [campaignId, refreshEnd]);
 
   const me = players.find((p) => p.id === playerId);
+
+  // L5: the owner starts the next chapter; the server flips the room back to active and posts the opening.
+  async function handleSequel() {
+    await requestSequel(campaignId);
+    refreshEnd();
+  }
 
   // Ask-the-DM quota resets every round. Count from messages when player_id exists, then follow local answers.
   useEffect(() => {
@@ -556,7 +573,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               <span>DM กำลังเรียบเรียงเรื่องราว… อาจใช้เวลาสักครู่ (ยังไม่ค้าง)</span>
             </div>
           )}
-          {ended && <CampaignSummary epilogue={epilogue} stats={endStats} players={players} facts={facts} />}
+          {ended && <CampaignSummary epilogue={epilogue} stats={endStats} players={players} facts={facts} onContinue={me?.isOwner ? handleSequel : undefined} />}
           {!ended && me?.status === 'dead' && (
             <RespawnForm
               startLevel={respawnLevel(players.filter((p) => p.id !== playerId && p.status !== 'dead'))}

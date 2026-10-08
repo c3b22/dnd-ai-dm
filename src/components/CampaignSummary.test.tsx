@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import { CampaignSummary } from './CampaignSummary';
 import { emptyStats } from '@/lib/campaign/stats';
 import type { RoundPlayer } from '@/lib/supabase/players';
@@ -43,5 +43,34 @@ describe('CampaignSummary', () => {
   it('embeds the quest log', () => {
     render(<CampaignSummary epilogue={null} stats={null} players={[]} facts={[{ id: 'f1', kind: 'quest', key: 'หาระฆัง', value: 'done' } as any]} />);
     expect(screen.getByText('หาระฆัง')).toBeInTheDocument();
+  });
+
+  describe('sequel button (L5)', () => {
+    it('is hidden when the viewer is not the owner (no onContinue)', () => {
+      render(<CampaignSummary epilogue={null} stats={null} players={[]} facts={[]} />);
+      expect(screen.queryByRole('button', { name: /ผจญภัยต่อ/ })).not.toBeInTheDocument();
+    });
+
+    it('calls onContinue once even when double-clicked, and is disabled while working', async () => {
+      let resolve!: () => void;
+      const onContinue = vi.fn(() => new Promise<void>((r) => (resolve = r)));
+      render(<CampaignSummary epilogue={null} stats={null} players={[]} facts={[]} onContinue={onContinue} />);
+      const button = screen.getByRole('button', { name: /ผจญภัยต่อ/ });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(onContinue).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button')).toBeDisabled();
+      resolve();
+      await waitFor(() => expect(screen.getByRole('button')).not.toBeDisabled());
+    });
+
+    it('shows the error and lets the owner retry', async () => {
+      const onContinue = vi.fn().mockRejectedValueOnce(new Error('could not write')).mockResolvedValue(undefined);
+      render(<CampaignSummary epilogue={null} stats={null} players={[]} facts={[]} onContinue={onContinue} />);
+      fireEvent.click(screen.getByRole('button', { name: /ผจญภัยต่อ/ }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('could not write');
+      fireEvent.click(screen.getByRole('button', { name: /ผจญภัยต่อ/ }));
+      await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(2));
+    });
   });
 });
