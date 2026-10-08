@@ -5,6 +5,7 @@ import { attackBonuses, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnem
 import type { Encounter } from './encounter';
 import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
 import { TIER_PIPS } from './constants';
+import { enemyLevelBonus, teamLevel } from './scaling';
 
 const tiers = ['minion', 'normal', 'strong', 'boss'] as const;
 const thresholds = { minion: 11, normal: 13, strong: 15, boss: 17 };
@@ -407,5 +408,29 @@ describe('I3 attack bonus: ability modifier + proficiency + magic weapon', () =>
   it('magic bonus and keen_eye stack: boss AC 17 - 1, d20 11 + 3 + 2 + 1 = 17 hits', () => {
     expect(resolveAttack({ d20s: [11], tier: 'boss', damage: 1, maxDamage: 8, modifier: 3, proficiency: 2, magic: 1, keenEye: 1 })).toMatchObject({ hit: true, total: 17, dc: 16 });
     expect(resolveAttack({ d20s: [10], tier: 'boss', damage: 1, maxDamage: 8, modifier: 3, proficiency: 2, magic: 1 })).toMatchObject({ hit: false, total: 16, dc: 17 });
+  });
+});
+
+describe('Q2 enemy scaling by team level', () => {
+  const plan = [{ enemy: 'X', player: 'Prem' }];
+  const boss: Encounter = enc({ name: 'X', tier: 'boss', pip: 5, maxPip: 10, fled: false });
+  const low = hero();
+  const high = (): Character => ({ ...hero(), xp: 1050 }); // level 8
+  const roll = (c: Character) => runEnemyAttacks(plan, [c], boss, () => 12, () => 3)[0];
+
+  it('the level 8 test party really is level 8', () => {
+    expect(teamLevel([high()])).toBe(8);
+  });
+  it('level 1 team: unchanged I6 numbers', () => {
+    expect(roll(low)).toMatchObject({ bonus: 9, damage: 13 });
+  });
+  it('level 8 team: higher attack bonus and flat damage, dice unchanged', () => {
+    const lv = enemyLevelBonus(8);
+    expect(roll(high())).toMatchObject({ bonus: 9 + lv.attack, total: 12 + 9 + lv.attack, damage: 13 + lv.damage });
+  });
+  it('a natural 20 doubles the dice only, the level damage stays flat', () => {
+    const lv = enemyLevelBonus(8);
+    const crit = runEnemyAttacks(plan, [high()], boss, () => 20, () => 3)[0];
+    expect(crit.damage).toBe(22 + lv.damage);
   });
 });

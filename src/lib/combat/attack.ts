@@ -10,6 +10,7 @@ import type { Character } from '@/lib/character/types';
 import { ARMORED_AC_BONUS, BOSS_SIGNATURE_EVERY, BOSS_SIGNATURE_TARGETS, BRUTE_DAMAGE_BONUS, FEARSOME_ROUND, NIMBLE_AC_BONUS, VENOM_DAMAGE, CRIT_SURGE_EXTRA_PIPS, LIFESTEAL_HEAL, ENEMY_ATTACK_BONUS, ENEMY_DAMAGE_DICE, HEAVY_DAMAGE_RATIO, HEAVY_PIPS, HIT_PIPS, HIT_THRESHOLD, MIN_ENEMY_DAMAGE, MIN_HIT_THRESHOLD, WEAPON_ATTACK_ABILITIES } from './constants';
 import { KEEN_EYE_DEFAULT, takeWard } from '@/lib/inventory/effects';
 import { armorClass } from './armorClass';
+import { enemyLevelBonus, teamLevel } from './scaling';
 import { rollDice } from '@/lib/character/dice';
 import { guardDivisor } from '@/lib/character/abilities';
 import { levelForXp } from '@/lib/character/leveling';
@@ -330,8 +331,8 @@ export interface EnemyAttackOutcome {
 }
 
 /** Pure: d20 + tier bonus against AC; nat 1 always misses, nat 20 always hits. */
-export function resolveEnemyAttack(input: { die: number; tier: EnemyTier; ac: number }): { bonus: number; total: number; hit: boolean; critical: 'success' | 'failure' | null } {
-  const bonus = ENEMY_ATTACK_BONUS[input.tier];
+export function resolveEnemyAttack(input: { die: number; tier: EnemyTier; ac: number; /** Q2: extra attack bonus from the team level. */ levelBonus?: number }): { bonus: number; total: number; hit: boolean; critical: 'success' | 'failure' | null } {
+  const bonus = ENEMY_ATTACK_BONUS[input.tier] + (input.levelBonus ?? 0);
   const total = input.die + bonus;
   const critical = input.die === 20 ? 'success' : input.die === 1 ? 'failure' : null;
   const hit = critical === 'success' ? true : critical === 'failure' ? false : total >= input.ac;
@@ -354,6 +355,8 @@ export function runEnemyAttacks(
   effects?: RoundEffects
 ): EnemyAttackOutcome[] {
   if (!encounter) return [];
+  // Q2: enemies grow with the average level of the whole party.
+  const scale = enemyLevelBonus(teamLevel(characters));
   const used = new Map<string, Set<string>>(); // enemy name -> player ids it already attacked this round
   const out: EnemyAttackOutcome[] = [];
   const signatureRound = (encounter.round ?? 1) % BOSS_SIGNATURE_EVERY === 0;
@@ -378,10 +381,10 @@ export function runEnemyAttacks(
     const first = rollDie();
     const die = advantage ? Math.max(first, rollDie()) : disadvantage ? Math.min(first, rollDie()) : first;
     const ac = armorClass(target);
-    const r = resolveEnemyAttack({ die, tier: enemy.tier, ac });
+    const r = resolveEnemyAttack({ die, tier: enemy.tier, ac, levelBonus: scale.attack });
     const spec = ENEMY_DAMAGE_DICE[enemy.tier];
     const dice = r.hit ? rollDice(r.critical === 'success' ? { ...spec, count: spec.count * 2 } : spec, rollSides) : 0;
-    const damage = r.hit && hasTrait(enemy, 'brute') ? dice + BRUTE_DAMAGE_BONUS : dice;
+    const damage = r.hit ? dice + scale.damage + (hasTrait(enemy, 'brute') ? BRUTE_DAMAGE_BONUS : 0) : 0;
     out.push({ enemy: enemy.name, tier: enemy.tier, playerId: target.id, playerDisplayName: target.displayName, die, bonus: r.bonus, total: r.total, ac, hit: r.hit, critical: r.critical, damage, ...(advantage ? { advantage } : {}), ...(disadvantage ? { disadvantage } : {}), venomous: r.hit && hasTrait(enemy, 'venomous') });
   }
   return out;

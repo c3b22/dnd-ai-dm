@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CharacterTag } from '@/lib/character/tags';
-import { applyEnemyTags, normalizeEncounter, type Encounter } from './encounter';
+import { applyEnemyTags, damageEnemy, normalizeEncounter, type Encounter } from './encounter';
 
 const enemy = (name: string, tier: 'minion' | 'normal' | 'strong' | 'boss'): CharacterTag => ({ kind: 'enemy', name, tier });
 const hurt = (name: string, tier: 'light' | 'medium' | 'heavy'): CharacterTag => ({ kind: 'enemy_hurt', name, tier });
@@ -33,6 +33,27 @@ describe('normalizeEncounter', () => {
     expect(normalizeEncounter({ enemies: many })).toBeNull();
     expect(normalizeEncounter({ enemies: [{ ...ok, pip: 0 }] })).toBeNull();
     expect(normalizeEncounter({ enemies: [{ ...ok, fled: true }] })).toBeNull();
+  });
+});
+
+describe('Q2 scaled pips', () => {
+  const ok = { name: 'a', tier: 'boss', pip: 17, maxPip: 17, fled: false };
+  it('a new enemy starts with pips scaled to the team level and the encounter survives normalizing', () => {
+    const r = applyEnemyTags(null, [enemy('a', 'boss'), enemy('b', 'minion')], 3);
+    expect(r?.enemies.map((e) => [e.name, e.pip, e.maxPip])).toEqual([['a', 17, 17], ['b', 3, 3]]);
+    expect(normalizeEncounter(r)).toEqual(r);
+  });
+  it('normalizeEncounter accepts a maxPip between the base and the level 10 value only', () => {
+    expect(normalizeEncounter({ enemies: [ok] })).not.toBeNull();
+    expect(normalizeEncounter({ enemies: [{ ...ok, pip: 9, maxPip: 9 }] })).toBeNull();
+    expect(normalizeEncounter({ enemies: [{ ...ok, pip: 99, maxPip: 99 }] })).toBeNull();
+    expect(normalizeEncounter({ enemies: [{ ...ok, maxPip: 17.5 }] })).toBeNull();
+  });
+  it('a boss at full pips still cannot be killed by one blow', () => {
+    const r = applyEnemyTags(null, [enemy('a', 'boss')], 8);
+    const boss = r!.enemies[0];
+    damageEnemy(boss, 99);
+    expect(boss.pip).toBe(1);
   });
 });
 

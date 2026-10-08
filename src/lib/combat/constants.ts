@@ -45,6 +45,12 @@ export const ENEMY_DAMAGE_DICE: Record<EnemyTier, DiceSpec> = {
   strong: { count: 2, sides: 6, bonus: 3 },
   boss: { count: 3, sides: 6, bonus: 4 },
 };
+/** Q2: enemies grow with the party. For a team of average level L, every enemy attack gets + floor((L-1) / this) to hit. */
+export const ENEMY_LEVEL_ATTACK_EVERY = 3;
+/** Q2: ... and its damage gets + floor((L-1) / this) flat (not doubled on a natural 20). */
+export const ENEMY_LEVEL_DAMAGE_EVERY = 1;
+/** Q2: ... and a new enemy starts with this many percent more pips per level above 1 (rounded; at least +0 pips). */
+export const ENEMY_LEVEL_PIP_PERCENT = 35;
 /** K3: an enemy's saving throw is d20 + this bonus against a spell's DC (nat 20 always saves, nat 1 always fails). */
 export const ENEMY_SAVE_BONUS: Record<EnemyTier, number> = { minion: 0, normal: 2, strong: 4, boss: 6 };
 /** Ward and the warrior's guard can never reduce an enemy hit below this. */

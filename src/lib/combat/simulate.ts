@@ -12,6 +12,7 @@ import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
 import type { Character } from '@/lib/character/types';
 import { applyAttackOutcomes, applyEnemyAttackOutcomes, applyVenom, runAttacks, runEnemyAttacks } from './attack';
 import { BOSS_SIGNATURE_EVERY, type EnemyTrait } from './constants';
+import { teamLevel } from './scaling';
 import { advanceEncounter, applyEnemyTags, hasTrait, type Encounter, type EncounterEnemy } from './encounter';
 
 /** A fight that is still going after this many rounds counts as lost (a stalemate). */
@@ -114,9 +115,9 @@ export interface FightResult {
 const live = (e: EncounterEnemy) => e.pip > 0 && !e.fled;
 const pick = <T>(list: T[], rng: Rng): T => list[Math.floor(rng() * list.length)];
 
-function buildEncounter(specs: EnemySpec[]): Encounter | null {
+function buildEncounter(specs: EnemySpec[], level: number): Encounter | null {
   const tags: CharacterTag[] = specs.map((s) => ({ kind: 'enemy', name: s.name, tier: s.tier, ...(s.traits ? { traits: s.traits } : {}) }));
-  return applyEnemyTags(null, tags);
+  return applyEnemyTags(null, tags, level);
 }
 
 /** Does this character use its class ability now? Warrior guards, cleric heals the neediest, archer and rogue strike. */
@@ -147,7 +148,7 @@ export function simulateFight(party: Character[], enemies: EnemySpec[], rng: Rng
   const rollSides = (sides: number) => 1 + Math.floor(rng() * sides);
   const rollDie = () => rollSides(20);
   let chars: Character[] = party.map((c) => ({ ...c }));
-  let encounter = buildEncounter(enemies);
+  let encounter = buildEncounter(enemies, teamLevel(party));
   let rounds = 0;
   let won = encounter === null;
 

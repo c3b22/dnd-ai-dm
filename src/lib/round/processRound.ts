@@ -11,6 +11,7 @@ import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { takeItem } from '@/lib/inventory/rules';
+import { teamLevel } from '@/lib/combat/scaling';
 import { advanceEncounter, applyEnemyTags, type Encounter } from '@/lib/combat/encounter';
 import { applyDefeatHeals, applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyBloodRush, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
@@ -317,7 +318,7 @@ export async function processRound(
     try {
       // C8: enemy attacks land first so a wipe they cause is handled by applyCharacterTags below.
       // An enemy that joins this very round may attack; one the players just downed still did.
-      const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
+      const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'), teamLevel(context.characters));
       const wardUsed = new Set<string>(); // F5j4: one ward use per wearer per round, across both damage paths
       // I2: attacks the server rolled from the plan land first; only when there were none, an [[enemy_attack]]
       // tag from a pure narration is rolled by the same formula and reported in the stats summary.
@@ -501,7 +502,7 @@ export async function processRound(
       // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
       // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
       const before = storedEncounter;
-      const after = advanceEncounter(sceneChanged ? null : before, applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : roundEncounter, attackOutcomes), tags), poisonedIds);
+      const after = advanceEncounter(sceneChanged ? null : before, applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : roundEncounter, attackOutcomes), tags, teamLevel(context.characters)), poisonedIds);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         try {
           await deps.repository.setEncounter(context.campaignId, after);

@@ -72,9 +72,9 @@ describe('simulateMany', () => {
     expect(a.avgDowned).toBeLessThanOrEqual(4);
   });
 
-  it('a higher level party does at least as well against the same boss', () => {
-    const low = simulateMany(buildParty(1, 'class'), STANDARD_FIGHTS.boss, 200, 9);
+  it('Q2: enemies grow with the party, so a level 8 party no longer wins every boss fight', () => {
     const high = simulateMany(buildParty(8, 'class'), STANDARD_FIGHTS.boss, 200, 9);
-    expect(high.winRate).toBeGreaterThanOrEqual(low.winRate);
+    expect(high.winRate).toBeLessThan(0.97);
+    expect(high.winRate).toBeGreaterThan(0.5);
   });
 });

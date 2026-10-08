@@ -1,4 +1,5 @@
 import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
+import { maxScaledPips, scaledPips } from './scaling';
 import { BOSS_ONLY_TRAITS, ENEMY_TRAIT_IDS, MAX_ENEMY_TRAITS, REGEN_CALM_ROUNDS, HURT_PIPS, REGEN_PIPS, TIER_PIPS, type EnemyTrait } from './constants';
 
 export type EncounterEnemy = {
@@ -56,8 +57,10 @@ export function normalizeEncounter(value: unknown): Encounter | null {
     const { name, tier, pip, maxPip, fled, traits, calm } = item as Record<string, unknown>;
     if (typeof name !== 'string' || name.trim() === '' || seen.has(name)) return null;
     if (typeof tier !== 'string' || !Object.prototype.hasOwnProperty.call(TIER_PIPS, tier)) return null;
-    const max = TIER_PIPS[tier as EnemyTier];
-    if (maxPip !== max) return null;
+    const base = TIER_PIPS[tier as EnemyTier];
+    // Q2: a new enemy may start with more pips than the base, scaled to the team level.
+    if (typeof maxPip !== 'number' || !Number.isInteger(maxPip) || maxPip < base || maxPip > maxScaledPips(tier as EnemyTier)) return null;
+    const max = maxPip;
     if (typeof pip !== 'number' || !Number.isInteger(pip) || pip < 0 || pip > max) return null;
     if (typeof fled !== 'boolean') return null;
     seen.add(name);
@@ -103,7 +106,8 @@ export function damageEnemy(target: EncounterEnemy, pips: number): void {
 }
 
 // Pure: returns the new encounter, or null when there is none / it just ended.
-export function applyEnemyTags(encounter: Encounter | null, tags: CharacterTag[]): Encounter | null {
+/** `level` (Q2) is the party's average level: a new enemy starts with scaledPips(tier, level) pips. */
+export function applyEnemyTags(encounter: Encounter | null, tags: CharacterTag[], level = 1): Encounter | null {
   let enemies: EncounterEnemy[] | null = encounter ? encounter.enemies.map((e) => ({ ...e })) : null;
   const created = !encounter;
   for (const tag of tags) {
@@ -114,7 +118,8 @@ export function applyEnemyTags(encounter: Encounter | null, tags: CharacterTag[]
       if (list.length >= MAX_ENEMIES) continue;
       const name = uniqueName(tag.name, new Set(list.map((e) => e.name)));
       const traits = cleanTraits(tag.traits, tag.tier);
-      list.push({ name, tier: tag.tier, pip: TIER_PIPS[tag.tier], maxPip: TIER_PIPS[tag.tier], fled: false, ...(traits.length > 0 ? { traits } : {}) });
+      const pips = scaledPips(tag.tier, level);
+      list.push({ name, tier: tag.tier, pip: pips, maxPip: pips, fled: false, ...(traits.length > 0 ? { traits } : {}) });
       enemies = list;
     } else if (tag.kind === 'enemy_hurt' && enemies) {
       const target = findActiveEnemy(enemies, tag.name);
