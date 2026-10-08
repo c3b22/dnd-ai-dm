@@ -26,6 +26,7 @@ import { applyTeamRest } from '@/lib/character/applyRest';
 import type { RestAnswer } from '@/lib/character/checkPlan';
 import { defeatedThisRound, countStatusChanges, goldEarned, type CampaignStats } from '@/lib/campaign/stats';
 import { shouldEndCampaign } from '@/lib/campaign/campaignEnd';
+import { writeEpilogue, type EpilogueInput } from '@/lib/campaign/epilogue';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
   let text = '';
@@ -99,6 +100,8 @@ export async function processRound(
   // J3: the passed rest vote for this round (not while a fight is on) and the DM's verdict on it.
   let restRequest: { kind: 'short' | 'long' } | null = null;
   let restAnswer: RestAnswer | undefined;
+  // L3: set when this round ended the campaign; the epilogue is written after the round is closed.
+  let epilogueInput: EpilogueInput | null = null;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
   let abilities: ReturnType<typeof applyAbilityActions>;
@@ -530,6 +533,7 @@ export async function processRound(
       if (deps.repository.endCampaign && shouldEndCampaign({ tags, encounter: after, stats: statsNow })) {
         try {
           await deps.repository.endCampaign(context.campaignId);
+          epilogueInput = { characters: finalCharacters, facts: context.facts ?? [], stats: statsNow, summary: context.campaignSummary };
         } catch {
           /* best-effort */
         }
@@ -573,6 +577,18 @@ ${prompt}`;
     } catch {
       // Swallowed on purpose; see above.
     }
+  }
+
+  // L3: the per-character epilogue, best-effort and after the round is closed like the summary; writeEpilogue
+  // never throws and skips if one was already written.
+  const repo = deps.repository;
+  if (epilogueInput && repo.hasEpilogue && repo.insertEpilogue) {
+    await writeEpilogue(
+      { hasEpilogue: (id) => repo.hasEpilogue!(id), insertEpilogue: (id, r, c) => repo.insertEpilogue!(id, r, c), generateNarration: deps.generateNarration },
+      context.campaignId,
+      roundId,
+      epilogueInput
+    );
   }
 
   return { processed: true, messageId, nextRoundId };

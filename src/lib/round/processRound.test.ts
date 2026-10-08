@@ -1629,4 +1629,41 @@ describe('processRound campaign end (L2)', () => {
     const result = await run(repository);
     expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
   });
+
+  it('writes the epilogue after the campaign ends, with a second AI call', async () => {
+    const { repository } = make(15);
+    const insertEpilogue = vi.fn().mockResolvedValue(undefined);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(false);
+    repository.insertEpilogue = insertEpilogue;
+    const generateNarration = vi.fn().mockResolvedValueOnce(fakeStream(['ตอนจบ\n[[campaign_end]]'])).mockResolvedValue(fakeStream(['Prem: สุขสบาย']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(generateNarration).toHaveBeenCalledTimes(2);
+    expect(generateNarration.mock.calls[1][0]).toContain('Prem');
+    expect(insertEpilogue).toHaveBeenCalledWith('camp-1', 'round-1', expect.stringContaining('Prem: สุขสบาย'));
+  });
+
+  it('does not write an epilogue when the campaign did not end', async () => {
+    const { repository } = make(14);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(false);
+    repository.insertEpilogue = vi.fn();
+    await run(repository);
+    expect(repository.insertEpilogue).not.toHaveBeenCalled();
+  });
+
+  it('does not write it twice', async () => {
+    const { repository } = make(15);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(true);
+    repository.insertEpilogue = vi.fn();
+    await run(repository);
+    expect(repository.insertEpilogue).not.toHaveBeenCalled();
+  });
+
+  it('a failing epilogue never breaks the round', async () => {
+    const { repository } = make(15);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(false);
+    repository.insertEpilogue = vi.fn().mockRejectedValue(new Error('db'));
+    const generateNarration = vi.fn().mockResolvedValueOnce(fakeStream(['ตอนจบ\n[[campaign_end]]'])).mockRejectedValue(new Error('ai'));
+    const result = await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
 });

@@ -17,6 +17,7 @@ import { loadMagicGiven, persistMagicGiven } from '@/lib/inventory/magicGiven';
 import type { CampaignFact } from '@/lib/memory/types';
 import { isInventoryConflict } from '@/lib/economy/errors';
 import { baseMaxHp, effectiveMaxHp } from '@/lib/character/leveling';
+import { EPILOGUE_MARKER } from '@/lib/campaign/epilogue';
 import { normalizeAbilities } from '@/lib/character/constants';
 import { normalizeRestVote, type RestVote } from '@/lib/campaign/restVote';
 import { normalizeDeathSaves } from '@/lib/character/deathSaves';
@@ -154,6 +155,10 @@ export interface RoundRepository {
   addCampaignStats?(campaignId: string, delta: StatsDelta): Promise<CampaignStats | void>;
   /** L2: marks the campaign ended (campaigns.status = 'ended'). Optional so older fakes keep working; throws when the column is missing. */
   endCampaign?(campaignId: string): Promise<void>;
+  /** L3: whether the epilogue message already exists. Optional so older fakes keep working; the caller swallows failures. */
+  hasEpilogue?(campaignId: string): Promise<boolean>;
+  /** L3: posts the epilogue as a DM message. Optional so older fakes keep working. */
+  insertEpilogue?(campaignId: string, roundId: string, content: string): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -560,6 +565,23 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
     async endCampaign(campaignId) {
       const { error } = await supabase.from('campaigns').update({ status: 'ended' }).eq('id', campaignId);
+      if (error) throw error;
+    },
+
+    async hasEpilogue(campaignId) {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('campaign_id', campaignId)
+        .eq('role', 'dm')
+        .like('content', `${EPILOGUE_MARKER}%`)
+        .limit(1);
+      if (error) throw error;
+      return Array.isArray(data) && data.length > 0;
+    },
+
+    async insertEpilogue(campaignId, roundId, content) {
+      const { error } = await supabase.from('messages').insert({ campaign_id: campaignId, round_id: roundId, role: 'dm', content });
       if (error) throw error;
     },
 

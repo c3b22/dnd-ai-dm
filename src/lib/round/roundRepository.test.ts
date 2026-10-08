@@ -898,3 +898,23 @@ describe('createSupabaseRoundRepository multi-ability data (K2)', () => {
     expect(updates).toEqual([{ table: 'players', payload: { ability_cooldowns: { a: 2 } }, id: 'p1' }]);
   });
 });
+
+describe('epilogue repository (L3)', () => {
+  it('hasEpilogue looks for the marker among DM messages; insertEpilogue posts a DM message', async () => {
+    const calls: unknown[] = [];
+    const inserted: unknown[] = [];
+    const chain: any = {
+      select: () => chain,
+      eq: (...a: unknown[]) => (calls.push(a), chain),
+      like: (...a: unknown[]) => (calls.push(a), chain),
+      limit: () => Promise.resolve({ data: [{ id: 'm1' }], error: null }),
+      insert: (p: unknown) => (inserted.push(p), Promise.resolve({ error: null })),
+    };
+    const repository = createSupabaseRoundRepository({ from: () => chain } as any);
+    expect(await repository.hasEpilogue!('camp-1')).toBe(true);
+    expect(calls).toContainEqual(['role', 'dm']);
+    expect(calls).toContainEqual(['content', '— บทส่งท้าย —%']);
+    await repository.insertEpilogue!('camp-1', 'round-1', 'x');
+    expect(inserted).toEqual([{ campaign_id: 'camp-1', round_id: 'round-1', role: 'dm', content: 'x' }]);
+  });
+});
