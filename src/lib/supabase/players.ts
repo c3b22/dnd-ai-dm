@@ -21,6 +21,12 @@ export interface RoundPlayer {
   abilityCooldown?: number;
   /** K3/K4: spell slots a mage has spent since the last rest; absent/0 means none (also when the column is not readable yet). */
   spellSlotsUsed?: number;
+  /** K7: chosen subclass id; null = none yet; absent when the column is not readable yet. */
+  subclassId?: string | null;
+  /** K7: abilities picked at Lv6/Lv9; absent when the column is not readable yet. */
+  abilityPicks?: Record<string, string>;
+  /** K7: cooldown of each extra ability (beyond the class's main one). */
+  abilityCooldowns?: Record<string, number>;
   /** Ability scores; absent when the column is not readable yet. */
   abilities?: AbilityScores;
   /** Unspent ability score improvements (level 4 and 8); absent/0 means none. */
@@ -55,6 +61,24 @@ export async function fetchRoundPlayers(
     /* unreadable means no slots spent */
   }
 
+  // K7: subclass, picks and per-ability cooldowns in their own query: columns from migration 0030 may not exist yet.
+  const optionsById = new Map<string, { subclassId: string | null; abilityPicks: Record<string, string>; abilityCooldowns: Record<string, number> }>();
+  try {
+    const { data: optionRows, error: optionError } = await load('id, subclass_id, ability_picks, ability_cooldowns');
+    if (!optionError) {
+      const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+      for (const row of (optionRows ?? []) as any[]) {
+        optionsById.set(row.id as string, {
+          subclassId: typeof row.subclass_id === 'string' && row.subclass_id ? row.subclass_id : null,
+          abilityPicks: Object.fromEntries(Object.entries(obj(row.ability_picks)).filter(([, v]) => typeof v === 'string')) as Record<string, string>,
+          abilityCooldowns: Object.fromEntries(Object.entries(obj(row.ability_cooldowns)).map(([k, v]) => [k, Number(v) || 0])),
+        });
+      }
+    }
+  } catch {
+    /* unreadable means no choices are offered */
+  }
+
   // A database without the inventory table (migration not applied yet) plays with empty packs.
   const inventories = await fetchCampaignInventories(campaignId).catch(() => ({}) as Inventories);
 
@@ -79,6 +103,7 @@ export async function fetchRoundPlayers(
     classId: (p.class_id ?? null) as string | null,
     abilityCooldown: Number(p.ability_cooldown ?? 0),
     spellSlotsUsed: slotsById.get(p.id as string) ?? 0,
+    ...optionsById.get(p.id as string),
     status: p.status as 'active' | 'downed' | 'dead',
     gold: Number(p.gold ?? 0),
     abilities: withAbilities ? normalizeAbilities(p.abilities) : undefined,
@@ -98,6 +123,9 @@ export async function fetchRoundPlayers(
     classId: p.classId,
     abilityCooldown: p.abilityCooldown,
     spellSlotsUsed: p.spellSlotsUsed,
+    subclassId: p.subclassId,
+    abilityPicks: p.abilityPicks,
+    abilityCooldowns: p.abilityCooldowns,
     items: p.items,
     status: p.status,
     gold: p.gold,
@@ -149,6 +177,25 @@ export async function requestAbilityChoice(campaignId: string, choice: AbilityCh
   });
   if (!response.ok) throw new Error('could not save the ability choice');
 }
+
+async function postChoice(campaignId: string, path: string, body: object): Promise<void> {
+  const { data } = await supabaseBrowserClient.auth.getSession();
+  const response = await fetch(`/api/campaigns/${campaignId}/${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`could not save the ${path}`);
+}
+
+/** K7: pick the subclass (Lv3); the API lets only the character's own owner do it. */
+export const requestSubclassChoice = (campaignId: string, subclassId: string) => postChoice(campaignId, 'subclass-choice', { subclassId });
+
+/** K7: pick the Lv6 / Lv9 ability. */
+export const requestAbilityPick = (campaignId: string, abilityId: string) => postChoice(campaignId, 'ability-pick', { abilityId });
 
 export interface RespawnRequest {
   displayName: string;

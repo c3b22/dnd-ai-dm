@@ -5,6 +5,8 @@ import type { RoundPlayer } from '@/lib/supabase/players';
 import { weaponFor } from '@/lib/character/constants';
 import { HpBar } from './HpBar';
 import { AbilityChoice } from './AbilityChoice';
+import { ClassChoice } from './ClassChoice';
+import { pendingChoices, subclassLabel, type PendingChoice } from '@/lib/character/classOptionsView';
 import type { AbilityChoice as Choice } from '@/lib/character/leveling';
 import { catalogEntry } from '@/lib/inventory/catalog';
 import { armorReduction, armorWeight, equippedArmorId, equippedWeaponId } from '@/lib/inventory/rules';
@@ -22,11 +24,13 @@ export interface PlayerOrderProps {
   reorderPolicy?: 'owner' | 'self';
   /** Spend an unspent ability score improvement; the badge shows only on the current player's own row. */
   onAbilityChoice?: (choice: Choice) => Promise<void>;
+  /** K7: choose the subclass (Lv3) or a Lv6/Lv9 ability; the badge shows only on the current player's own row. */
+  onClassChoice?: (choice: PendingChoice, optionId: string) => Promise<void>;
 }
 
 const AVATAR_COLORS = ['#e0a94a', '#5fb3a5', '#d46a5a', '#8a7fd6', '#6fa8dc'];
 
-export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder, reorderPolicy = 'self', onAbilityChoice }: PlayerOrderProps) {
+export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorder, reorderPolicy = 'self', onAbilityChoice, onClassChoice }: PlayerOrderProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const currentIsOwner = players.find((p) => p.id === currentPlayerId)?.isOwner ?? false;
@@ -95,10 +99,14 @@ export function PlayerOrder({ players, currentPlayerId, locked, onMove, onReorde
                   · {weaponFor(equippedWeaponId(player.items)).nameTh}
                   {equippedArmorId(player.items) ? ` · ${catalogEntry(equippedArmorId(player.items)!)?.nameTh}` : ''}
                   {' '}· AC {armorClass({ abilities: player.abilities, armorReduction: armorReduction(player.items), armorWeight: armorWeight(player.items) })}
+                  {subclassLabel(player) ? ` · สาย${subclassLabel(player)}` : ''}
                   {' '}· {player.gold} ทอง
                 </span>
               </span>
               <HpBar hp={player.hp} maxHp={player.maxHp} xp={player.xp} />
+              {player.id === currentPlayerId && onClassChoice && (
+                <ClassChoice choices={pendingChoices(player)} onChoose={onClassChoice} />
+              )}
               {player.id === currentPlayerId && onAbilityChoice && player.abilities && (
                 <AbilityChoice
                   abilities={player.abilities}

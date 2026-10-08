@@ -11,6 +11,7 @@ import { PlayerOrder } from '@/components/PlayerOrder';
 import { RespawnForm } from '@/components/RespawnForm';
 import { respawnLevel } from '@/lib/character/respawnLevel';
 import { levelForXp, type AbilityChoice } from '@/lib/character/leveling';
+import { extraAbilities, replacementAbility, type PendingChoice } from '@/lib/character/classOptionsView';
 import { SPELLS, SPELL_IDS, mageSpellSlots } from '@/lib/character/spells';
 import { EncounterPanel } from '@/components/EncounterPanel';
 import { RestPanel } from '@/components/RestPanel';
@@ -34,6 +35,8 @@ import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
   requestAbilityChoice,
+  requestAbilityPick,
+  requestSubclassChoice,
   requestRespawn,
   type RespawnRequest,
   saveTurnOrder,
@@ -334,6 +337,12 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  async function handleClassChoice(choice: PendingChoice, optionId: string) {
+    if (choice.kind === 'subclass') await requestSubclassChoice(campaignId, optionId);
+    else await requestAbilityPick(campaignId, optionId);
+    refreshPlayers();
+  }
+
   async function handleRespawn(request: RespawnRequest) {
     await requestRespawn(campaignId, request);
     refreshPlayers();
@@ -376,7 +385,20 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
-  const abilityProp = myClass && myClass.id !== 'mage'
+  // K7: a subclass replacement shows as its own button instead of the class's plain one.
+  const extras = me ? extraAbilities(me) : [];
+  const hasReplacement = me ? replacementAbility(me) !== null : false;
+  const liveEnemies = (encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name);
+
+  async function handleUseExtraAbility(abilityId: string, enemy: string | null) {
+    if (!roundId) return;
+    const extra = extras.find((a) => a.id === abilityId);
+    const text = `ใช้${extra?.nameTh ?? 'ท่า'}${enemy ? ` ใส่ ${enemy}` : ''}`;
+    await submitAction(roundId, playerId, text, undefined, { abilityId }, enemy ?? undefined);
+    refreshPlayers();
+  }
+
+  const abilityProp = myClass && myClass.id !== 'mage' && !hasReplacement
     ? {
         nameTh: myClass.ability.nameTh,
         target: myClass.ability.target,
@@ -525,6 +547,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
               ability={abilityProp}
               onUseAbility={handleUseAbility}
+              extraAbilities={extras}
+              enemies={liveEnemies}
+              onUseExtraAbility={handleUseExtraAbility}
               spells={spellMenu}
               onCastSpell={handleCastSpell}
               disabledReason={
@@ -566,6 +591,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onMove={handleMove}
               onReorder={handleReorder}
               onAbilityChoice={handleAbilityChoice}
+              onClassChoice={handleClassChoice}
               reorderPolicy={settings.reorderPolicy}
             />
           )}

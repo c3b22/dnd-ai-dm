@@ -19,6 +19,17 @@ export interface SpellMenu {
   surge?: { nameTh: string; cooldown: number };
 }
 
+/** K7: an ability beyond the class's plain one (subclass replacement, Lv6/Lv9 active pick), with its own cooldown. */
+export interface ExtraAbility {
+  id: string;
+  nameTh: string;
+  descTh?: string;
+  /** Eventful rounds left; 0 means ready. */
+  cooldown: number;
+  /** 'enemy' = one enemy of the fight is picked first; null = no target. */
+  target: 'enemy' | null;
+}
+
 export interface ActionInputProps {
   onSubmit: (actionText: string) => Promise<void>;
   /** When set the player cannot act (for example a downed character): everything is locked and this is shown. */
@@ -39,10 +50,15 @@ export interface ActionInputProps {
   onUseAbility?: (targetId: string | null) => Promise<void>;
   /** K4: the mage's spell menu; absent for everyone else. */
   spells?: SpellMenu;
+  /** K7: every other pressable ability, each with its own cooldown. */
+  extraAbilities?: ExtraAbility[];
+  /** Names of the enemies still fighting, for abilities that need one. */
+  enemies?: string[];
+  onUseExtraAbility?: (abilityId: string, enemy: string | null) => Promise<void>;
   onCastSpell?: (spellId: string, target: { allyId?: string | null; enemy?: string | null }, surge: boolean) => Promise<void>;
 }
 
-export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, onUseAbility, spells, onCastSpell }: ActionInputProps) {
+export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, onUseAbility, spells, onCastSpell, extraAbilities, enemies = [], onUseExtraAbility }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -51,6 +67,7 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
   const [casting, setCasting] = useState(false);
   const [spellChoice, setSpellChoice] = useState<string | null>(null);
   const [surge, setSurge] = useState(false);
+  const [extraPicking, setExtraPicking] = useState<string | null>(null);
 
   async function handleSubmit(actionText: string) {
     if (!actionText.trim() || submitted || submitting || disabledReason || alreadyActed) return;
@@ -75,6 +92,21 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
       await onUseAbility(targetId);
       setSubmitted(true);
       setPicking(false);
+    } catch {
+      setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function useExtra(abilityId: string, enemy: string | null) {
+    if (!onUseExtraAbility || submitted || submitting || disabledReason || alreadyActed) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onUseExtraAbility(abilityId, enemy);
+      setSubmitted(true);
+      setExtraPicking(null);
     } catch {
       setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
     } finally {
@@ -142,7 +174,33 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
             )}
           </>
         )}
+        {onUseExtraAbility &&
+          extraAbilities?.map((extra) => (
+            <span key={extra.id} className="extra-ability">
+              <button
+                type="button"
+                className="qa ability"
+                title={extra.descTh}
+                disabled={locked || extra.cooldown > 0}
+                onClick={() => (extra.target ? setExtraPicking((id) => (id === extra.id ? null : extra.id)) : useExtra(extra.id, null))}
+              >
+                {extra.nameTh}
+              </button>
+              {extra.cooldown > 0 && <span className="cd">{extra.nameTh}: อีก {extra.cooldown} รอบเหตุการณ์</span>}
+            </span>
+          ))}
       </div>
+      {onUseExtraAbility && extraPicking && !locked && (
+        <div className="hint-row" role="group" aria-label="เลือกศัตรูเป้าหมาย">
+          <span className="lbl">เลือกศัตรู</span>
+          {enemies.length === 0 && <span className="cd">ไม่มีศัตรูให้เลือก</span>}
+          {enemies.map((name) => (
+            <button key={name} type="button" className="qa" onClick={() => useExtra(extraPicking, name)}>
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
       {spells && onCastSpell && (
         <div className="hint-row" role="group" aria-label="ร่ายเวท">
           <button
