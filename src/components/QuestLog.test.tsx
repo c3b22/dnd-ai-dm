@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { QuestLog } from './QuestLog';
 import type { CampaignFact } from '@/lib/memory/types';
 
@@ -13,9 +13,9 @@ describe('QuestLog', () => {
     render(<QuestLog facts={[]} />);
     expect(screen.getByLabelText('สมุดบันทึก')).toBeTruthy();
     expect(screen.getByText(/ยังไม่มีบันทึก/)).toBeTruthy();
-    expect(screen.queryByText('ภารกิจ')).toBeNull();
-    expect(screen.queryByText('NPC')).toBeNull();
-    expect(screen.queryByText('เบาะแส')).toBeNull();
+    expect(screen.queryByRole('button', { name: /ภารกิจ/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /NPC/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /เบาะแส/ })).toBeNull();
   });
 
   it('splits quests into open and done', () => {
@@ -25,7 +25,38 @@ describe('QuestLog', () => {
     expect(open.textContent).toContain('แปลก');
     expect(open.textContent).not.toContain('ฆ่าหมาป่า');
     const done = screen.getByLabelText('ภารกิจที่เสร็จแล้ว');
+    expect(done.textContent).not.toContain('ฆ่าหมาป่า');
+    fireEvent.click(within(done).getByRole('button', { name: /ภารกิจที่เสร็จแล้ว/ }));
     expect(done.textContent).toContain('ฆ่าหมาป่า');
+  });
+
+  it('shows everything and a total count in the title when there is little data', () => {
+    render(<QuestLog facts={[fact('quest', 'a', 'open'), fact('npc', 'b', 'x'), fact('clue', null, 'c'), fact('clue', null, 'd')]} />);
+    expect(screen.getByRole('heading', { name: 'สมุดบันทึก (4)' })).toBeTruthy();
+    expect(within(screen.getByLabelText('เบาะแส')).getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: /ดูทั้งหมด/ })).toBeNull();
+  });
+
+  it('shows only the newest 5 per section and expands with the see-all button', () => {
+    const clues = Array.from({ length: 8 }, (_, i) => ({ ...fact('clue', null, `clue${i}`), updatedAt: `2026-10-06T00:00:0${i}Z` }));
+    render(<QuestLog facts={clues} />);
+    const sec = screen.getByLabelText('เบาะแส');
+    expect(within(sec).getAllByRole('listitem')).toHaveLength(5);
+    expect(sec.textContent).toContain('clue7');
+    expect(sec.textContent).not.toContain('clue0');
+    fireEvent.click(within(sec).getByRole('button', { name: 'ดูทั้งหมด (8)' }));
+    expect(within(sec).getAllByRole('listitem')).toHaveLength(8);
+    expect(sec.querySelector('ul.expanded')).toBeTruthy();
+    fireEvent.click(within(sec).getByRole('button', { name: 'ย่อ' }));
+    expect(within(sec).getAllByRole('listitem')).toHaveLength(5);
+  });
+
+  it('collapses a section without dropping data', () => {
+    render(<QuestLog facts={[fact('clue', null, 'รอยเท้า')]} />);
+    const sec = screen.getByLabelText('เบาะแส');
+    fireEvent.click(within(sec).getByRole('button', { name: /เบาะแส/ }));
+    expect(sec.textContent).not.toContain('รอยเท้า');
+    expect(screen.getByRole('heading', { name: 'สมุดบันทึก (1)' })).toBeTruthy();
   });
 
   it('shows NPCs with their attitude and clues, hiding empty sections', () => {

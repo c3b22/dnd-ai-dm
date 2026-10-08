@@ -42,6 +42,8 @@ describe('CampaignSummary', () => {
 
   it('embeds the quest log', () => {
     render(<CampaignSummary epilogue={null} stats={null} players={[]} facts={[{ id: 'f1', kind: 'quest', key: 'หาระฆัง', value: 'done' } as any]} />);
+    expect(screen.getByRole('heading', { name: 'สมุดบันทึก (1)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /ภารกิจที่เสร็จแล้ว/ }));
     expect(screen.getByText('หาระฆัง')).toBeInTheDocument();
   });
 
