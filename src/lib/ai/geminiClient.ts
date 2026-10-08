@@ -26,9 +26,20 @@ export function isTimeoutError(error: unknown): boolean {
 
 /** The model answered 200 but produced nothing, or the stream ended early after an abort. */
 export class EmptyResponseError extends Error {
-  constructor() {
-    super('Gemini returned an empty response with no error part');
+  constructor(finishReason?: string) {
+    super(`Gemini returned an empty response with no error part${finishReason ? ` (finishReason: ${finishReason})` : ''}`);
     this.name = 'EmptyResponseError';
+  }
+}
+
+/** Gemini refused the prompt itself (promptFeedback.blockReason); the same prompt fails on every model. */
+export class PromptBlockedError extends Error {
+  readonly blockReason: string;
+
+  constructor(blockReason: string) {
+    super(`Gemini blocked the prompt (${blockReason})`);
+    this.name = 'PromptBlockedError';
+    this.blockReason = blockReason;
   }
 }
 
@@ -85,6 +96,7 @@ export function normalizeGeminiError(error: unknown): unknown {
 export interface NarrationStreamPart {
   type: string;
   textDelta?: string;
+  finishReason?: string;
   error?: unknown;
 }
 
@@ -97,16 +109,18 @@ export async function bufferTextOrThrow(
   fullStream: AsyncIterable<NarrationStreamPart>
 ): Promise<AsyncIterable<string>> {
   const chunks: string[] = [];
+  let finishReason: string | undefined;
   for await (const part of fullStream) {
     if (part.type === 'error') {
       throw normalizeGeminiError(part.error);
     }
+    if (part.type === 'finish' || part.type === 'step-finish') finishReason = part.finishReason;
     if (part.type === 'text-delta' && part.textDelta) {
       chunks.push(part.textDelta);
     }
   }
   if (chunks.length === 0) {
-    throw new EmptyResponseError();
+    throw new EmptyResponseError(finishReason);
   }
 
   async function* replay() {

@@ -176,7 +176,7 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
       const { data: actionsRows, error: actionsError } = await supabase
         .from('round_actions')
-        .select('action_text, use_item_id, use_ability, ability_target_id, player_id, players(display_name, turn_order, created_at)')
+        .select('action_text, use_item_id, use_ability, ability_target_id, player_id, players!round_actions_player_id_fkey(display_name, turn_order, created_at)')
         .eq('round_id', roundId);
       if (actionsError) throw actionsError;
 

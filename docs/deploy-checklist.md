@@ -23,11 +23,25 @@
 **ข้อควรรู้หลัง deploy**
 - `tsc` บน master รายงาน error เฉพาะไฟล์ใน `.next/types` (หน้า `dev-preview` ที่ไม่มีใน source แล้ว มาจาก dev server ของคุณ) ไม่มี error ใน `src/`
 - **ยังไม่ได้ทดสอบเล่นจริงบน production** (สร้างห้อง เล่นรอบ แชร์/ลบ ถาม DM ไอเท็ม) ผมไม่สร้างข้อมูลทดสอบหรือผู้ใช้ใน production เอง รายการ smoke test ข้อ 5 ยังรอคุณหรือคำสั่งให้ทำ
-- `auto/tasks` ไปไกลกว่าที่ deploy: มี 4 commit หลัง `048a14e` และมี migration **0026_death_saves.sql** ที่ **ยังไม่ได้รัน** และโค้ดส่วนนั้นยังไม่ได้ deploy ห้าม deploy รอบหน้าก่อนรัน 0026 (และไฟล์ใหม่อื่นๆ)
+- `auto/tasks` ไปไกลกว่าที่ deploy: มีงาน H1–H3d หลัง `048a14e` ที่โค้ดยังไม่ได้ deploy (migration 0026–0028 ของงานนี้รันแล้ว ดูหัวข้อถัดไป)
 - `master` ในเครื่องนำหน้า `origin/master` อยู่ 57 commit ยังไม่ได้ push
 - SQL editor ของ Supabase มี query ที่บันทึกไว้ชื่อ "Untitled query" ในรายการ Private (SELECT ตรวจสอบอย่างเดียว) ลบได้
 
 **แผนถอยกลับถ้าพบปัญหา:** promote deployment เก่าของ Vercel (ล่าสุดก่อนหน้า: วันที่ 2 ต.ค.) กลับมา migration ไม่ต้องถอย (เพิ่มอย่างเดียว) ข้อมูลสำรองอยู่ในโฟลเดอร์ข้างบน ยกเว้นเวอร์ชันเดิมของ `apply_changes` ถ้าจำเป็นต้องถอยฟังก์ชัน ให้รัน `create or replace function` ส่วนที่อยู่ใน `0013_xp.sql`
+
+
+## รัน migration 0026–0028 บน production (2026-10-07)
+
+ผู้ใช้สั่งให้รัน ทำผ่าน Supabase SQL editor (Chrome ของผู้ใช้) รวมทั้งสามไฟล์ใน transaction เดียว (`begin; … commit;`) เนื้อ SQL นำมาจาก branch `auto/tasks` ตรวจแล้วว่าข้อความใน editor ตรงกับไฟล์ทุกตัวอักษร (SHA-256 `5cbfea4f…89e9`) ไม่ได้สำรองข้อมูลใหม่ เพราะ migration ชุดนี้เพิ่มอย่างเดียว ไม่แก้ข้อมูลเดิม (ข้อมูลสำรองของเช้าวันเดียวกันยังอยู่)
+
+| ตรวจ | ก่อน | หลัง |
+|---|---|---|
+| จำนวนแถว players / campaigns / messages / rounds | 46 / 43 / 758 / 248 | 46 / 43 / 758 / 248 (เท่าเดิม) |
+| คอลัมน์ `players.death_saves` | ไม่มี | มี |
+| ตาราง `campaign_corpses` | ไม่มี | มี, เปิด RLS, policy 1 ตัว (members อ่านได้) |
+| check ของ `players.status` | active, downed | active, downed, dead (เหลือ constraint เดียว) |
+
+Supabase เตือน "destructive operations" เพราะคำสั่ง `drop constraint` (แทนที่ทันทีด้วย check ที่กว้างขึ้น) และ `drop policy if exists` (policy ที่ยังไม่มี) ซึ่งเป็นไปตามที่คาด โค้ดที่ deploy อยู่ใช้ได้ต่อเพราะไม่เคยเขียนค่า `dead` โค้ด H1–H3d **ยังไม่ได้ deploy**
 
 ---
 

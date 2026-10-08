@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
     );
 
     return NextResponse.json(result, { status: result.processed ? 200 : 409 });
-  } catch {
+  } catch (error) {
+    console.error('round process failed', roundId, error);
     // processRound already released the round claim before rethrowing, so the client's
     // automatic retry (or the manual "ให้ DM ตัดสินตอนนี้" button) can attempt it fresh.
     return NextResponse.json({ error: 'DM ตอบไม่สำเร็จ ลองอีกครั้ง' }, { status: 500 });

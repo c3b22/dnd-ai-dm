@@ -11,6 +11,7 @@ import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { applyEnemyTags } from '@/lib/combat/encounter';
 import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
+import { PromptBlockedError } from '@/lib/ai/geminiClient';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -97,10 +98,22 @@ export async function processRound(
       const weapon = weaponFor(character.weaponId);
       return { ...a, roll, weaponLabel: weapon.id, damage: abilities.damage[character.id] ?? rollDice(weapon.dice, rollSides) + levelDamageBonus(levelForXp(character.xp ?? 0)) };
     });
+    // Gemini sometimes refuses a prompt because of something in the chat history. Retry once without
+    // it (the campaign summary and facts still carry the story) rather than leave the table stuck.
+    let history = context.recentMessages;
+    const generate = async (makePrompt: () => string) => {
+      try {
+        return await deps.generateNarration(makePrompt());
+      } catch (error) {
+        if (!(error instanceof PromptBlockedError) || history.length === 0) throw error;
+        history = [];
+        return deps.generateNarration(makePrompt());
+      }
+    };
     const build = (actions: RoundAction[], planChecks = false) =>
       assemblePrompt(
         context.campaignSummary,
-        context.recentMessages,
+        history,
         actions,
         context.adventure,
         context.sceneInstructionText,
@@ -116,7 +129,7 @@ export async function processRound(
     if (diceEnabled && abilities.characters.length > 0) {
       // Dice tables: the first call either asks for skill checks or narrates outright. Only a
       // round with checks costs a second call; anything unusable falls back to a plain narration.
-      const first = parseCheckPlan(await collect(await deps.generateNarration(build(rolled, true))));
+      const first = parseCheckPlan(await collect(await generate(() => build(rolled, true))));
       if (first.kind === 'narration' || first.kind === 'plain') {
         stream = single(first.text);
       } else {
@@ -143,10 +156,10 @@ export async function processRound(
           });
           prompt = build(rolled);
         }
-        stream = await deps.generateNarration(prompt);
+        stream = await generate(() => build(rolled));
       }
     } else {
-      stream = await deps.generateNarration(prompt);
+      stream = await generate(() => build(rolled));
     }
   } catch (error) {
     // Nothing was written yet, so it is safe to release the claim for an immediate retry.
