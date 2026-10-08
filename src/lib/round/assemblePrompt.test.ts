@@ -178,6 +178,15 @@ describe('assemblePrompt economy', () => {
     expect(prompt).toContain('Prem: 14 gold');
     expect(prompt).toContain('Old Mara');
   });
+
+  it('carries the mandatory [[shop]] rule in both modes (planChecks on and off)', () => {
+    const state = { characters: [prem], pendingWipe: false, inventories: {}, shop: null };
+    for (const planChecks of [false, true]) {
+      const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'ไปร้านค้า' }], null, '', undefined, state, [], { planChecks });
+      expect(prompt).toContain('MUST emit [[shop:');
+      expect(prompt).toContain('Example (opens the shop)');
+    }
+  });
 });
 
 describe('assemblePrompt combat', () => {
