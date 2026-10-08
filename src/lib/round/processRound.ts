@@ -15,6 +15,7 @@ import { advanceEncounter, applyEnemyTags, type Encounter } from '@/lib/combat/e
 import { applyDefeatHeals, applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyBloodRush, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
+import { withFallbackShop } from '@/lib/economy/shopFallback';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
 import { changedDeathSaves, runDeathSaves, settleDeathSaves, type DeathSaveRoll } from '@/lib/character/deathSaves';
 import { DEATH_SAVE_SKILL } from '@/lib/character/skillLabels';
@@ -338,7 +339,16 @@ export async function processRound(
       const lootResult = lootable.length > 0 && deps.repository.saveCorpseLoot
         ? applyLootTags(result.characters, inventoryResult.inventories, lootable, tags)
         : null;
-      const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
+      // N2: the DM narrated a purchase but forgot [[shop]]; the server opens the default shop through the same tag path.
+      const economyTags = withFallbackShop({
+        tags,
+        currentShop: context.currentShop,
+        currentEncounter: context.currentEncounter,
+        actionTexts: context.actions.map((a) => a.actionText),
+        dmText: cleanText,
+      });
+      if (economyTags !== tags) console.log(`[shopFallback] auto-opened shop campaign=${context.campaignId} round=${roundId}`);
+      const economy = applyEconomyTags(result.characters, economyTags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
       // J3: only an "ok" from the DM rests the team (and never after a wipe); "interrupted" or no field means no rest.

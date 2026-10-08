@@ -1,3 +1,4 @@
+import { DEFAULT_SHOP_ITEMS } from '@/lib/economy/shopFallback';
 import { describe, it, expect, vi } from 'vitest';
 import { processRound, ProcessRoundDeps } from './processRound';
 import type { RoundRepository } from './roundRepository';
@@ -507,6 +508,22 @@ describe('processRound economy', () => {
     const close = one({ currentShop: { name: 'Old Mara', itemIds: ['staff'] } });
     await run(close, '[[shop_close]]');
     expect(close.setShop).toHaveBeenCalledWith('camp-1', null);
+  });
+
+  it('N2: auto-opens the default shop when the DM narrates buying without a shop tag, and logs it', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const repository = one();
+    await run(repository, 'เจ้าของร้านบอกว่าซูกิสามารถเลือกซื้อสินค้าได้');
+    expect(repository.setShop).toHaveBeenCalledWith('camp-1', { name: 'ร้านค้า', itemIds: DEFAULT_SHOP_ITEMS });
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เจ้าของร้านบอกว่าซูกิสามารถเลือกซื้อสินค้าได้');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('auto-opened shop campaign=camp-1 round=round-1'));
+    log.mockRestore();
+  });
+
+  it('N2: does not auto-open when the DM refuses', async () => {
+    const repository = one();
+    await run(repository, 'เจ้าของร้านปฏิเสธและปิดประตู');
+    expect(repository.setShop).not.toHaveBeenCalled();
   });
 
   it('closes the open shop when the scene actually changes, but not when the same scene is repeated', async () => {
