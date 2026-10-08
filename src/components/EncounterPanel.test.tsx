@@ -6,26 +6,33 @@ import type { Encounter, EncounterEnemy } from '@/lib/combat/encounter';
 const enemy = (over: Partial<EncounterEnemy> = {}): EncounterEnemy => ({
   name: 'หมาป่า',
   tier: 'normal',
-  pip: 2,
-  maxPip: 2,
+  pip: 4,
+  maxPip: 4,
   fled: false,
   ...over,
 });
 
 describe('pipLevel', () => {
-  it('boss with 5 pips: full ok, 4-2 warn, 1 low', () => {
-    expect(pipLevel(5, 5)).toBe('ok');
-    expect(pipLevel(4, 5)).toBe('warn');
-    expect(pipLevel(3, 5)).toBe('warn');
-    expect(pipLevel(2, 5)).toBe('warn');
-    expect(pipLevel(1, 5)).toBe('low');
+  it('boss with 10 pips: full ok, 9-3 warn, 2-1 low', () => {
+    expect(pipLevel(10, 10)).toBe('ok');
+    for (const n of [9, 8, 7, 6, 5, 4, 3]) expect(pipLevel(n, 10)).toBe('warn');
+    expect(pipLevel(2, 10)).toBe('low');
+    expect(pipLevel(1, 10)).toBe('low');
   });
-  it('2 pip enemy: full ok, 1 low', () => {
+  it('6 pip strong enemy: low only at the last pip', () => {
+    expect(pipLevel(6, 6)).toBe('ok');
+    expect(pipLevel(2, 6)).toBe('warn');
+    expect(pipLevel(1, 6)).toBe('low');
+  });
+  it('4 pip enemy: full ok, 3-2 warn, 1 low', () => {
+    expect(pipLevel(4, 4)).toBe('ok');
+    expect(pipLevel(3, 4)).toBe('warn');
+    expect(pipLevel(2, 4)).toBe('warn');
+    expect(pipLevel(1, 4)).toBe('low');
+  });
+  it('2 pip minion: full ok, 1 low', () => {
     expect(pipLevel(2, 2)).toBe('ok');
     expect(pipLevel(1, 2)).toBe('low');
-  });
-  it('1 pip minion is only ok', () => {
-    expect(pipLevel(1, 1)).toBe('ok');
   });
 });
 
@@ -36,14 +43,14 @@ describe('EncounterPanel', () => {
   });
 
   it('shows each enemy with its remaining pips', () => {
-    const encounter: Encounter = { enemies: [enemy({ pip: 1 }), enemy({ name: 'ราชา', tier: 'boss', pip: 4, maxPip: 5 })] };
+    const encounter: Encounter = { enemies: [enemy({ pip: 1 }), enemy({ name: 'ราชา', tier: 'boss', pip: 8, maxPip: 10 })] };
     const { container } = render(<EncounterPanel encounter={encounter} />);
     expect(screen.getByLabelText('ศัตรู')).toBeInTheDocument();
-    expect(screen.getByLabelText('หมาป่า เหลือ 1 จาก 2')).toBeInTheDocument();
-    expect(screen.getByLabelText('ราชา เหลือ 4 จาก 5')).toBeInTheDocument();
+    expect(screen.getByLabelText('หมาป่า เหลือ 1 จาก 4')).toBeInTheDocument();
+    expect(screen.getByLabelText('ราชา เหลือ 8 จาก 10')).toBeInTheDocument();
     const boss = screen.getByText('ราชา').closest('li')!;
-    expect(boss.querySelectorAll('.pip.on')).toHaveLength(4);
-    expect(boss.querySelectorAll('.pip')).toHaveLength(5);
+    expect(boss.querySelectorAll('.pip.on')).toHaveLength(8);
+    expect(boss.querySelectorAll('.pip')).toHaveLength(10);
     expect(boss.querySelector('.hp-track.warn')).not.toBeNull();
     expect(container.querySelector('li .hp-track.low')).not.toBeNull();
   });

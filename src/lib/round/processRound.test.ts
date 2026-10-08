@@ -767,7 +767,7 @@ describe('processRound abilities', () => {
 
 describe('processRound encounter', () => {
   const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
   const one = (over: object = {}) => createFakeRepository({
     getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
   });
@@ -778,7 +778,7 @@ describe('processRound encounter', () => {
     const repository = one({ currentEncounter: { enemies: [wolf] } });
     const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
     await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
-    expect(generateNarration.mock.calls[0][0]).toContain('- หมาป่า (normal): 2/2 pips');
+    expect(generateNarration.mock.calls[0][0]).toContain('- หมาป่า (normal): 4/4 pips');
   });
 
   it('starts an encounter from an enemy tag and strips the tag', async () => {
@@ -791,9 +791,9 @@ describe('processRound encounter', () => {
   it('updates the stored encounter on a hurt tag and ends it when the last enemy falls', async () => {
     const hurt = one({ currentEncounter: { enemies: [wolf] } });
     await run(hurt, '[[enemy_hurt: หมาป่า | light]]');
-    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 3 }] });
 
-    const dead = one({ currentEncounter: { enemies: [wolf] } });
+    const dead = one({ currentEncounter: { enemies: [{ ...wolf, pip: 2 }] } });
     await run(dead, '[[enemy_hurt: หมาป่า | heavy]]');
     expect(dead.setEncounter).toHaveBeenCalledWith('camp-1', null);
   });
@@ -1007,7 +1007,7 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
     id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
     revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 }, armorReduction: 1,
   };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 4, fled: false };
   const repo = () =>
     createFakeRepository({
       getRoundContext: vi.fn().mockResolvedValue({
@@ -1043,17 +1043,17 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
     expect(repository.setEncounter).not.toHaveBeenCalled();
   });
 
-  it('an enemy_attack tag is rolled by the server: d20 11 + 4 vs AC 15 hits for 1d6+1 = 5 (no armor reduction)', async () => {
+  it('an enemy_attack tag is rolled by the server: d20 10 + 5 vs AC 15 hits for 1d8+2 = 6 with rollSides 4 (no armor reduction)', async () => {
     const repository = repo();
-    await go(repository, [5, 8, 11], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
-    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 15 })], false);
+    await go(repository, [5, 8, 10], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 14 })], false);
   });
 
   it('I4 venomous: a hit records the poisoned player, and the next round takes 1 HP first and clears the list', async () => {
     const venomWolf = { ...wolf, traits: ['venomous' as const] };
     const hit = repo();
     vi.mocked(hit.getRoundContext).mockResolvedValue({ ...(await hit.getRoundContext('round-1')), currentEncounter: { enemies: [venomWolf] } });
-    await go(hit, [5, 2, 11], attackPlan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
+    await go(hit, [5, 2, 10], attackPlan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
     expect(hit.setEncounter).toHaveBeenCalledWith('camp-1', expect.objectContaining({ poisoned: ['p1'] }));
 
     const next = repo();
@@ -1070,7 +1070,7 @@ describe('processRound I2 enemy attacks against AC', () => {
     id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
     revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 }, armorReduction: 1, armorWeight: 1,
   };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
   const repo = (over: object = {}) =>
     createFakeRepository({
       getRoundContext: vi.fn().mockResolvedValue({
@@ -1091,41 +1091,41 @@ describe('processRound I2 enemy attacks against AC', () => {
   };
   const plan = '{"checks":[],"enemyAttacks":[{"enemy":"หมาป่า","player":"Prem"}]}';
 
-  it('a hit (d20 11 + 4 = 15 vs AC 15): rolls 1d6+1 = 4 with no armor reduction, tells the DM, shows it in the roll summary and stats', async () => {
+  it('a hit (d20 10 + 5 = 15 vs AC 15): rolls 1d8+2 = 5 with no armor reduction, tells the DM, shows it in the roll summary and stats', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 11], plan, 'หมาป่ากัด');
+    const generate = await go(repository, [5, 10], plan, 'หมาป่ากัด');
     expect(generate).toHaveBeenCalledTimes(2);
     const second = generate.mock.calls[1][0] as string;
-    expect(second).toContain('หมาป่า attacks Prem: d20 11 + 4 = 15 vs armor class 15 -> HIT');
+    expect(second).toContain('หมาป่า attacks Prem: d20 10 + 5 = 15 vs armor class 15 -> HIT');
     expect(second).not.toContain('FORMAT OF YOUR ANSWER');
-    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 16 })], false);
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 15 })], false);
     const rolls = vi.mocked(repository.insertRollSummary).mock.calls[0][2];
-    expect(rolls).toContainEqual({ playerDisplayName: 'หมาป่า', roll: 11, enemyAttack: { target: 'Prem', bonus: 4, total: 15, ac: 15, hit: true, critical: null } });
-    expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('หมาป่า โจมตี Prem') && l.includes('โดน −4 HP'))).toBe(true);
+    expect(rolls).toContainEqual({ playerDisplayName: 'หมาป่า', roll: 10, enemyAttack: { target: 'Prem', bonus: 5, total: 15, ac: 15, hit: true, critical: null } });
+    expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('หมาป่า โจมตี Prem') && l.includes('โดน −5 HP'))).toBe(true);
   });
 
-  it('a miss (d20 10 + 4 = 14 vs AC 15) costs nothing', async () => {
+  it('a miss (d20 9 + 5 = 14 vs AC 15) costs nothing', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 10], plan, 'หมาป่าพลาด');
+    const generate = await go(repository, [5, 9], plan, 'หมาป่าพลาด');
     expect(generate.mock.calls[1][0]).toContain('-> MISS');
     expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 20 })], false);
   });
 
-  it('nat 1 misses and nat 20 hits for doubled dice (2d6+1 = 7)', async () => {
+  it('nat 1 misses and nat 20 hits for doubled dice (2d8+2 = 8)', async () => {
     const miss = repo();
     await go(miss, [5, 1], plan, 'x');
     expect(miss.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 20 })], false);
     const crit = repo();
     const generate = await go(crit, [5, 20], plan, 'x');
     expect(generate.mock.calls[1][0]).toContain('CRITICAL HIT');
-    expect(crit.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 13 })], false);
+    expect(crit.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 12 })], false);
   });
 
-  it('a ward is spent on the hit (4 - 2 = 2 damage)', async () => {
+  it('a ward is spent on the hit (5 - 2 = 3 damage)', async () => {
     const ward = { effects: ['ward'], setTheme: null, setSkillBonus: 0 };
     const repository = repo({ characters: [{ ...prem, itemEffects: ward }] });
-    await go(repository, [5, 11], plan, 'x');
-    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 18 })], false);
+    await go(repository, [5, 10], plan, 'x');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 17 })], false);
   });
 
   it('ยืนบัง: the warrior guarding Prem takes the halved hit', async () => {
@@ -1137,31 +1137,31 @@ describe('processRound I2 enemy attacks against AC', () => {
         { playerDisplayName: 'Bram', actionText: 'ยืนบัง Prem', playerId: 'w1', useAbility: true, abilityTargetId: 'p1' },
       ],
     });
-    await go(repository, [5, 5, 11], plan, 'x');
+    await go(repository, [5, 5, 10], plan, 'x');
     const saved = vi.mocked(repository.saveCharacterState).mock.calls[0][1] as { id: string; hp: number }[];
     expect(saved.find((c) => c.id === 'p1')?.hp).toBe(20);
-    expect(saved.find((c) => c.id === 'w1')?.hp).toBe(28); // ceil(4 / 2)
+    expect(saved.find((c) => c.id === 'w1')?.hp).toBe(27); // ceil(5 / 2)
   });
 
   it('narration fallback: an [[enemy_attack]] tag in a pure narration is rolled by the same formula and reported in the stats summary', async () => {
     const repository = repo();
-    // rollDie: Prem's action die 5, then the fallback d20 = 11 (hit vs AC 15).
-    const generate = await go(repository, [5, 11], JSON.stringify({ narration: 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]' }));
+    // rollDie: Prem's action die 5, then the fallback d20 = 10 (hit vs AC 15).
+    const generate = await go(repository, [5, 10], JSON.stringify({ narration: 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]' }));
     expect(generate).toHaveBeenCalledTimes(1);
     expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
-    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 16 })], false);
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 15 })], false);
     expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('หมาป่า โจมตี Prem') && l.includes('เทียบ AC 15'))).toBe(true);
   });
 
   it('the tag is ignored when the plan already listed enemy attacks (no double roll)', async () => {
     const repository = repo();
-    await go(repository, [5, 11, 11], plan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
-    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 16 })], false);
+    await go(repository, [5, 10, 10], plan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 15 })], false);
   });
 
   it('an unknown enemy or player in the plan is ignored and the round still completes', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 11], '{"checks":[],"enemyAttacks":[{"enemy":"มังกร","player":"Prem"}]}', 'เล่า');
+    const generate = await go(repository, [5, 10], '{"checks":[],"enemyAttacks":[{"enemy":"มังกร","player":"Prem"}]}', 'เล่า');
     expect(generate).toHaveBeenCalledTimes(2);
     expect(generate.mock.calls[1][0]).not.toContain('Enemy attacks this round');
     expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
@@ -1170,7 +1170,7 @@ describe('processRound I2 enemy attacks against AC', () => {
 
 describe('processRound scrolls (F5e)', () => {
   const scrollItem = { itemId: 'scroll_flame', customName: '', quantity: 1, slot: null, equipped: false };
-  const wolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 3, maxPip: 3, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 6, maxPip: 6, fled: false };
   const scrollContext = (over: object = {}) =>
     contextWith({
       inventories: { p1: [scrollItem] },
@@ -1187,7 +1187,7 @@ describe('processRound scrolls (F5e)', () => {
     const prompt = generateNarration.mock.calls[0][0] as string;
     expect(prompt).toContain('read ม้วนคัมภีร์เปลวไฟ at หมาป่า');
     expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [], baseItems: [scrollItem] }]);
-    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 4 }] });
     expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
   });
 
@@ -1583,7 +1583,7 @@ describe('processRound cooldown map persistence (K2)', () => {
 
 describe('processRound campaign stats (L1)', () => {
   const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
   const make = (addCampaignStats: RoundRepository['addCampaignStats'], over: object = {}) => createFakeRepository({
     addCampaignStats,
     getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
@@ -1593,7 +1593,7 @@ describe('processRound campaign stats (L1)', () => {
 
   it('counts the round, the fallen enemy by tier and the gold earned', async () => {
     const add = vi.fn().mockResolvedValue(undefined);
-    await run(make(add, { currentEncounter: { enemies: [wolf] } }), ['[[enemy_hurt: หมาป่า | heavy]]', '[[gold: Prem | small]]'].join('\n'));
+    await run(make(add, { currentEncounter: { enemies: [{ ...wolf, pip: 2 }] } }), ['[[enemy_hurt: หมาป่า | heavy]]', '[[gold: Prem | small]]'].join('\n'));
     expect(add).toHaveBeenCalledTimes(1);
     expect(add).toHaveBeenCalledWith('camp-1', expect.objectContaining({
       rounds: 1, defeated: { minion: 0, normal: 1, strong: 0, boss: 0 }, gold: 4, magicItems: 0, downs: 0, deaths: 0, nat20: 0,
@@ -1617,7 +1617,7 @@ describe('processRound campaign stats (L1)', () => {
 
 describe('processRound campaign end (L2)', () => {
   const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
   const stats = (rounds: number, chapterBase?: number) => ({ ...emptyStats(), rounds, ...(chapterBase ? { chapterBase } : {}) });
   const make = (rounds: number, over: object = {}, chapterBase?: number) => {
     const endCampaign = vi.fn().mockResolvedValue(undefined);

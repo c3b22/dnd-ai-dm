@@ -4,7 +4,7 @@ vi.mock('./client', () => ({ supabaseBrowserClient: {} }));
 
 import { fetchEncounter, subscribeToEncounter } from './encounter';
 
-const valid = { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 2, maxPip: 2, fled: false }] };
+const valid = { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 4, maxPip: 4, fled: false }] };
 
 function fakeFetchClient(result: unknown) {
   const query: any = {

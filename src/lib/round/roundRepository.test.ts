@@ -696,7 +696,7 @@ describe('createSupabaseRoundRepository economy', () => {
 });
 
 describe('createSupabaseRoundRepository encounter', () => {
-  const wolf = { name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal', pip: 2, maxPip: 4, fled: false };
 
   it('reads a valid stored encounter into the round context', async () => {
     const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, currentEncounter: { enemies: [wolf] } });

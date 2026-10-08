@@ -8,7 +8,7 @@ import { combatPrompt } from './prompt';
 
 const hero = (over: Partial<Character> = {}): Character =>
   ({ id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, gold: 0, xp: 0, ...over }) as Character;
-const mk = (over: Partial<EncounterEnemy> = {}): EncounterEnemy => ({ name: 'X', tier: 'normal', pip: 2, maxPip: 2, fled: false, ...over });
+const mk = (over: Partial<EncounterEnemy> = {}): EncounterEnemy => ({ name: 'X', tier: 'normal', pip: 4, maxPip: 4, fled: false, ...over });
 const enc = (...enemies: EncounterEnemy[]): Encounter => ({ enemies });
 const sides3 = () => 3;
 
@@ -50,7 +50,7 @@ describe('encounter storage', () => {
   });
 
   it('normalizes old encounters without traits and keeps valid new fields', () => {
-    expect(normalizeEncounter({ enemies: [{ name: 'a', tier: 'normal', pip: 2, maxPip: 2, fled: false }] })).toEqual(enc(mk({ name: 'a' })));
+    expect(normalizeEncounter({ enemies: [{ name: 'a', tier: 'normal', pip: 4, maxPip: 4, fled: false }] })).toEqual(enc(mk({ name: 'a' })));
     const full = { enemies: [{ ...mk({ name: 'a' }), traits: ['armored', 'bogus', 'pack', 'brute'], calm: 1 }], round: 3, poisoned: ['p1', 5] };
     expect(normalizeEncounter(full)).toEqual({ enemies: [mk({ name: 'a', traits: ['armored', 'pack'], calm: 1 })], round: 3, poisoned: ['p1'] });
   });
@@ -73,7 +73,9 @@ describe('advanceEncounter (round counter, regenerating, venom)', () => {
     const two = advanceEncounter(one, enc(r(1, 1)))!;
     expect(two.enemies[0].pip).toBe(2);
     expect(two.enemies[0].calm ?? 0).toBe(0);
-    expect(advanceEncounter(enc(r(2, 1)), enc(r(2, 1)))!.enemies[0].pip).toBe(2);
+    const full = (calm: number) => mk({ traits: ['regenerating'], pip: 4, calm });
+    expect(advanceEncounter(enc(full(1)), enc(full(1)))!.enemies[0].pip).toBe(4);
+    expect(advanceEncounter(enc(r(2, 1)), enc(r(2, 1)))!.enemies[0].pip).toBe(3);
   });
 
   it('being hit resets the calm counter and a non-regenerating enemy never heals', () => {
@@ -178,11 +180,11 @@ describe('enemy attacks with traits', () => {
   it('boss_signature lets a boss attack 2 different players every 3rd round, else only 1', () => {
     const heroes = [hero(), hero({ id: 'p2', displayName: 'Nok' })];
     const two = [{ enemy: 'X', player: 'Prem' }, { enemy: 'X', player: 'Nok' }, { enemy: 'X', player: 'Prem' }];
-    const boss = (round: number): Encounter => ({ ...enc(mk({ tier: 'boss', pip: 5, maxPip: 5, traits: ['boss_signature'] })), round });
+    const boss = (round: number): Encounter => ({ ...enc(mk({ tier: 'boss', pip: 10, maxPip: 10, traits: ['boss_signature'] })), round });
     expect(runEnemyAttacks(two, heroes, boss(3), () => 10, sides3).map((o) => o.playerDisplayName)).toEqual(['Prem', 'Nok']);
     expect(runEnemyAttacks(two, heroes, boss(6), () => 10, sides3)).toHaveLength(2);
     expect(runEnemyAttacks(two, heroes, boss(2), () => 10, sides3)).toHaveLength(1);
-    expect(runEnemyAttacks(two, heroes, enc(mk({ tier: 'boss', pip: 5, maxPip: 5 })), () => 10, sides3)).toHaveLength(1);
+    expect(runEnemyAttacks(two, heroes, enc(mk({ tier: 'boss', pip: 10, maxPip: 10 })), () => 10, sides3)).toHaveLength(1);
   });
 
   it('an outcome still applies as before', () => {
@@ -196,7 +198,7 @@ describe('prompt lists traits', () => {
     const text = combatPrompt(enc(mk({ traits: ['armored', 'pack'] })), true).join('\n');
     expect(text).toContain('[[enemy: Name | minion/normal/strong/boss | trait1, trait2]]');
     for (const id of ENEMY_TRAIT_IDS) expect(text).toContain(id);
-    expect(text).toContain('- X (normal) [armored, pack]: 2/2 pips');
+    expect(text).toContain('- X (normal) [armored, pack]: 4/4 pips');
   });
 });
 

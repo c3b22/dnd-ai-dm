@@ -8,10 +8,10 @@ export const COLLAPSE_AFTER = 4;
 
 export type PipLevel = 'ok' | 'warn' | 'low';
 
-/** Full = ok, last pip (when there is more than one) = low, anything between = warn. */
+/** Full = ok, a quarter of the bar or less (at least the last pip, when there is more than one) = low, anything between = warn. A 10-pip boss turns red at 2, a 4-pip enemy at 1. */
 export function pipLevel(pip: number, maxPip: number): PipLevel {
   if (pip >= maxPip) return 'ok';
-  if (pip <= 1 && maxPip > 1) return 'low';
+  if (maxPip > 1 && pip <= Math.max(1, Math.floor(maxPip / 4))) return 'low';
   return 'warn';
 }
 

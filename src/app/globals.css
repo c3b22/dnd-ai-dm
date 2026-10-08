@@ -295,7 +295,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .enc-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
 .enc-row { display: grid; gap: 3px; transition: opacity 0.3s; }
 .enc-row .hp-track.pips { gap: 2px; justify-content: flex-start; background: transparent; border: 0; height: 8px; overflow: visible; }
-.pip { flex: 1; height: 100%; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); }
+.pip { flex: 1 1 0; min-width: 0; max-width: 28px; height: 100%; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); }
 .pips.ok .pip.on { background: var(--teal); border-color: var(--teal); }
 .pips.warn .pip.on { background: var(--warn); border-color: var(--warn); }
 .pips.low .pip.on { background: var(--danger); border-color: var(--danger); }

@@ -4,10 +4,11 @@ import type { Character } from '@/lib/character/types';
 import { attackBonuses, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, resolveAttack, resolveEnemyAttack, runAttacks, runEnemyAttacks } from './attack';
 import type { Encounter } from './encounter';
 import { MAGIC_ITEMS } from '@/lib/inventory/magicItems';
+import { TIER_PIPS } from './constants';
 
 const tiers = ['minion', 'normal', 'strong', 'boss'] as const;
 const thresholds = { minion: 11, normal: 13, strong: 15, boss: 17 };
-const maxPips = { minion: 1, normal: 2, strong: 3, boss: 5 };
+const maxPips = TIER_PIPS;
 
 describe('resolveAttack hit threshold', () => {
   for (const tier of tiers) {
@@ -181,15 +182,15 @@ describe('enemy attacks against AC (I2)', () => {
   const roll = (c: Character, tier: (typeof tiers)[number], die: number, sides: (n: number) => number = () => 3) =>
     runEnemyAttacks(plan, [c], one(tier), () => die, sides);
 
-  it('attack bonus by tier: minion +3, normal +4, strong +5, boss +7', () => {
-    for (const [tier, bonus] of [['minion', 3], ['normal', 4], ['strong', 5], ['boss', 7]] as const) {
+  it('attack bonus by tier: minion +3, normal +5, strong +6, boss +9', () => {
+    for (const [tier, bonus] of [['minion', 3], ['normal', 5], ['strong', 6], ['boss', 9]] as const) {
       expect(resolveEnemyAttack({ die: 10, tier, ac: 99 })).toMatchObject({ bonus, total: 10 + bonus });
     }
   });
 
   it('hits when d20 + bonus reaches AC and misses one below', () => {
-    expect(resolveEnemyAttack({ die: 9, tier: 'normal', ac: 14 })).toMatchObject({ hit: false, total: 13, critical: null });
-    expect(resolveEnemyAttack({ die: 10, tier: 'normal', ac: 14 })).toMatchObject({ hit: true, total: 14, critical: null });
+    expect(resolveEnemyAttack({ die: 8, tier: 'normal', ac: 14 })).toMatchObject({ hit: false, total: 13, critical: null });
+    expect(resolveEnemyAttack({ die: 9, tier: 'normal', ac: 14 })).toMatchObject({ hit: true, total: 14, critical: null });
   });
 
   it('nat 1 always misses (even against AC 1) and nat 20 always hits (even against AC 99)', () => {
@@ -202,14 +203,14 @@ describe('enemy attacks against AC (I2)', () => {
     expect(roll(hero({ armorReduction: 1, armorWeight: 1 }), 'minion', 7)[0]).toMatchObject({ ac: 12, hit: false, damage: 0 });
   });
 
-  it('damage dice by tier: 1d4, 1d6+1, 2d4+2, 2d6+2 (every die rolls 3)', () => {
-    for (const [tier, dmg] of [['minion', 3], ['normal', 4], ['strong', 8], ['boss', 8]] as const) {
+  it('damage dice by tier: 1d4, 1d8+2, 2d6+3, 3d6+4 (every die rolls 3)', () => {
+    for (const [tier, dmg] of [['minion', 3], ['normal', 5], ['strong', 9], ['boss', 13]] as const) {
       expect(roll(hero(), tier, 19)[0].damage).toBe(dmg);
     }
   });
 
-  it('nat 20 doubles the damage dice but not the flat bonus: boss 4d6+2, minion 2d4', () => {
-    expect(roll(hero(), 'boss', 20)[0]).toMatchObject({ critical: 'success', damage: 14 });
+  it('nat 20 doubles the damage dice but not the flat bonus: boss 6d6+4, minion 2d4', () => {
+    expect(roll(hero(), 'boss', 20)[0]).toMatchObject({ critical: 'success', damage: 22 });
     expect(roll(hero(), 'minion', 20)[0].damage).toBe(6);
   });
 
@@ -228,9 +229,9 @@ describe('enemy attacks against AC (I2)', () => {
 
   it('applies a hit with no armor reduction, reports it and downs a player at 0 hp', () => {
     const heavy = hero({ armorReduction: 3, armorWeight: 3 }); // AC 16
-    const r = applyEnemyAttackOutcomes([heavy], roll(heavy, 'boss', 18)); // 18 + 7 hits, 2d6+2 = 8
-    expect(r.characters[0].hp).toBe(12);
-    expect(r.changes[0]).toContain('X โจมตี Prem: ทอย 18+7 = 25 เทียบ AC 16 โดน −8 HP');
+    const r = applyEnemyAttackOutcomes([heavy], roll(heavy, 'boss', 18)); // 18 + 9 hits, 3d6+4 = 13
+    expect(r.characters[0].hp).toBe(7);
+    expect(r.changes[0]).toContain('X โจมตี Prem: ทอย 18+9 = 27 เทียบ AC 16 โดน −13 HP');
     const low = applyEnemyAttackOutcomes([hero({ hp: 5 })], roll(hero(), 'boss', 15));
     expect(low.characters[0]).toMatchObject({ hp: 0, status: 'downed' });
     expect(low.changes).toContain('Prem ล้มลง');
@@ -257,10 +258,10 @@ describe('enemy attacks against AC (I2)', () => {
     const guards = { p1: 'w1' };
 
     it('the warrior takes the hit instead, halved (rounded up), and Prem is untouched', () => {
-      const r = applyEnemyAttackOutcomes([hero(), warrior], roll(hero(), 'boss', 15), new Set(), guards); // 8 damage
+      const r = applyEnemyAttackOutcomes([hero(), warrior], roll(hero(), 'boss', 15), new Set(), guards); // 13 damage
       expect(r.characters[0].hp).toBe(20);
-      expect(r.characters[1].hp).toBe(26);
-      expect(r.changes[0]).toContain('Bram รับดาเมจแทน Prem −4 HP');
+      expect(r.characters[1].hp).toBe(23);
+      expect(r.changes[0]).toContain('Bram รับดาเมจแทน Prem −7 HP');
     });
 
     it('a miss costs the warrior nothing', () => {
@@ -271,7 +272,7 @@ describe('enemy attacks against AC (I2)', () => {
     it('a downed warrior no longer guards', () => {
       const down = { ...warrior, status: 'downed' as const, hp: 0 };
       const r = applyEnemyAttackOutcomes([hero(), down], roll(hero(), 'boss', 15), new Set(), guards);
-      expect(r.characters[0].hp).toBe(12);
+      expect(r.characters[0].hp).toBe(7);
     });
   });
 
@@ -281,7 +282,7 @@ describe('enemy attacks against AC (I2)', () => {
     it('rolls the same formula and reports it', () => {
       const r = applyEnemyAttackTags([hero()], one('normal'), [tag], () => 15, () => 3);
       expect(r.outcomes).toHaveLength(1);
-      expect(r.characters[0].hp).toBe(16);
+      expect(r.characters[0].hp).toBe(15);
       expect(r.changes[0]).toContain('X โจมตี Prem');
     });
 
@@ -323,18 +324,18 @@ describe('ward (F5j4) on enemy attacks', () => {
   const boss: Encounter = enc({ name: 'X', tier: 'boss', pip: 1, maxPip: maxPips.boss, fled: false });
   const plan = [{ enemy: 'X', player: 'Prem' }];
   const ward = (n?: number) => ({ effects: ['ward' as const], setTheme: null, setSkillBonus: 0, ...(n ? { ward: n } : {}) });
-  const hits = (c: Character, encounter: Encounter = boss, die = 15) => runEnemyAttacks(plan, [c], encounter, () => die, () => 3); // boss damage 8
+  const hits = (c: Character, encounter: Encounter = boss, die = 15) => runEnemyAttacks(plan, [c], encounter, () => die, () => 3); // boss damage 13
 
   it('default ward takes 2 off, only for the first hit of the round', () => {
-    const w = hero({ itemEffects: ward() });
+    const w = hero({ itemEffects: ward(), hp: 40, maxHp: 40 });
     const r = applyEnemyAttackOutcomes([w], [...hits(w), ...hits(w)]);
-    expect(r.characters[0].hp).toBe(20 - (8 - 2) - 8);
+    expect(r.characters[0].hp).toBe(40 - (13 - 2) - 13);
     expect(r.changes[0]).toContain('เกราะวิเศษกัน 2');
   });
 
   it('ward 3 takes 3 off', () => {
     const w = hero({ itemEffects: ward(3) });
-    expect(applyEnemyAttackOutcomes([w], hits(w)).characters[0].hp).toBe(15);
+    expect(applyEnemyAttackOutcomes([w], hits(w)).characters[0].hp).toBe(10);
   });
 
   it('never cuts a hit below 1 and still spends the ward', () => {
@@ -357,7 +358,7 @@ describe('ward (F5j4) on enemy attacks', () => {
   it('ward also lowers the warrior guard hit', () => {
     const warrior = hero({ id: 'w1', displayName: 'Bram', hp: 30, maxHp: 30, itemEffects: ward() });
     const r = applyEnemyAttackOutcomes([hero(), warrior], hits(hero()), new Set(), { p1: 'w1' });
-    expect(r.characters[1].hp).toBe(30 - Math.ceil((8 - 2) / 2));
+    expect(r.characters[1].hp).toBe(30 - Math.ceil((13 - 2) / 2));
   });
 });
 

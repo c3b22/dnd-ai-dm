@@ -12,7 +12,7 @@ import type { Encounter } from './encounter';
 // K4: how a spell's one-round effects change the dice of the rest of the round.
 const hero = (over: Partial<Character> = {}): Character =>
   ({ id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active', revivesSinceSanctuary: 0, gold: 0, xp: 0, classId: 'warrior', abilities: { STR: 14, DEX: 14, CON: 12, INT: 10, WIS: 10, CHA: 10 }, ...over }) as Character;
-const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
 const enc = (...enemies: Encounter['enemies']): Encounter => ({ enemies });
 const seq = (...values: number[]) => { let i = 0; return () => values[Math.min(i++, values.length - 1)]; };
 
@@ -98,12 +98,12 @@ describe('round effects on enemy attacks', () => {
     expect(r.outcomes).toEqual([]);
     expect(r.characters[0].hp).toBe(20);
   });
-  it('a spell AC bonus raises the AC the enemy rolls against (12 + 3 = 15: a 11 + 4 hits only without it)', () => {
-    // hero AC = 10 + DEX +2 = 12; wolf bonus +4
+  it('a spell AC bonus raises the AC the enemy rolls against (12 + 3 = 15: a 9 + 5 hits only without it)', () => {
+    // hero AC = 10 + DEX +2 = 12; wolf bonus +5
     expect(armorClass(hero())).toBe(12);
     expect(armorClass(hero({ roundAcBonus: 3 }))).toBe(15);
     expect(roll(undefined, seq(11))[0]).toMatchObject({ ac: 12, hit: true });
-    expect(roll(undefined, seq(10), hero({ roundAcBonus: 3 }))[0]).toMatchObject({ ac: 15, hit: false });
+    expect(roll(undefined, seq(9), hero({ roundAcBonus: 3 }))[0]).toMatchObject({ ac: 15, hit: false });
   });
   it('a ward spell lowers the first hit by its value and is spent', () => {
     const warded = hero({ roundWard: 3 });

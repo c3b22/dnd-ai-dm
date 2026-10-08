@@ -46,8 +46,8 @@ const prem = {
   id: 'p2', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0,
   classId: 'warrior', xp: 0, abilityCooldown: 0, abilities: { STR: 15, DEX: 14, CON: 14, INT: 8, WIS: 12, CHA: 10 },
 };
-const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
-const strongWolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 3, maxPip: 3, fled: false };
+const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
+const strongWolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 6, maxPip: 6, fled: false };
 
 const attackPlan = '{"checks":[],"attacks":[{"player":"Mira","target":"หมาป่า","advantage":"none"}],"enemyAttacks":[{"enemy":"หมาป่า","player":"Prem"}]}';
 const enemyOnlyPlan = '{"checks":[],"enemyAttacks":[{"enemy":"หมาป่า","player":"Prem"}]}';
@@ -81,11 +81,11 @@ describe('processRound spells (K4)', () => {
     expect(first).toContain('(server: ');
     expect(first).toContain('ร่ายหอกน้ำแข็ง');
     expect(first).toContain('Spells cast above are resolved by the server');
-    // 15 + 4 = 19 vs AC 15: hit, 2 pips: 3 -> 1; the dazed strong wolf (+5) rolls two dice and keeps the 4
-    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...strongWolf, pip: 1 }] });
+    // 15 + 4 = 19 vs AC 15: hit, 2 pips: 6 -> 4; the dazed strong wolf (+6) rolls two dice and keeps the 4
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...strongWolf, pip: 4 }] });
     const second = generate.mock.calls[1][0] as string;
     expect(second).toContain('rolled with disadvantage, the enemy is dazed');
-    expect(second).toContain('d20 4 + 5 = 9 vs armor class 12 (rolled with disadvantage, the enemy is dazed) -> MISS');
+    expect(second).toContain('d20 4 + 6 = 10 vs armor class 12 (rolled with disadvantage, the enemy is dazed) -> MISS');
     expect(savedState(repository).find((c) => c.id === 'p1')).toMatchObject({ spellSlotsUsed: 1 });
     expect(savedState(repository).find((c) => c.id === 'p2')).toMatchObject({ hp: 20 });
     expect(vi.mocked(repository.saveSpellSlotsUsed!).mock.calls[0][0].map((c) => [c.id, c.spellSlotsUsed])).toEqual([['p1', 1]]);
@@ -141,17 +141,17 @@ describe('processRound spells (K4)', () => {
 
   it('arcane shield raises Prem\'s AC to 15 for the enemy attack that round (14 would hit AC 12)', async () => {
     const { repository, go } = setup({ spellId: 'arcane_shield', itemTarget: null, abilityTargetId: 'p2' });
-    const generate = await go([5, 10], enemyOnlyPlan, 'โล่เวทกันไว้');
-    expect(generate.mock.calls[1][0]).toContain('d20 10 + 4 = 14 vs armor class 15 -> MISS');
+    const generate = await go([5, 9], enemyOnlyPlan, 'โล่เวทกันไว้');
+    expect(generate.mock.calls[1][0]).toContain('d20 9 + 5 = 14 vs armor class 15 -> MISS');
     expect(savedState(repository).find((c) => c.id === 'p2')).toMatchObject({ hp: 20 });
     // the bonus is for the round only: never part of the saved character
     expect(savedState(repository).find((c) => c.id === 'p2')).not.toHaveProperty('roundAcBonus', 3);
   });
 
-  it('spell ward lowers the first hit on Prem (1d6+1 with rollSides 3 = 4, ward 3 -> 1 damage)', async () => {
+  it('spell ward lowers the first hit on Prem (1d8+2 with rollSides 3 = 5, ward 3 -> 2 damage)', async () => {
     const { repository, go } = setup({ spellId: 'spell_ward', itemTarget: null, abilityTargetId: 'p2' });
     await go([5, 15], enemyOnlyPlan, 'x');
-    expect(savedState(repository).find((c) => c.id === 'p2')).toMatchObject({ hp: 19 });
+    expect(savedState(repository).find((c) => c.id === 'p2')).toMatchObject({ hp: 18 });
   });
 
   it('quicken rhythm takes 2 off the friend\'s cooldown at the end of the round', async () => {
@@ -162,7 +162,7 @@ describe('processRound spells (K4)', () => {
   });
 
   it('spells still resolve and are shown at a table with dice rolls turned off', async () => {
-    const { repository, go } = setup({ spellId: 'frost_lance', itemTarget: 'หมาป่า' });
+    const { repository, go } = setup({ spellId: 'frost_lance', itemTarget: 'หมาป่า' }, { enemies: [{ ...wolf, pip: 2 }] });
     vi.mocked(repository.getRoundContext).mockResolvedValue({
       ...(await repository.getRoundContext('round-1')),
       settings: { diceEnabled: false } as never,

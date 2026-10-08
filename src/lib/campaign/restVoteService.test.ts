@@ -79,7 +79,7 @@ describe('handleRestAction', () => {
 
   it('refuses to propose during an encounter', async () => {
     const w = mk();
-    w.campaign.current_encounter = { enemies: [{ name: 'Goblin', tier: 'normal', pip: 2, maxPip: 2, fled: false }] };
+    w.campaign.current_encounter = { enemies: [{ name: 'Goblin', tier: 'normal', pip: 4, maxPip: 4, fled: false }] };
     await expect(run(w, 'u1', 'propose', 'long')).rejects.toMatchObject({ code: 'in_encounter', status: 409 });
   });
 

@@ -17,6 +17,9 @@ export const WEAPON_ATTACK_ABILITIES: Record<string, readonly AbilityKey[]> = {
   fists: ['STR'],
 };
 
+/** I6: pips an enemy starts with, by tier (also its health bar length; the EncounterPanel draws up to the largest of these). */
+export const TIER_PIPS: Record<EnemyTier, number> = { minion: 2, normal: 4, strong: 6, boss: 10 };
+
 /** Pips a normal hit removes. */
 export const HIT_PIPS = 1;
 /** Pips a heavy blow (big damage roll or natural 20) removes. */
@@ -29,13 +32,13 @@ export const LIFESTEAL_HEAL = 1;
 export const HEAVY_DAMAGE_RATIO = 0.75;
 
 /** I2: an enemy's attack roll is d20 + this bonus against the player's armor class (nat 1 always misses, nat 20 always hits). */
-export const ENEMY_ATTACK_BONUS: Record<EnemyTier, number> = { minion: 3, normal: 4, strong: 5, boss: 7 };
+export const ENEMY_ATTACK_BONUS: Record<EnemyTier, number> = { minion: 3, normal: 5, strong: 6, boss: 9 };
 /** I2: damage dice an enemy rolls on a hit (a natural 20 doubles the dice, not the flat bonus). Armor already counted in AC, so it no longer reduces this. */
 export const ENEMY_DAMAGE_DICE: Record<EnemyTier, DiceSpec> = {
   minion: { count: 1, sides: 4, bonus: 0 },
-  normal: { count: 1, sides: 6, bonus: 1 },
-  strong: { count: 2, sides: 4, bonus: 2 },
-  boss: { count: 2, sides: 6, bonus: 2 },
+  normal: { count: 1, sides: 8, bonus: 2 },
+  strong: { count: 2, sides: 6, bonus: 3 },
+  boss: { count: 3, sides: 6, bonus: 4 },
 };
 /** K3: an enemy's saving throw is d20 + this bonus against a spell's DC (nat 20 always saves, nat 1 always fails). */
 export const ENEMY_SAVE_BONUS: Record<EnemyTier, number> = { minion: 0, normal: 2, strong: 4, boss: 6 };
