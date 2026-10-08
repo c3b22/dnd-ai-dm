@@ -353,3 +353,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .rest-panel .rest-votes { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
 .rest-panel .rest-left, .rest-panel .rest-reason { font-size: 12px; color: var(--muted); margin: 0; }
 .rest-panel .rest-error { font-size: 12px; color: var(--danger, #e5484d); margin: 0; }
+
+/* Collapsible rail cards (P2): header bar sits on top of the child card; the child's own h3 is hidden to avoid a duplicate title */
+.collapsible { display: grid; }
+.collapsible-toggle { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; color: var(--muted); font: inherit; font-size: 12px; letter-spacing: 0.1em; font-weight: 500; text-transform: uppercase; cursor: pointer; text-align: left; }
+.collapsible-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.collapsible.is-open > .collapsible-toggle { border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; padding-bottom: 0; }
+.collapsible.is-open > .card, .collapsible.is-open > form.card { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; padding-top: 6px; }
+.collapsible > .card > h3, .collapsible > .card > .enc-head > h3 { display: none; }

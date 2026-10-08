@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 
 const { getAdventureById, campaignRow, supabaseBrowserClient, fetchEncounter, subscribeToEncounter, unsubscribeEncounter } = vi.hoisted(() => {
   const campaignRow: { current: Record<string, unknown> } = { current: {} };
@@ -99,6 +99,15 @@ vi.mock('@/components/CampaignSettingsPanel', () => ({ CampaignSettingsPanel: ()
 
 import CampaignPage from './page';
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
+// P2: these rail cards start collapsed; open one by its header button.
+async function expandCard(title: string) {
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${title}`) }));
+}
+
 const customAdventure = {
   id: '11111111-1111-1111-1111-111111111111',
   titleTh: 'เรื่องที่ฉันแต่งเอง',
@@ -128,6 +137,7 @@ describe('CampaignPage — adventure title', () => {
     campaignRow.current = { current_round_id: null, name: '', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: customAdventure.id, current_scene_id: null };
     getAdventureById.mockResolvedValue(customAdventure);
     await renderPage();
+    await expandCard('เรื่องที่เล่น');
     const quest = await screen.findByLabelText('เรื่องที่เล่น');
     expect(quest.textContent).toContain('เรื่องที่ฉันแต่งเอง');
     expect(quest.textContent).toContain('แทกไลน์ของฉัน');
@@ -213,12 +223,14 @@ describe('CampaignPage — quest log', () => {
     await renderPage();
     expect(fetchCampaignFacts).toHaveBeenCalledWith('c1');
     expect(subscribeToFacts).toHaveBeenCalledWith('c1', expect.any(Function));
+    await expandCard('สมุดบันทึก');
     expect((await screen.findByLabelText('NPC ที่พบ')).textContent).toContain('เกรตา');
   });
 
   it('shows the empty state and unsubscribes on unmount', async () => {
     campaignRow.current = started;
     await renderPage();
+    await expandCard('สมุดบันทึก');
     expect(await screen.findByText(/ยังไม่มีบันทึก/)).toBeTruthy();
     cleanup();
     expect(unsubscribeFacts).toHaveBeenCalled();

@@ -48,6 +48,7 @@ import { submitAction } from '@/lib/supabase/submitAction';
 import { classOf } from '@/lib/character/classes';
 import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
 import { itemLabel } from '@/lib/inventory/rules';
+import { CollapsibleCard } from '@/components/CollapsibleCard';
 import { fetchPendingTrades, requestSequel, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
 import type { TradeTerms } from '@/lib/economy/trade';
 import { normalizeShop } from '@/lib/economy/shop';
@@ -635,6 +636,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
         <aside className="rail">
           {players.length > 0 && (
+            <CollapsibleCard id="players" title="ผู้เล่นรอบนี้">
             <PlayerOrder
               players={players}
               currentPlayerId={playerId}
@@ -645,9 +647,18 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onClassChoice={handleClassChoice}
               reorderPolicy={settings.reorderPolicy}
             />
+            </CollapsibleCard>
           )}
-          <EncounterPanel encounter={encounter} />
+          <CollapsibleCard
+            id="encounter"
+            title="ศัตรู"
+            visible={Boolean(encounter)}
+            signal={encounter && encounter.enemies.length > 0 ? `enemies:${encounter.enemies.length}` : null}
+          >
+            <EncounterPanel encounter={encounter} />
+          </CollapsibleCard>
           {me && (
+            <CollapsibleCard id="inventory" title="กระเป๋า">
             <Inventory
               items={me.items}
               gold={me.gold}
@@ -658,11 +669,20 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               enemies={(encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name)}
               onUseScroll={handleUseScroll}
             />
+            </CollapsibleCard>
           )}
-          {!ended && shop && me && (
-            <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
-          )}
+          <CollapsibleCard id="shop" title="ร้านค้า" visible={Boolean(!ended && shop && me)} signal={shop ? shop.name : null}>
+            {shop && me && (
+              <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
+            )}
+          </CollapsibleCard>
           {!ended && me && (
+            <CollapsibleCard
+              id="trades"
+              title="แลกของ"
+              defaultOpen={trades.some((t) => t.toPlayerId === me.id)}
+              signal={trades.filter((t) => t.toPlayerId === me.id).length || null}
+            >
             <Trades
               me={me}
               players={players}
@@ -671,6 +691,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onRespond={handleRespond}
               error={tradeError}
             />
+            </CollapsibleCard>
           )}
           {!ended && roundId && settings.roundSeconds > 0 && (
             <RoundTimer
@@ -680,21 +701,29 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onExpire={() => setTimeUpRoundId(roundId)}
             />
           )}
-          <CampaignSettingsPanel
-            settings={settings}
-            isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
-            started={Boolean(startedAt)}
-            onSave={handleSaveSettings}
-          />
-          {!ended && <QuestLog facts={facts} />}
+          <CollapsibleCard id="settings" title="ตั้งค่าโต๊ะ" defaultOpen={false}>
+            <CampaignSettingsPanel
+              settings={settings}
+              isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
+              started={Boolean(startedAt)}
+              onSave={handleSaveSettings}
+            />
+          </CollapsibleCard>
+          {!ended && (
+            <CollapsibleCard id="questlog" title="สมุดบันทึก" defaultOpen={false}>
+              <QuestLog facts={facts} />
+            </CollapsibleCard>
+          )}
           {adventure && (
-            <section className="card" aria-label="เรื่องที่เล่น">
-              <h3>เรื่องที่เล่น</h3>
-              <div className="quest">
-                {adventure.titleTh}
-                <small>{adventure.taglineTh}</small>
-              </div>
-            </section>
+            <CollapsibleCard id="adventure" title="เรื่องที่เล่น" defaultOpen={false}>
+              <section className="card" aria-label="เรื่องที่เล่น">
+                <h3>เรื่องที่เล่น</h3>
+                <div className="quest">
+                  {adventure.titleTh}
+                  <small>{adventure.taglineTh}</small>
+                </div>
+              </section>
+            </CollapsibleCard>
           )}
           {!ended && roundId && (
             <button type="button" className="btn ghost" onClick={() => triggerProcessing(roundId)}>
