@@ -187,6 +187,10 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .compose input { flex: 1; }
 
 .rail { display: grid; gap: 14px; }
+.rail-summary { display: none; }
+@media (min-width: 861px) {
+  .rail { position: sticky; top: 12px; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+}
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
 .card h3 { font-size: 12px; letter-spacing: 0.1em; color: var(--muted); font-weight: 500; text-transform: uppercase; }
 .pl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
@@ -247,7 +251,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 
 @media (max-width: 860px) {
   .home-grid, .table-grid { grid-template-columns: minmax(0, 1fr); }
-  .rail { order: -1; }
+  .rail-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; position: sticky; top: 0; z-index: 20; padding: 8px 12px; font-size: 13px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); font-variant-numeric: tabular-nums; }
+  .rail-summary .rs-name { min-width: 0; overflow-wrap: anywhere; }
+  .rail-summary .rs-status { margin-left: auto; color: var(--muted); }
   .enc-toggle { display: inline-block; }
   .enc-list.collapsed { display: none; }
   .msg.pl { max-width: 94%; }

@@ -49,6 +49,7 @@ import { classOf } from '@/lib/character/classes';
 import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
 import { itemLabel } from '@/lib/inventory/rules';
 import { CollapsibleCard } from '@/components/CollapsibleCard';
+import { RailSummary, roundStatusText } from '@/components/RailSummary';
 import { fetchPendingTrades, requestSequel, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
 import type { TradeTerms } from '@/lib/economy/trade';
 import { normalizeShop } from '@/lib/economy/shop';
@@ -566,6 +567,15 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   return (
     <main className="screen">
       <div className="table-grid">
+        {me && (
+          <RailSummary
+            name={me.displayName}
+            hp={me.hp}
+            maxHp={me.maxHp}
+            gold={me.gold}
+            status={roundStatusText({ ended, processing, dead: me.status === 'dead', acted: me.acted, progress: actionStatus })}
+          />
+        )}
         <div className="stage">
           <div className="stage-head">
             <span className="n">{campaignName || adventure?.titleTh || 'โต๊ะเล่น'}</span>
