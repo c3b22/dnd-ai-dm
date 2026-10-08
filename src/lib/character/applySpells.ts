@@ -60,6 +60,7 @@ function mergeEffects(into: RoundEffects, add: RoundEffects): void {
   for (const [id, skills] of Object.entries(add.skillAdvantage)) into.skillAdvantage[id] = [...new Set([...(into.skillAdvantage[id] ?? []), ...skills])];
   for (const [enemy, statuses] of Object.entries(add.enemy)) into.enemy[enemy] = [...new Set([...(into.enemy[enemy] ?? []), ...statuses])];
   for (const [id, n] of Object.entries(add.cooldownCut)) into.cooldownCut[id] = (into.cooldownCut[id] ?? 0) + n;
+  if (add.hidden && add.hidden.size > 0) into.hidden = new Set([...(into.hidden ?? []), ...add.hidden]);
   for (const [id, mods] of Object.entries(add.attackMods ?? {})) into.attackMods = { ...into.attackMods, [id]: { ...into.attackMods?.[id], ...mods } };
 }
 
@@ -70,6 +71,8 @@ export function applySpellActions(input: {
   rollDie: () => number;
   /** K5: effects already set this round by class abilities (ward, AC, statuses, attack modifiers); spells add to them. */
   effects?: RoundEffects;
+  /** K6: players whose level 6 / 9 ability (mage_recover, mage_meteor) already took their action; they cast nothing. */
+  actionSpent?: string[];
 }): SpellActionsResult {
   let characters = input.characters.map((c) => ({ ...c }));
   let encounter = input.encounter;
@@ -88,6 +91,7 @@ export function applySpellActions(input: {
     if (!action.playerId || action.useItemId) continue;
     const caster = characters.find((c) => c.id === action.playerId);
     if (!caster || classOf(caster.classId)?.id !== 'mage') continue;
+    if (input.actionSpent?.includes(caster.id)) continue;
     if (!action.spellId) {
       // The surge only exists as part of a cast; on its own it does nothing and costs nothing.
       if (action.useAbility) notes[caster.id] = 'tried to use the arcane surge without choosing a spell, so nothing happened';

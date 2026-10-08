@@ -9,6 +9,9 @@ import { ENEMY_SAVE_BONUS } from '@/lib/combat/constants';
 import { findActiveEnemy, type Encounter } from '@/lib/combat/encounter';
 import { emptyRoundEffects, rollEnemySave, type EnemyStatus, type RoundEffects } from './spells';
 import { abilitySaveDc, hasSubclass, mainCooldownFor, replacementOf } from './subclasses';
+import { hasPick, isPickAbilityId, PICK_ABILITIES } from './abilityPicks';
+import { TWIN_SPARK_DIVISOR } from './abilityPickConstants';
+import { resolvePickAbility } from './pickAbilities';
 import {
   BERSERK_CRIT_PIPS, BERSERK_AC_PENALTY, BERSERK_HEAL_ON_DEFEAT, BERSERK_MIN_PIPS, ASSASSIN_EXTRA_PIPS_IF_FULL, FEINT_AC_BONUS,
   GUARDIAN_AC_BONUS, HUNTER_EXTRA_PIPS, LIFE_HEAL_BONUS, VOLLEY_SHOTS, VOLLEY_SHOTS_HI,
@@ -49,6 +52,10 @@ export interface AbilityResult {
   effects: RoundEffects;
   /** K5: enemy saves rolled by abilities (feint, radiant light), ready for the roll summary. */
   rolls: SpellRollEntry[];
+  /** K6: the fight after abilities took pips off (mage_meteor); the input one when nothing did. */
+  encounter: Encounter | null;
+  /** K6: players whose ability took their whole action (mage_recover, mage_meteor): no spell and no weapon attack. */
+  actionSpent: string[];
 }
 
 /**
@@ -82,6 +89,8 @@ export function applyAbilityActions(
   const usedExtra: { playerId: string; abilityId: string; cooldown: number }[] = [];
   const effects = emptyRoundEffects();
   const rolls: SpellRollEntry[] = [];
+  const actionSpent: string[] = [];
+  let workingEncounter = encounter;
   const addAc = (id: string, n: number) => {
     effects.acBonus[id] = (effects.acBonus[id] ?? 0) + n;
   };
@@ -98,6 +107,25 @@ export function applyAbilityActions(
     const user = next.find((c) => c.id === action.playerId);
     if (!user) continue;
     const cls = classOf(user.classId);
+    // K6: an ability picked at level 6 / 9. Only the owner's own pick works, and only an active one.
+    if (isPickAbilityId(action.abilityId)) {
+      const def = PICK_ABILITIES[action.abilityId];
+      if (user.status !== 'active' || def.kind !== 'active' || !hasPick(user, def.id) || cooldownOf(user, def.id) > 0) {
+        notes[user.id] = `tried to use ${def.nameTh} but it was not ready`;
+        continue;
+      }
+      const r = resolvePickAbility({
+        def, user, characters: next, encounter: workingEncounter, target: action.itemTarget ?? null, effects, rolls, rollDie,
+      });
+      notes[user.id] = r.note;
+      if (!r.ok) continue;
+      workingEncounter = r.encounter;
+      if (r.change) changes.push(r.change);
+      if (r.spentAction) actionSpent.push(user.id);
+      usedExtra.push({ playerId: user.id, abilityId: def.id, cooldown: def.cooldown });
+      usedAbilities.push({ playerId: user.id, abilityId: def.id });
+      continue;
+    }
     // K4: the mage's main ability (arcane surge) rides on a spell cast and is resolved with it (applySpellActions).
     if (cls?.id === 'mage') continue;
     // K5: a subclass may put a replacement ability in place of the main one; the main ability id or none picks it.
@@ -204,14 +232,26 @@ export function applyAbilityActions(
           }
         }
       }
+      // K6 cleric_twin_spark: healing a friend also heals the most hurt other friend for half of the roll.
+      let twin = '';
+      if (hasPick(user, 'cleric_twin_spark') && target.id !== user.id && heal > 0) {
+        const second = next.filter((c) => c.status === 'active' && c.id !== user.id && c.id !== target.id && c.hp < c.maxHp).sort((a, b) => a.hp - b.hp)[0];
+        if (second) {
+          const bonus = Math.min(second.maxHp - second.hp, Math.max(1, Math.floor(heal / TWIN_SPARK_DIVISOR)));
+          second.hp += bonus;
+          twin = ` ${second.displayName} +${bonus} HP`;
+        }
+      }
       notes[user.id] =
         `used ${ability.nameTh} on ${target.displayName} and restored ${gained} HP` +
+        (twin ? `; the twin spark also restored${twin}` : '') +
         (radiant ? (dazed.length > 0 ? `; the radiant light dazed ${dazed.join(', ')} for this round` : '; the radiant light dazed no enemy') : '');
       changes.push(
         (target.id === user.id
           ? `${user.displayName} ใช้${ability.nameTh} (+${gained} HP)`
           : `${user.displayName} ใช้${ability.nameTh} ให้ ${target.displayName} (+${gained} HP)`) +
-          (dazed.length > 0 ? ` แสงทำให้ ${dazed.join(', ')} มึนงง` : '')
+          (dazed.length > 0 ? ` แสงทำให้ ${dazed.join(', ')} มึนงง` : '') +
+          (twin ? ` ประกายซ้ำ${twin}` : '')
       );
     } else {
       let total = levelDamageBonus(level);
@@ -231,7 +271,7 @@ export function applyAbilityActions(
     usedAbilities.push({ playerId: user.id, abilityId: cls.id });
   }
 
-  return { characters: next, notes, damage, guards, used, usedAbilities, changes, usedExtra, effects, rolls };
+  return { characters: next, notes, damage, guards, used, usedAbilities, changes, usedExtra, effects, rolls, encounter: workingEncounter, actionSpent };
 }
 
 /**

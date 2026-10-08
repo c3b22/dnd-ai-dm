@@ -12,7 +12,7 @@ import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { takeItem } from '@/lib/inventory/rules';
 import { advanceEncounter, applyEnemyTags, type Encounter } from '@/lib/combat/encounter';
-import { applyDefeatHeals, applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
+import { applyDefeatHeals, applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyBloodRush, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -140,10 +140,10 @@ export async function processRound(
     // Class abilities resolve here too, before narration and unsaved until the end, like potions.
     abilities = applyAbilityActions(potions.characters, context.actions, rollSides, context.currentEncounter ?? null);
     // F5e: scrolls cut pips off the targeted enemy before narration; like potions nothing is saved until the end.
-    scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
+    scrolls = applyScrollActions(abilities.characters, potions.inventories, abilities.encounter, context.actions);
     // K4: spells resolve after scrolls on the same working encounter (pips, statuses, slots); like everything above,
     // nothing is saved until the end. They roll with the server's d20 even at a table without dice rolls.
-    spells = applySpellActions({ characters: abilities.characters, actions: context.actions, encounter: scrolls.encounter, rollDie: rollD20, effects: abilities.effects });
+    spells = applySpellActions({ characters: abilities.characters, actions: context.actions, encounter: scrolls.encounter, rollDie: rollD20, effects: abilities.effects, actionSpent: abilities.actionSpent });
     roundEncounter = spells.encounter;
     // H1: downed characters roll a death save before narration (dice tables only, like every other roll).
     // Unsaved until the end, like potions; a nat 20 stands the character up before the DM narrates.
@@ -211,7 +211,7 @@ export async function processRound(
         // who attacks does not also get a skill check this round.
         const damageByName = new Map(rolled.map((a) => [a.playerDisplayName.toLowerCase(), a.damage]));
         // A caster who cast a spell this round spent their action on it: no weapon attack on top.
-        const casterNames = new Set(roundCharacters.filter((c) => spells.casters.includes(c.id)).map((c) => c.displayName.toLowerCase()));
+        const casterNames = new Set(roundCharacters.filter((c) => spells.casters.includes(c.id) || abilities.actionSpent.includes(c.id)).map((c) => c.displayName.toLowerCase()));
         attackOutcomes =
           first.kind === 'checks'
             ? runAttacks(first.attacks.filter((a) => !casterNames.has(a.player.toLowerCase())), roundCharacters, roundEncounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie, spells.effects)
@@ -324,7 +324,9 @@ export async function processRound(
       const enemyAttacks = { characters: tagHits.characters, changes: [...plannedHits.changes, ...tagHits.changes] };
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
       const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : roundEncounter, attackOutcomes);
-      const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
+      // K6 warrior_blood_rush: same replay as lifesteal, for the warrior pick.
+      const bloodRush = applyBloodRush(lifesteal.characters, sceneChanged ? null : roundEncounter, attackOutcomes);
+      const result = applyCharacterTags(bloodRush.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
       const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
       // H3c: the corpse's things move to the looter; the corpse row is only written back after the pack save below.
       const lootable = context.corpses ?? [];
@@ -349,7 +351,7 @@ export async function processRound(
       // K4: the round-only spell bonuses (roundAcBonus / roundWard) end with the round and are never handed to the repository.
       const finalCharacters = settleDeathSaves(tickCooldowns(
         rest.characters,
-        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...defeatHealChanges, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
+        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...bloodRush.changes, ...defeatHealChanges, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
         [...abilities.used, ...spells.surgeUsed],
         abilities.usedExtra,
         spells.effects.cooldownCut
@@ -510,6 +512,7 @@ export async function processRound(
         ...spells.changes,
         ...enemyAttacks.changes,
         ...lifesteal.changes,
+        ...bloodRush.changes,
         ...defeatHealChanges,
         ...result.changes,
         ...xpResult.changes,

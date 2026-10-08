@@ -24,6 +24,8 @@ import {
 } from './spellConstants';
 import { ABILITY_UPGRADE_LEVEL } from './abilities';
 import { hasSubclass, type AttackMods } from './subclasses';
+import { hasPick } from './abilityPicks';
+import { DEEP_RESERVE_LEVEL, DEEP_RESERVE_SLOTS } from './abilityPickConstants';
 import {
   EVOKER_DC_BONUS, WARDER_ARCANE_SHIELD_AC, WARDER_ARCANE_SHIELD_AC_HI, WARDER_CONTROL_DC_BONUS, WARDER_CONTROL_SPELLS,
   WARDER_SPELL_WARD, WARDER_SPELL_WARD_HI,
@@ -80,7 +82,9 @@ export function mageSpellSlots(level: number): number {
 /** The mage's slots as the rest module wants them ({ current, max }); null for any other class. */
 export function spellSlotsOf(c: Character): SpellSlots | null {
   if (c.classId !== 'mage') return null;
-  const max = mageSpellSlots(levelOf(c));
+  const level = levelOf(c);
+  // K6 mage_deep_reserve: one more slot from level 6.
+  const max = mageSpellSlots(level) + (hasPick(c, 'mage_deep_reserve') && level >= DEEP_RESERVE_LEVEL ? DEEP_RESERVE_SLOTS : 0);
   const used = Math.min(max, Math.max(0, Math.floor(c.spellSlotsUsed ?? 0)));
   return { current: max - used, max };
 }
@@ -136,6 +140,8 @@ export interface RoundEffects {
   cooldownCut: Record<string, number>;
   /** K5: playerId -> changes to this round's weapon attack from a class ability or subclass (runAttacks). */
   attackMods?: Record<string, AttackMods>;
+  /** K6 rogue_shadow_step: playerIds the enemies cannot target this round (their attacks on them are skipped). */
+  hidden?: Set<string>;
 }
 
 export const emptyRoundEffects = (): RoundEffects => ({ acBonus: {}, ward: {}, advantage: new Set(), skillAdvantage: {}, enemy: {}, cooldownCut: {} });

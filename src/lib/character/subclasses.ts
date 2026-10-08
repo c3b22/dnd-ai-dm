@@ -8,6 +8,8 @@ import { proficiencyBonus, type ClassId, type SkillId } from './classes';
 import { levelForXp } from './leveling';
 import type { Character } from './types';
 import type { EnemyTier } from './tags';
+import { hasPick } from './abilityPicks';
+import { FREQUENT_SURGE_COOLDOWN } from './abilityPickConstants';
 import {
   BERSERK_COOLDOWN, FEINT_COOLDOWN, GUARDIAN_COOLDOWN, LIFE_COOLDOWN, TRICKSTER_EXPERTISE_SKILLS, VOLLEY_COOLDOWN,
 } from './subclassConstants';
@@ -98,7 +100,9 @@ export function replacementOf(c: Pick<Character, 'classId' | 'subclassId'>): Rep
 }
 
 /** Cooldown the main ability starts with after a use: guardian and life shorten it. */
-export function mainCooldownFor(c: Pick<Character, 'classId' | 'subclassId'>, classCooldown: number): number {
+export function mainCooldownFor(c: Pick<Character, 'classId' | 'subclassId'> & { abilityPicks?: Record<string, string> | null }, classCooldown: number): number {
+  // K6 mage_frequent_surge: the arcane surge comes back faster.
+  if (hasPick(c, 'mage_frequent_surge')) return FREQUENT_SURGE_COOLDOWN;
   const sub = subclassOf(c)?.id;
   if (sub === 'warrior_guardian') return GUARDIAN_COOLDOWN;
   if (sub === 'cleric_life') return LIFE_COOLDOWN;
@@ -130,4 +134,10 @@ export interface AttackMods {
   shots?: number;
   /** An enemy this attack defeats heals the attacker this much. */
   healOnDefeat?: number;
+  /** K6 sweep: this many separate swings (the chosen enemy and the next live ones), each with the weapon damage. */
+  spread?: number;
+  /** K6 piercing arrow: the enemy's armored / nimble AC bonus does not count. */
+  ignoreTraitAc?: boolean;
+  /** K6 smite: the attack is made with this ability's modifier instead of the weapon's. */
+  attackAbility?: AbilityKey;
 }

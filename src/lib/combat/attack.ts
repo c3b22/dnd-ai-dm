@@ -15,6 +15,8 @@ import { guardDivisor } from '@/lib/character/abilities';
 import { levelForXp } from '@/lib/character/leveling';
 import { damageEnemy, findActiveEnemy, hasTrait, type Encounter, type EncounterEnemy } from './encounter';
 import { hasSubclass } from '@/lib/character/subclasses';
+import { hasPick } from '@/lib/character/abilityPicks';
+import { BLOOD_RUSH_HEAL, HAWK_EYE_BONUS, WOUND_READER_BONUS } from '@/lib/character/abilityPickConstants';
 import { HUNTER_AC_REDUCTION } from '@/lib/character/subclassConstants';
 
 /** I4: armor class bonus an enemy's traits add against player attacks. */
@@ -102,7 +104,8 @@ export function attackBonuses(character: Character): { modifier: number; profici
   const keys = WEAPON_ATTACK_ABILITIES[baseId] ?? WEAPON_ATTACK_ABILITIES.fists;
   const abilities = normalizeAbilities(character.abilities);
   const modifier = Math.max(...keys.map((k) => abilityModifier(abilities[k])));
-  return { modifier, proficiency: proficiencyBonus(levelForXp(character.xp ?? 0)), magic: mechanic?.damageBonus ?? 0 };
+  // K6 archer_hawk_eye: +1 to every attack roll, added to the magic part.
+  return { modifier, proficiency: proficiencyBonus(levelForXp(character.xp ?? 0)), magic: (mechanic?.damageBonus ?? 0) + (hasPick(character, 'archer_hawk_eye') ? HAWK_EYE_BONUS : 0) };
 }
 
 const maxDamageOf = (character: Character): number => {
@@ -146,25 +149,28 @@ export function runAttacks(
     const damage = damageOf(character) ?? 0;
     const maxDamage = maxDamageOf(character);
     const bonuses = attackBonuses(character);
-    // K5: a class ability or subclass reshapes this attack (pips, several shots).
-    const shots = mods?.shots && mods.shots > 1 ? mods.shots : 1;
+    // K6 smite: the attack uses the modifier of another ability (WIS) instead of the weapon's.
+    if (mods?.attackAbility) bonuses.modifier = abilityModifier(normalizeAbilities(character.abilities)[mods.attackAbility]);
+    // K5: a class ability or subclass reshapes this attack (pips, several shots). K6 sweep swings at several enemies with the weapon damage.
+    const volley = mods?.shots && mods.shots > 1 ? mods.shots : 0;
+    const spread = !volley && mods?.spread && mods.spread > 1 ? mods.spread : 0;
+    const shots = volley || spread || 1;
     // Volley: the first shot goes to the chosen enemy, each next one to the next live enemy after it (else the same one).
+    // Sweep: the same, but with no other enemy standing the extra swing is simply lost.
     const followers = enemies.slice(enemies.indexOf(target) + 1).filter(isLive);
-    for (let shot = 1; shot <= shots; shot++) {
-      const current = shot === 1 ? target : followers.shift() ?? target;
-      if (!isLive(current)) {
-        if (shots === 1) break;
-        continue;
-      }
+    const fire = (current: EncounterEnemy, shotNo: number, plain: boolean): AttackOutcome => {
       const shotAdvantage = attack.advantage;
       const dice = shotAdvantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
       // K5 archer_hunter: strong and boss enemies are easier to hit (acts like keen_eye, and adds to it).
       const hunter = hasSubclass(character, 'archer_hunter') && (current.tier === 'strong' || current.tier === 'boss') ? HUNTER_AC_REDUCTION : 0;
+      // K6 rogue_wound_reader: a hurt enemy is easier to hit; counted with the magic bonus so the shown total adds up.
+      const reader = hasPick(character, 'rogue_wound_reader') && current.pip < current.maxPip ? WOUND_READER_BONUS : 0;
+      const shotBonuses = { ...bonuses, magic: bonuses.magic + reader };
       const r = resolveAttack({
         d20s: dice, advantage: shotAdvantage, tier: current.tier,
-        // Volley shots roll no weapon damage: a plain hit is 1 pip, only a natural 20 is heavy.
-        damage: shots > 1 ? 0 : damage, maxDamage: shots > 1 ? 1 : maxDamage,
-        ...bonuses, acBonus: traitAcBonus(current), critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) + hunter,
+        // Volley and chain shots roll no weapon damage: a plain hit is 1 pip, only a natural 20 is heavy.
+        damage: plain ? 0 : damage, maxDamage: plain ? 1 : maxDamage,
+        ...shotBonuses, acBonus: mods?.ignoreTraitAc ? 0 : traitAcBonus(current), critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) + hunter,
       });
       let pips = r.pips;
       if (r.hit && mods) {
@@ -174,7 +180,7 @@ export function runAttacks(
         if (mods.extraPipIfFull && current.pip >= current.maxPip) pips += mods.extraPipIfFull;
       }
       if (r.hit) damageEnemy(current, pips);
-      out.push({
+      return {
         playerId: character.id,
         playerDisplayName: character.displayName,
         target: current.name,
@@ -183,7 +189,7 @@ export function runAttacks(
         advantage: shotAdvantage,
         dice,
         die: r.die,
-        ...bonuses,
+        ...shotBonuses,
         total: r.total,
         hit: r.hit,
         critical: r.critical,
@@ -191,9 +197,24 @@ export function runAttacks(
         defeated: r.hit && current.pip === 0,
         damage,
         maxDamage,
-        ...(shot > 1 ? { shot } : {}),
-      });
+        ...(shotNo > 1 ? { shot: shotNo } : {}),
+      };
+    };
+    const mine: AttackOutcome[] = [];
+    for (let shot = 1; shot <= shots; shot++) {
+      const next = shot === 1 ? target : followers.shift() ?? (spread ? undefined : target);
+      if (!next || !isLive(next)) {
+        if (shots === 1) break;
+        continue;
+      }
+      mine.push(fire(next, shot, volley > 0));
     }
+    // K6 archer_chain_shot: once per round, when an arrow takes an enemy's last pip a bonus arrow flies at the weakest one left.
+    if (hasPick(character, 'archer_chain_shot') && mine.some((o) => o.defeated)) {
+      const weakest = enemies.filter(isLive).sort((x, y) => x.pip - y.pip)[0];
+      if (weakest) mine.push(fire(weakest, shots + 1, true));
+    }
+    out.push(...mine);
   }
   return out;
 }
@@ -220,6 +241,26 @@ export function applyLifesteal(
   encounter: Encounter | null,
   outcomes: AttackOutcome[]
 ): { characters: Character[]; changes: string[] } {
+  return healOnRealPipLoss(characters, encounter, outcomes, (c) => c.itemEffects?.effects.includes('lifesteal') ?? false, LIFESTEAL_HEAL, 'ดูดชีวิต');
+}
+
+/** K6 warrior_blood_rush: the same replay as lifesteal, for a warrior with the pick (BLOOD_RUSH_HEAL HP, once per round). */
+export function applyBloodRush(
+  characters: Character[],
+  encounter: Encounter | null,
+  outcomes: AttackOutcome[]
+): { characters: Character[]; changes: string[] } {
+  return healOnRealPipLoss(characters, encounter, outcomes, (c) => hasPick(c, 'warrior_blood_rush'), BLOOD_RUSH_HEAL, 'กระแสเลือด');
+}
+
+function healOnRealPipLoss(
+  characters: Character[],
+  encounter: Encounter | null,
+  outcomes: AttackOutcome[],
+  applies: (c: Character) => boolean,
+  amount: number,
+  label: string
+): { characters: Character[]; changes: string[] } {
   const next = characters.map((c) => ({ ...c }));
   const changes: string[] = [];
   if (!encounter) return { characters: next, changes };
@@ -234,10 +275,10 @@ export function applyLifesteal(
     if (target.pip >= before || healed.has(o.playerId)) continue;
     const wearer = next.find((c) => c.id === o.playerId);
     if (!wearer || wearer.status !== 'active' || wearer.hp <= 0 || wearer.hp >= wearer.maxHp) continue;
-    if (!wearer.itemEffects?.effects.includes('lifesteal')) continue;
+    if (!applies(wearer)) continue;
     healed.add(wearer.id);
-    wearer.hp = Math.min(wearer.maxHp, wearer.hp + LIFESTEAL_HEAL);
-    changes.push(`${wearer.displayName} +${LIFESTEAL_HEAL} HP ดูดชีวิต`);
+    wearer.hp = Math.min(wearer.maxHp, wearer.hp + amount);
+    changes.push(`${wearer.displayName} +${amount} HP ${label}`);
   }
   return { characters: next, changes };
 }
@@ -321,6 +362,8 @@ export function runEnemyAttacks(
     const target = findByDisplayName(characters, attack.player);
     if (!enemy || !target || target.status !== 'active') continue;
     if (effects?.enemy[enemy.name]?.includes('stunned')) continue;
+    // K6 rogue_shadow_step: the enemy cannot find a hidden target this round.
+    if (effects?.hidden?.has(target.id)) continue;
     const targets = used.get(enemy.name) ?? new Set<string>();
     const limit = signatureRound && enemy.tier === 'boss' && hasTrait(enemy, 'boss_signature') ? BOSS_SIGNATURE_TARGETS : 1;
     if (targets.size >= limit || targets.has(target.id)) continue;
@@ -358,6 +401,7 @@ export function applyEnemyAttackOutcomes(
 ): { characters: Character[]; changes: string[] } {
   const next = characters.map((c) => ({ ...c }));
   const changes: string[] = [];
+  const evasionUsed = new Set<string>();
   const down = (c: Character) => {
     c.hp = Math.max(0, c.hp);
     if (c.hp === 0) {
@@ -381,10 +425,16 @@ export function applyEnemyAttackOutcomes(
       changes.push(`${head} โดน${crit}: ${guard.displayName} รับดาเมจแทน ${target.displayName} −${damage} HP`);
       down(guard);
     } else {
-      const damage = Math.max(MIN_ENEMY_DAMAGE, o.damage - takeWard(target, wardUsed));
+      let damage = Math.max(MIN_ENEMY_DAMAGE, o.damage - takeWard(target, wardUsed));
       const absorbed = o.damage - damage;
+      // K6 rogue_evasion: the first hit of the round that does damage is halved (rounded up), after ward.
+      const evaded = hasPick(target, 'rogue_evasion') && !evasionUsed.has(target.id);
+      if (evaded) {
+        evasionUsed.add(target.id);
+        damage = Math.ceil(damage / 2);
+      }
       target.hp -= damage;
-      changes.push(`${head} โดน${crit} −${damage} HP${absorbed > 0 ? ` (เกราะวิเศษกัน ${absorbed})` : ''}`);
+      changes.push(`${head} โดน${crit} −${damage} HP${absorbed > 0 ? ` (เกราะวิเศษกัน ${absorbed})` : ''}${evaded ? ' (หลบเหลี่ยม ลดดาเมจครึ่งหนึ่ง)' : ''}`);
       down(target);
     }
   }

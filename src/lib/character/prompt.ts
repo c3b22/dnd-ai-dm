@@ -3,6 +3,7 @@ import { classOf, skillModifier } from './classes';
 import { levelForXp } from './leveling';
 import { spellSlotsOf } from './spells';
 import { replacementOf, subclassOf } from './subclasses';
+import { picksOf } from './abilityPicks';
 import { armorClass } from '@/lib/combat/armorClass';
 import type { Character } from './types';
 
@@ -58,6 +59,19 @@ function subclassLines(characters: Character[]): string[] {
   ];
 }
 
+/** K6: the abilities picked at level 6 and 9; empty when nobody has picked one. */
+function pickLines(characters: Character[]): string[] {
+  const rows = characters.flatMap((c) => {
+    const picks = picksOf(c);
+    return picks.length === 0 ? [] : [`  ${c.displayName}: ${picks.map((p) => `${p.nameTh} (${p.kind === 'passive' ? 'passive' : 'active'}) - ${p.descTh}`).join(' | ')}`];
+  });
+  if (rows.length === 0) return [];
+  return [
+    'Abilities picked at level 6 and 9. The server applies them and reports each use in action notes, so narrate them when the notes say they were used, but never invent or change any numbers:',
+    ...rows,
+  ];
+}
+
 const CLASSES_LABEL = (c: Character): string => classOf(c.classId)?.nameTh ?? '';
 
 export function characterPrompt(
@@ -84,6 +98,7 @@ export function characterPrompt(
     'Ability modifiers (use them to set sensible DCs: easier for what a character is good at, harder for what they are bad at; the server adds the modifier to the roll, so never add it yourself):',
     ...characters.map(abilityLine),
     ...subclassLines(characters),
+    ...pickLines(characters),
     ...identityLines(characters),
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',
