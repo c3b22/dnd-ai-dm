@@ -40,6 +40,14 @@ describe('PlayerOrder', () => {
     expect(screen.getByText(/เฉพาะลำดับของตัวเอง/)).toBeTruthy();
   });
 
+  it('marks a permanently dead player and says they are creating a new character', () => {
+    const party = [players[0], { ...players[1], hp: 0, status: 'dead' as const }, players[2]];
+    render(<PlayerOrder players={party} currentPlayerId="p1" locked={false} onMove={() => {}} />);
+
+    expect(screen.getByText('ตายถาวร')).toBeInTheDocument();
+    expect(screen.getByText(/Mila กำลังสร้างตัวละครใหม่/)).toBeInTheDocument();
+  });
+
   it('locks every button once the current player has submitted', () => {
     render(<PlayerOrder players={players} currentPlayerId="p1" locked onMove={() => {}} />);
 
@@ -131,5 +139,23 @@ describe('PlayerOrder', () => {
     fireEvent.click(screen.getByLabelText('CON'));
     fireEvent.click(screen.getByRole('button', { name: 'ยืนยัน' }));
     await waitFor(() => expect(onAbilityChoice).toHaveBeenCalledWith({ kind: 'double', ability: 'CON' }));
+  });
+
+  it('shows armor class of each player from DEX and worn armor', () => {
+    const armor = { itemId: 'armor_medium', customName: '', quantity: 1, slot: 'armor' as const, equipped: true };
+    const abilities = { STR: 10, DEX: 14, CON: 10, INT: 10, WIS: 10, CHA: 10 };
+    render(
+      <PlayerOrder
+        players={[
+          { ...players[0], items: [gear('shortsword'), armor], abilities },
+          { ...players[1] },
+        ]}
+        currentPlayerId="p1"
+        locked={false}
+        onMove={() => {}}
+      />
+    );
+    expect(screen.getByText(/AC 16/)).toBeTruthy();
+    expect(screen.getByText(/AC 10/)).toBeTruthy();
   });
 });

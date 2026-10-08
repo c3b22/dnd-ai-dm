@@ -27,4 +27,16 @@ describe('economyPrompt', () => {
     expect(text).toContain('shortsword');
     expect(text).not.toContain('No shop is open');
   });
+
+  it('has a mandatory shop rule with examples, whether or not a shop is open', () => {
+    for (const shop of [null, { name: 'Old Mara', itemIds: ['staff'] }]) {
+      const text = economyPrompt([prem], shop).join('\n');
+      expect(text).toContain('MUST emit [[shop:');
+      expect(text).toContain('ordinary catalog items only');
+      expect(text).toContain('Never narrate a purchase');
+      expect(text).toContain('do NOT emit [[shop');
+      expect(text).toContain('Example (opens the shop)');
+      expect(text).toContain('Example (refused)');
+    }
+  });
 });

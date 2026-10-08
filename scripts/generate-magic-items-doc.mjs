@@ -18,6 +18,10 @@ const KIND_TH = {
   weapon: 'อาวุธ', armor: 'เกราะ', consumable: 'ของใช้ฟื้น HP', scroll: 'ม้วนคัมภีร์',
   accessory: 'เครื่องประดับ', charm: 'เครื่องรางใช้ครั้งเดียว',
 };
+const EFFECT_TH = {
+  crit_surge: 'วิกฤตทวี', lifesteal: 'ดูดชีวิต', keen_eye: 'ตาเหยี่ยว', ward: 'โล่รับแรกกระแทก',
+  deep_pack: 'กระเป๋าไร้ก้น', lucky_purse: 'ถุงเงินโชคดี', quick_tempo: 'จังหวะไว',
+};
 const dice = (d) => `${d.count}d${d.sides}${d.bonus ? `+${d.bonus}` : ''}`;
 const effect = (m) => {
   switch (m.kind) {
@@ -47,9 +51,9 @@ out.push(`| **รวม** | **${MAGIC_ITEMS.length}** | ${rarities.map((r) => MA
 for (const kind of Object.keys(KIND_TH)) {
   const items = MAGIC_ITEMS.filter((i) => i.mechanic.kind === kind);
   out.push(`## ${KIND_TH[kind]} (${items.length})`, '');
-  out.push('| id | ชื่อ | ผล | ความหายาก | น้ำหนัก | ซื้อ / ขายคืน | ขายในร้าน | คำบรรยาย |', '|---|---|---|---|---|---|---|---|');
+  out.push('| id | ชื่อ | ผล | กลไกพิเศษ | ธีม | ความหายาก | น้ำหนัก | ซื้อ / ขายคืน | ขายในร้าน | คำบรรยาย |', '|---|---|---|---|---|---|---|---|---|---|');
   for (const i of items) {
-    out.push(`| \`${i.id}\` | ${esc(i.nameTh)} | ${effect(i.mechanic)} | ${MAGIC_RARITY_TH[i.rarity]} | ${i.weight} | ${i.price} / ${magicSellPrice(i)} | ${isSoldInShop(i) ? 'ได้' : 'ไม่ขาย'} | ${esc(i.flavorTh)} |`);
+    out.push(`| \`${i.id}\` | ${esc(i.nameTh)} | ${effect(i.mechanic)} | ${i.effect ? EFFECT_TH[i.effect] + (i.effectValue ? ` (${i.effectValue})` : '') : '-'} | ${i.theme ?? '-'} | ${MAGIC_RARITY_TH[i.rarity]} | ${i.weight} | ${i.price} / ${magicSellPrice(i)} | ${isSoldInShop(i) ? 'ได้' : 'ไม่ขาย'} | ${esc(i.flavorTh)} |`);
   }
   out.push('');
 }

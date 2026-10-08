@@ -86,7 +86,7 @@ describe('joinCampaign', () => {
     expect((rogue.kitInserts[0] as any[])[0]).toMatchObject({ item_id: 'dagger', equipped: true });
 
     const wrong = fakeSupabase({ existing: null });
-    await joinCampaign(wrong.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', classId: 'mage' });
+    await joinCampaign(wrong.client, { campaignId: 'camp-1', userId: 'user-1', displayName: 'Prem', classId: 'paladin' });
     expect((wrong.inserts[0] as any).class_id).toBe('warrior');
   });
 

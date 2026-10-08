@@ -159,23 +159,23 @@ describe('applyPotionActions', () => {
 describe('applyScrollActions (F5e)', () => {
   const scroll = (itemId = 'scroll_spark', quantity = 1): InventoryItem => ({ itemId, customName: '', quantity, slot: null, equipped: false });
   const enemy = (name: string, tier: 'minion' | 'normal' | 'strong' | 'boss', pip: number, max: number) => ({ name, tier, pip, maxPip: max, fled: false });
-  const fight = () => ({ enemies: [enemy('หมาป่า', 'strong', 3, 3), enemy('เจ้าป่า', 'boss', 5, 5)] });
+  const fight = () => ({ enemies: [enemy('หมาป่า', 'strong', 6, 6), enemy('เจ้าป่า', 'boss', 10, 10)] });
   const use = (over = {}) => ({ playerId: 'p1', useItemId: 'scroll_spark', itemTarget: 'หมาป่า', ...over });
 
   it('removes the scroll pips from the target, consumes the scroll and logs it', () => {
     const r = applyScrollActions(party, { p1: [scroll('scroll_flame')] }, fight(), [use({ useItemId: 'scroll_flame' })]);
-    expect(r.encounter!.enemies[0].pip).toBe(1);
+    expect(r.encounter!.enemies[0].pip).toBe(2);
     expect(r.inventories.p1).toEqual([]);
-    expect(r.changes).toEqual(['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
+    expect(r.changes).toEqual(['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-4 pip)']);
     expect(r.notes.p1).toContain('หมาป่า');
     expect(r.changedPlayerIds).toEqual(['p1']);
   });
 
   it('hits a boss through the shared damage rule, and decrements stacked scrolls', () => {
     const r = applyScrollActions(party, { p1: [scroll('scroll_starfall', 2)] }, fight(), [use({ useItemId: 'scroll_starfall', itemTarget: 'เจ้าป่า' })]);
-    expect(r.encounter!.enemies[1].pip).toBe(2); // 5 - 3
-    const stronger = applyScrollActions(party, { p1: [scroll('scroll_starfall')] }, { enemies: [enemy('เจ้าป่า', 'boss', 5, 5)] }, [use({ useItemId: 'scroll_starfall', itemTarget: 'เจ้าป่า' })]);
-    expect(stronger.encounter!.enemies[0].pip).toBe(2);
+    expect(r.encounter!.enemies[1].pip).toBe(4); // 10 - 6
+    const stronger = applyScrollActions(party, { p1: [scroll('scroll_starfall')] }, { enemies: [enemy('เจ้าป่า', 'boss', 10, 10)] }, [use({ useItemId: 'scroll_starfall', itemTarget: 'เจ้าป่า' })]);
+    expect(stronger.encounter!.enemies[0].pip).toBe(4);
     expect(r.inventories.p1[0].quantity).toBe(1);
   });
 
@@ -205,7 +205,7 @@ describe('applyScrollActions (F5e)', () => {
     expect(applyScrollActions(party, { p1: [potion()] }, fight(), [use({ useItemId: 'potion_minor' })]).changes).toEqual([]);
     const enc = fight();
     applyScrollActions(party, { p1: [scroll()] }, enc, [use()]);
-    expect(enc.enemies[0].pip).toBe(3);
+    expect(enc.enemies[0].pip).toBe(6);
   });
 
   it('applyPotionActions leaves a scroll alone', () => {

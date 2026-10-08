@@ -2,8 +2,33 @@
 
 import { useState } from 'react';
 import type { AbilityTarget } from '@/lib/character/classes';
+import type { SpellTarget } from '@/lib/character/spells';
 
 const QUICK_ACTIONS = ['โจมตี', 'เคลื่อนที่', 'พูดคุย', 'สำรวจรอบๆ'];
+
+/** K4: what the mage's "ร่ายเวท" menu shows. */
+export interface SpellMenu {
+  slotsLeft: number;
+  slotsMax: number;
+  list: { id: string; nameTh: string; descTh: string; slots: 0 | 1; target: SpellTarget }[];
+  /** Names of the enemies still fighting (empty = no fight, so enemy spells are off). */
+  enemies: string[];
+  /** Friends (and the caster) who can still act. */
+  allies: { id: string; name: string; isSelf: boolean }[];
+  /** The arcane surge: a free cast; `cooldown` is the eventful rounds left before it is ready. */
+  surge?: { nameTh: string; cooldown: number };
+}
+
+/** K7: an ability beyond the class's plain one (subclass replacement, Lv6/Lv9 active pick), with its own cooldown. */
+export interface ExtraAbility {
+  id: string;
+  nameTh: string;
+  descTh?: string;
+  /** Eventful rounds left; 0 means ready. */
+  cooldown: number;
+  /** 'enemy' = one enemy of the fight is picked first; null = no target. */
+  target: 'enemy' | null;
+}
 
 export interface ActionInputProps {
   onSubmit: (actionText: string) => Promise<void>;
@@ -23,14 +48,26 @@ export interface ActionInputProps {
     noTargetText?: string;
   };
   onUseAbility?: (targetId: string | null) => Promise<void>;
+  /** K4: the mage's spell menu; absent for everyone else. */
+  spells?: SpellMenu;
+  /** K7: every other pressable ability, each with its own cooldown. */
+  extraAbilities?: ExtraAbility[];
+  /** Names of the enemies still fighting, for abilities that need one. */
+  enemies?: string[];
+  onUseExtraAbility?: (abilityId: string, enemy: string | null) => Promise<void>;
+  onCastSpell?: (spellId: string, target: { allyId?: string | null; enemy?: string | null }, surge: boolean) => Promise<void>;
 }
 
-export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, onUseAbility }: ActionInputProps) {
+export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, onUseAbility, spells, onCastSpell, extraAbilities, enemies = [], onUseExtraAbility }: ActionInputProps) {
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [casting, setCasting] = useState(false);
+  const [spellChoice, setSpellChoice] = useState<string | null>(null);
+  const [surge, setSurge] = useState(false);
+  const [extraPicking, setExtraPicking] = useState<string | null>(null);
 
   async function handleSubmit(actionText: string) {
     if (!actionText.trim() || submitted || submitting || disabledReason || alreadyActed) return;
@@ -62,6 +99,45 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
     }
   }
 
+  async function useExtra(abilityId: string, enemy: string | null) {
+    if (!onUseExtraAbility || submitted || submitting || disabledReason || alreadyActed) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onUseExtraAbility(abilityId, enemy);
+      setSubmitted(true);
+      setExtraPicking(null);
+    } catch {
+      setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function castSpell(spellId: string, target: { allyId?: string | null; enemy?: string | null }) {
+    if (!onCastSpell || submitted || submitting || disabledReason || alreadyActed) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onCastSpell(spellId, target, surgeOn);
+      setSubmitted(true);
+      setCasting(false);
+      setSpellChoice(null);
+    } catch {
+      setError('ส่ง action ไม่สำเร็จ ลองอีกครั้ง');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function chooseSpell(id: string) {
+    const spell = spells?.list.find((s) => s.id === id);
+    if (!spell) return;
+    if (spell.target === 'enemy' || spell.target === 'ally_or_self' || spell.target === 'ally') setSpellChoice(id);
+    else void castSpell(id, {});
+  }
+
+  const surgeOn = surge && spells?.surge !== undefined && spells.surge.cooldown <= 0;
   const locked = submitted || submitting || Boolean(disabledReason) || Boolean(alreadyActed);
 
   return (
@@ -98,7 +174,112 @@ export function ActionInput({ onSubmit, disabledReason, alreadyActed, ability, o
             )}
           </>
         )}
+        {onUseExtraAbility &&
+          extraAbilities?.map((extra) => (
+            <span key={extra.id} className="extra-ability">
+              <button
+                type="button"
+                className="qa ability"
+                title={extra.descTh}
+                disabled={locked || extra.cooldown > 0}
+                onClick={() => (extra.target ? setExtraPicking((id) => (id === extra.id ? null : extra.id)) : useExtra(extra.id, null))}
+              >
+                {extra.nameTh}
+              </button>
+              {extra.cooldown > 0 && <span className="cd">{extra.nameTh}: อีก {extra.cooldown} รอบเหตุการณ์</span>}
+            </span>
+          ))}
       </div>
+      {onUseExtraAbility && extraPicking && !locked && (
+        <div className="hint-row" role="group" aria-label="เลือกศัตรูเป้าหมาย">
+          <span className="lbl">เลือกศัตรู</span>
+          {enemies.length === 0 && <span className="cd">ไม่มีศัตรูให้เลือก</span>}
+          {enemies.map((name) => (
+            <button key={name} type="button" className="qa" onClick={() => useExtra(extraPicking, name)}>
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+      {spells && onCastSpell && (
+        <div className="hint-row" role="group" aria-label="ร่ายเวท">
+          <button
+            type="button"
+            className="qa ability"
+            aria-expanded={casting}
+            disabled={locked}
+            onClick={() => {
+              setCasting((c) => !c);
+              setSpellChoice(null);
+            }}
+          >
+            ร่ายเวท
+          </button>
+          <span className="cd">ช่องเวทเหลือ {spells.slotsLeft}/{spells.slotsMax}</span>
+        </div>
+      )}
+      {spells && onCastSpell && casting && !locked && (
+        <>
+          {spells.surge && (
+            <div className="hint-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={surgeOn}
+                  disabled={spells.surge.cooldown > 0}
+                  onChange={(e) => setSurge(e.target.checked)}
+                />{' '}
+                ใช้{spells.surge.nameTh} (ร่ายฟรี ไม่เสียช่องเวท)
+              </label>
+              {spells.surge.cooldown > 0 && <span className="cd">อีก {spells.surge.cooldown} รอบเหตุการณ์</span>}
+            </div>
+          )}
+          {!spellChoice && (
+            <div className="hint-row" role="group" aria-label="เลือกเวท">
+              <span className="lbl">เลือกเวท</span>
+              {spells.list.map((spell) => {
+                const free = spell.slots === 0 || surgeOn;
+                const needsEnemy = spell.target === 'enemy' && spells.enemies.length === 0;
+                const noSlot = !free && spells.slotsLeft < 1;
+                return (
+                  <button
+                    key={spell.id}
+                    type="button"
+                    className="qa"
+                    title={spell.descTh}
+                    disabled={needsEnemy || noSlot}
+                    onClick={() => chooseSpell(spell.id)}
+                  >
+                    {spell.nameTh} · {spell.slots === 0 ? 'ฟรี' : '1 ช่อง'}
+                    {needsEnemy ? ' (ไม่มีศัตรู)' : noSlot ? ' (ช่องเวทหมด)' : ''}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {spellChoice && (
+            <div className="hint-row" role="group" aria-label="เลือกเป้าหมายของเวท">
+              <span className="lbl">เลือกเป้าหมาย</span>
+              {spells.list.find((s) => s.id === spellChoice)?.target === 'enemy'
+                ? spells.enemies.map((name) => (
+                    <button key={name} type="button" className="qa" onClick={() => castSpell(spellChoice, { enemy: name })}>
+                      {name}
+                    </button>
+                  ))
+                : spells.allies
+                    .filter((a) => !(spells.list.find((s) => s.id === spellChoice)?.target === 'ally' && a.isSelf))
+                    .map((a) => (
+                      <button key={a.id} type="button" className="qa" onClick={() => castSpell(spellChoice, { allyId: a.id })}>
+                        {a.isSelf ? `${a.name} (ตัวเอง)` : a.name}
+                      </button>
+                    ))}
+              <button type="button" className="qa" onClick={() => setSpellChoice(null)}>
+                เลือกเวทใหม่
+              </button>
+            </div>
+          )}
+        </>
+      )}
       {ability && picking && !locked && (
         <div className="hint-row" role="group" aria-label="เลือกเป้าหมาย">
           <span className="lbl">เลือกเป้าหมาย</span>

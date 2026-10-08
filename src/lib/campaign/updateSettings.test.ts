@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { SettingsError, updateCampaignSettings } from './updateSettings';
 import { DEFAULT_SETTINGS } from './settings';
 
-function fakeSupabase(stored: unknown = {}) {
+function fakeSupabase(stored: unknown = {}, startedAt: string | null = null) {
   const updates: unknown[] = [];
   const client: any = {
     from: (table: string) => {
@@ -21,7 +21,7 @@ function fakeSupabase(stored: unknown = {}) {
         };
       }
       return {
-        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { settings: stored }, error: null }) }) }),
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { settings: stored, started_at: startedAt }, error: null }) }) }),
         update: (values: unknown) => ({
           eq: () => {
             updates.push(values);
@@ -58,5 +58,29 @@ describe('updateCampaignSettings', () => {
       updateCampaignSettings(client, { campaignId: 'c', userId: 'stranger', patch: { diceEnabled: false } })
     ).rejects.toBeInstanceOf(SettingsError);
     expect(updates).toHaveLength(0);
+  });
+
+  it('lets the owner turn permadeath on before the game starts', async () => {
+    const { client } = fakeSupabase({}, null);
+    const result = await updateCampaignSettings(client, { campaignId: 'c', userId: 'u1', patch: { permadeath: true } });
+    expect(result.permadeath).toBe(true);
+  });
+
+  it('refuses to change permadeath once the game has started', async () => {
+    const { client, updates } = fakeSupabase({ permadeath: false }, '2026-01-03');
+    await expect(
+      updateCampaignSettings(client, { campaignId: 'c', userId: 'u1', patch: { permadeath: true } })
+    ).rejects.toMatchObject({ status: 409 });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('still saves other settings after start, and tolerates an unchanged permadeath', async () => {
+    const { client } = fakeSupabase({ permadeath: true }, '2026-01-03');
+    const result = await updateCampaignSettings(client, {
+      campaignId: 'c',
+      userId: 'u1',
+      patch: { permadeath: true, roundSeconds: 60 },
+    });
+    expect(result).toMatchObject({ permadeath: true, roundSeconds: 60 });
   });
 });

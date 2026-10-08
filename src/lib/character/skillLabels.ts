@@ -22,6 +22,10 @@ export const SKILL_LABELS_TH: Record<SkillId, string> = {
   survival: 'เอาตัวรอด',
 };
 
+/** Not a skill: the death save roll shows up in the same dice overlay (H1). */
+export const DEATH_SAVE_SKILL = 'death_save';
+
 export function skillLabel(skill: string): string {
+  if (skill === DEATH_SAVE_SKILL) return 'ทอยเอาชีวิตรอด';
   return (SKILL_LABELS_TH as Record<string, string>)[skill] ?? skill;
 }

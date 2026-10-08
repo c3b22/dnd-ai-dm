@@ -79,8 +79,11 @@ export function aggregateEffects(equippedItems: EquippedEffectItem[]): ItemEffec
  * Takes the wearer's ward for the first hit of the round: returns the extra reduction (0 without ward or once
  * `used` already holds the character) and records the use. `used` is shared by every damage path of one round.
  */
-export function takeWard(character: { id: string; itemEffects?: ItemEffects }, used: Set<string>): number {
-  if (!character.itemEffects?.effects.includes('ward') || used.has(character.id)) return 0;
+export function takeWard(character: { id: string; itemEffects?: ItemEffects; roundWard?: number }, used: Set<string>): number {
+  // K4: a ward spell (roundWard) stacks with the worn ward and is spent by the same first hit.
+  const worn = character.itemEffects?.effects.includes('ward') ? (character.itemEffects.ward ?? WARD_DEFAULT) : 0;
+  const total = worn + (character.roundWard ?? 0);
+  if (total <= 0 || used.has(character.id)) return 0;
   used.add(character.id);
-  return character.itemEffects.ward ?? WARD_DEFAULT;
+  return total;
 }

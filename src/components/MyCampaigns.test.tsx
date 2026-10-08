@@ -15,10 +15,17 @@ beforeEach(() => {
 });
 afterEach(() => { global.fetch = originalFetch; });
 
-const owned = { id: 'camp-1', playerId: 'player-1', name: 'ค่ำคืนแรก', adventureId: 'sunken-bell', started: true, isOwner: true };
-const joined = { id: 'camp-2', playerId: 'player-2', name: 'ห้องรอ', adventureId: null, started: false, isOwner: false };
+const owned = { id: 'camp-1', playerId: 'player-1', name: 'ค่ำคืนแรก', adventureId: 'sunken-bell', started: true, ended: false, isOwner: true };
+const joined = { id: 'camp-2', playerId: 'player-2', name: 'ห้องรอ', adventureId: null, started: false, ended: false, isOwner: false };
 
 describe('MyCampaigns', () => {
+  it('shows the "จบแล้ว" badge instead of "กำลังเล่น" for an ended campaign', () => {
+    render(<MyCampaigns campaigns={[{ ...owned, ended: true }]} />);
+    const row = screen.getByRole('link', { name: /ค่ำคืนแรก/ });
+    expect(row).toHaveTextContent('จบแล้ว');
+    expect(row).not.toHaveTextContent('กำลังเล่น');
+  });
+
   it('renders nothing when the player has no campaigns', () => {
     const { container } = render(<MyCampaigns campaigns={[]} />);
     expect(container).toBeEmptyDOMElement();

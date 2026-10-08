@@ -40,11 +40,11 @@ describe('fetchMyCampaigns', () => {
     const result = await fetchMyCampaigns(client, 'user-1');
 
     expect(result).toEqual([
-      { id: 'camp-2', playerId: 'player-2', name: 'ห้องใหม่', adventureId: 'orc-castle', started: true, isOwner: false },
-      { id: 'camp-1', playerId: 'player-1', name: 'ห้องเก่า', adventureId: 'sunken-bell', started: false, isOwner: true },
+      { id: 'camp-2', playerId: 'player-2', name: 'ห้องใหม่', adventureId: 'orc-castle', started: true, ended: false, isOwner: false },
+      { id: 'camp-1', playerId: 'player-1', name: 'ห้องเก่า', adventureId: 'sunken-bell', started: false, ended: false, isOwner: true },
     ]);
     expect(calls).toEqual([
-      { columns: 'id, campaign_id, campaigns(name, adventure_id, started_at, created_at, players(id, created_at))' },
+      { columns: 'id, campaign_id, campaigns(name, adventure_id, started_at, status, created_at, players(id, created_at))' },
       { column: 'user_id', value: 'user-1' },
     ]);
   });
@@ -64,5 +64,34 @@ describe('fetchMyCampaigns', () => {
       { id: 'player-1', campaign_id: 'camp-1', campaigns: { name: 'x', adventure_id: null, started_at: null, created_at: '2026-01-01T00:00:00Z' } },
     ]);
     expect((await fetchMyCampaigns(client, 'user-1'))[0].isOwner).toBe(false);
+  });
+});
+
+describe('fetchMyCampaigns — ended rooms', () => {
+  const row = (status: string | undefined) => ({
+    id: 'player-1',
+    campaign_id: 'camp-1',
+    campaigns: { name: 'ห้อง', adventure_id: null, started_at: '2026-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z', ...(status ? { status } : {}), players: [{ id: 'player-1', created_at: '2026-01-01T00:00:00Z' }] },
+  });
+
+  it('marks a campaign with status ended', async () => {
+    const { client } = fakeSupabase([row('ended')]);
+    expect((await fetchMyCampaigns(client, 'u'))[0].ended).toBe(true);
+  });
+
+  it('falls back to the old column list when campaigns.status is missing', async () => {
+    const columns: string[] = [];
+    const client: any = {
+      from: () => ({
+        select: (c: string) => {
+          columns.push(c);
+          return { eq: () => Promise.resolve(c.includes('status') ? { data: null, error: { message: 'column campaigns_1.status does not exist' } } : { data: [row(undefined)], error: null }) };
+        },
+      }),
+    };
+    const result = await fetchMyCampaigns(client, 'u');
+    expect(result[0].ended).toBe(false);
+    expect(columns).toHaveLength(2);
+    expect(columns[1]).not.toContain('status');
   });
 });

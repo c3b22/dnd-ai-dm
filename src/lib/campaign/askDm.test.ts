@@ -27,6 +27,7 @@ interface Opts {
   adventureId?: string | null;
   sceneId?: string | null;
   insertError?: unknown;
+  status?: string;
 }
 
 function fake(o: Opts = {}) {
@@ -58,6 +59,7 @@ function fake(o: Opts = {}) {
             current_round_id: o.roundId === undefined ? 'r1' : o.roundId,
             adventure_id: o.adventureId === undefined ? 'adv-custom' : o.adventureId,
             current_scene_id: o.sceneId === undefined ? 'adv-custom-dock' : o.sceneId,
+            ...(o.status ? { status: o.status } : {}),
           },
           error: null,
         }));
@@ -84,6 +86,14 @@ function fake(o: Opts = {}) {
 const base = { campaignId: 'c1', userId: 'u1', question: 'ประตูนั้นล็อกอยู่ไหม?' };
 
 describe('askDm', () => {
+  it('answers 409 and calls nothing once the campaign has ended (L2)', async () => {
+    const { client, inserts } = fake({ status: 'ended' });
+    const answer = vi.fn();
+    await expect(askDm(client, base, { answer })).rejects.toMatchObject({ status: 409 });
+    expect(answer).not.toHaveBeenCalled();
+    expect(inserts).toHaveLength(0);
+  });
+
   it('saves the question and a tag-free answer under the current round and asking player', async () => {
     const { client, inserts } = fake();
     const answer = vi.fn().mockResolvedValue('ล็อกอยู่ [[hurt: Bob | heavy]]ครับ[[scene: x]] [[roll d20]]');

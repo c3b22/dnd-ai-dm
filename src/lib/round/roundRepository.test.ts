@@ -19,6 +19,7 @@ function createFakeSupabase(options: {
   currentEncounter?: unknown;
   factRows?: unknown[];
   factsError?: boolean;
+  corpseRows?: unknown[];
   messageRows?: { role: string; content: string }[];
 }) {
   const messagesCalls: { method: string; args: unknown[] }[] = [];
@@ -97,6 +98,9 @@ function createFakeSupabase(options: {
         return {
           select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: options.factRows ?? [], error: null }) }) }),
         };
+      }
+      if (table === 'campaign_corpses' && options.corpseRows) {
+        return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: options.corpseRows, error: null }) }) }) };
       }
       if (table === 'messages') {
         const builder: any = {
@@ -379,7 +383,7 @@ describe('createSupabaseRoundRepository character state', () => {
     expect(context.pendingWipe).toBe(true);
     expect(context.tagsApplied).toBe(false);
     expect(context.characters).toEqual([
-      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, skillBonuses: {}, itemEffects: { effects: [], setTheme: null, setSkillBonus: 0 }, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, backstory: null, personality: null, goal: null },
+      { id: 'p1', displayName: 'Prem', weaponId: null, armorReduction: 0, armorWeight: 0, skillBonuses: {}, itemEffects: { effects: [], setTheme: null, setSkillBonus: 0 }, hp: 12, maxHp: 18, status: 'downed', revivesSinceSanctuary: 1, shortRestsUsed: 0, gold: 0, xp: 0, classId: null, abilityCooldown: 0, abilities: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 }, backstory: null, personality: null, goal: null },
     ]);
   });
 
@@ -692,7 +696,7 @@ describe('createSupabaseRoundRepository economy', () => {
 });
 
 describe('createSupabaseRoundRepository encounter', () => {
-  const wolf = { name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal', pip: 2, maxPip: 4, fled: false };
 
   it('reads a valid stored encounter into the round context', async () => {
     const { client } = createFakeSupabase({ roundsById: { r1: { campaign_id: 'c1' } }, campaignSummary: null, currentEncounter: { enemies: [wolf] } });
@@ -761,5 +765,156 @@ describe('scroll target (F5e)', () => {
     });
     const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
     expect(context.actions[0]).toMatchObject({ playerId: 'p1', useItemId: 'scroll_spark', itemTarget: 'หมาป่า' });
+  });
+});
+
+describe('createSupabaseRoundRepository permanent death (H3a)', () => {
+  const dead = { id: 'p2', displayName: 'Aria', weaponId: null, hp: 0, maxHp: 10, status: 'dead' as const, revivesSinceSanctuary: 0 };
+
+  it('saveCorpses inserts one row per corpse with campaign, name, items and gold', async () => {
+    const inserted: { table: string; rows: unknown }[] = [];
+    const client: any = { from: (table: string) => ({ insert: (rows: unknown) => { inserted.push({ table, rows }); return Promise.resolve({ error: null }); } }) };
+    const items = [{ itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon' as const, equipped: true }];
+    await createSupabaseRoundRepository(client).saveCorpses!('camp-1', [{ playerId: 'p2', name: 'Aria', items, gold: 35 }]);
+    expect(inserted).toEqual([{ table: 'campaign_corpses', rows: [{ campaign_id: 'camp-1', name: 'Aria', items, gold: 35 }] }]);
+  });
+
+  it('saveCorpses throws when the table is missing so the round keeps the pack', async () => {
+    const client: any = { from: () => ({ insert: () => Promise.resolve({ error: new Error('no table') }) }) };
+    await expect(createSupabaseRoundRepository(client).saveCorpses!('camp-1', [{ playerId: 'p2', name: 'Aria', items: [], gold: 0 }])).rejects.toThrow('no table');
+  });
+
+  it('saves status dead, and falls back to downed when the database does not know that status yet', async () => {
+    const rpcCalls: any[] = [];
+    const client: any = {
+      rpc: (_name: string, args: any) => {
+        rpcCalls.push(args);
+        return Promise.resolve({ error: rpcCalls.length === 1 ? new Error('violates check constraint') : null });
+      },
+      from: () => ({ update: () => ({ eq: () => Promise.resolve({ error: null }) }) }),
+    };
+    await createSupabaseRoundRepository(client).saveCharacterState('camp-1', [dead], false);
+    expect(rpcCalls.map((a) => a.changes[0].status)).toEqual(['dead', 'downed']);
+  });
+
+  it('reads status dead from the players table', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [{ id: 'p2', display_name: 'Aria', weapon_id: null, hp: 0, max_hp: 10, status: 'dead', revives_since_sanctuary: 0 }],
+    });
+    const ctx = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(ctx.characters[0].status).toBe('dead');
+  });
+});
+
+describe('createSupabaseRoundRepository corpse looting (H3c)', () => {
+  it('getRoundContext reads corpses that still hold something and skips empty ones', async () => {
+    const items = [{ itemId: 'potion_minor', customName: '', quantity: 1, slot: null, equipped: false }];
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      corpseRows: [{ id: 'c1', name: 'Aria', items, gold: 3 }, { id: 'c2', name: 'Bo', items: [], gold: 0 }],
+    });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.corpses).toEqual([{ id: 'c1', name: 'Aria', items, gold: 3 }]);
+  });
+
+  it('getRoundContext has no corpses when the table is missing', async () => {
+    const { client } = createFakeSupabase({ roundsById: { 'round-1': { campaign_id: 'camp-1' } }, campaignSummary: null });
+    const context = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(context.corpses).toEqual([]);
+  });
+
+  it('saveCorpseLoot deletes an emptied corpse and updates a partly looted one', async () => {
+    const calls: unknown[] = [];
+    const client: any = {
+      from: (table: string) => ({
+        delete: () => ({ eq: (c: string, v: string) => { calls.push({ table, op: 'delete', c, v }); return Promise.resolve({ error: null }); } }),
+        update: (row: unknown) => ({ eq: (c: string, v: string) => { calls.push({ table, op: 'update', row, c, v }); return Promise.resolve({ error: null }); } }),
+      }),
+    };
+    const left = [{ itemId: 'potion_minor', customName: '', quantity: 3, slot: null, equipped: false }];
+    await createSupabaseRoundRepository(client).saveCorpseLoot!([{ id: 'c1', items: [], gold: 0, empty: true }, { id: 'c2', items: left, gold: 0, empty: false }]);
+    expect(calls).toEqual([
+      { table: 'campaign_corpses', op: 'delete', c: 'id', v: 'c1' },
+      { table: 'campaign_corpses', op: 'update', row: { items: left, gold: 0 }, c: 'id', v: 'c2' },
+    ]);
+  });
+
+  it('saveCorpseLoot throws on a database error', async () => {
+    const client: any = { from: () => ({ delete: () => ({ eq: () => Promise.resolve({ error: new Error('x') }) }) }) };
+    await expect(createSupabaseRoundRepository(client).saveCorpseLoot!([{ id: 'c1', items: [], gold: 0, empty: true }])).rejects.toThrow('x');
+  });
+});
+
+describe('createSupabaseRoundRepository multi-ability data (K2)', () => {
+  it('loads the cooldown map, subclass, picks and slots used, and omits them for old rows', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      players: [
+        { id: 'p1', display_name: 'Prem', weapon_id: null, hp: 12, max_hp: 20, status: 'active', revives_since_sanctuary: 0, class_id: 'warrior', ability_cooldown: 2,
+          ability_cooldowns: { berserk_strike: 3, bad: 'x', neg: -1 }, subclass_id: 'warrior_guardian', ability_picks: { '6': 'a', '9': 5 }, spell_slots_used: 2 },
+        { id: 'p2', display_name: 'Nok', weapon_id: null, hp: 20, max_hp: 20, status: 'active', revives_since_sanctuary: 0 },
+      ],
+    });
+    const { characters } = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(characters[0]).toMatchObject({ abilityCooldown: 2, abilityCooldowns: { berserk_strike: 3 }, subclassId: 'warrior_guardian', abilityPicks: { '6': 'a' }, spellSlotsUsed: 2 });
+    expect('abilityCooldowns' in characters[1]).toBe(false);
+    expect('subclassId' in characters[1]).toBe(false);
+    expect('abilityPicks' in characters[1]).toBe(false);
+    expect('spellSlotsUsed' in characters[1]).toBe(false);
+  });
+
+  it('loads ability_id and spell_id of an action when the columns exist', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'x', use_item_id: null, use_ability: true, ability_target_id: null, ability_id: 'berserk_strike', spell_id: 'fire_bolt', player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const { actions } = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(actions[0]).toMatchObject({ abilityId: 'berserk_strike', spellId: 'fire_bolt' });
+  });
+
+  it('leaves abilityId and spellId out for actions without them', async () => {
+    const { client } = createFakeSupabase({
+      roundsById: { 'round-1': { campaign_id: 'camp-1' } },
+      campaignSummary: null,
+      actionRows: [{ action_text: 'x', use_item_id: null, use_ability: true, ability_target_id: null, player_id: 'p1', players: { display_name: 'Prem', turn_order: 1, created_at: '2026-01-01' } }],
+    });
+    const { actions } = await createSupabaseRoundRepository(client).getRoundContext('round-1');
+    expect(actions[0].abilityId ?? null).toBeNull();
+    expect(actions[0].spellId ?? null).toBeNull();
+  });
+
+  it('saves only the characters that carry a cooldown map', async () => {
+    const updates: unknown[] = [];
+    const client: any = { from: (table: string) => ({ update: (payload: unknown) => ({ eq: (_c: string, id: string) => { updates.push({ table, payload, id }); return Promise.resolve({ error: null }); } }) }) };
+    await createSupabaseRoundRepository(client).saveAbilityCooldowns!([
+      { id: 'p1', displayName: 'A', weaponId: null, hp: 1, maxHp: 1, status: 'active', revivesSinceSanctuary: 0, abilityCooldowns: { a: 2 } },
+      { id: 'p2', displayName: 'B', weaponId: null, hp: 1, maxHp: 1, status: 'active', revivesSinceSanctuary: 0 },
+    ]);
+    expect(updates).toEqual([{ table: 'players', payload: { ability_cooldowns: { a: 2 } }, id: 'p1' }]);
+  });
+});
+
+describe('epilogue repository (L3)', () => {
+  it('hasEpilogue looks for the marker among DM messages; insertEpilogue posts a DM message', async () => {
+    const calls: unknown[] = [];
+    const inserted: unknown[] = [];
+    const chain: any = {
+      select: () => chain,
+      eq: (...a: unknown[]) => (calls.push(a), chain),
+      like: (...a: unknown[]) => (calls.push(a), chain),
+      limit: () => Promise.resolve({ data: [{ id: 'm1' }], error: null }),
+      insert: (p: unknown) => (inserted.push(p), Promise.resolve({ error: null })),
+    };
+    const repository = createSupabaseRoundRepository({ from: () => chain } as any);
+    expect(await repository.hasEpilogue!('camp-1')).toBe(true);
+    expect(calls).toContainEqual(['role', 'dm']);
+    expect(calls).toContainEqual(['content', '— บทส่งท้าย —%']);
+    await repository.insertEpilogue!('camp-1', 'round-1', 'x');
+    expect(inserted).toEqual([{ campaign_id: 'camp-1', round_id: 'round-1', role: 'dm', content: 'x' }]);
   });
 });

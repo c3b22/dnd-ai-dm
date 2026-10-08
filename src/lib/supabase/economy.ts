@@ -59,3 +59,6 @@ export const requestShop = (campaignId: string, action: 'buy' | 'sell', itemId: 
   post(`/api/campaigns/${campaignId}/shop`, { action, itemId, customName });
 
 export const requestTrade = (campaignId: string, body: object) => post(`/api/campaigns/${campaignId}/trades`, body);
+
+/** L5: the table owner continues an ended campaign as the next chapter. */
+export const requestSequel = (campaignId: string) => post(`/api/campaigns/${campaignId}/sequel`, {});

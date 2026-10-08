@@ -5,7 +5,7 @@ import { normalizeSettings, type CampaignSettings } from './settings';
 export class SettingsError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 404 = 400
+    readonly status: 400 | 403 | 404 | 409 = 400
   ) {
     super(message);
   }
@@ -35,13 +35,19 @@ export async function updateCampaignSettings(
 
   const { data: campaign, error: campaignError } = await supabase
     .from('campaigns')
-    .select('settings')
+    .select('settings, started_at')
     .eq('id', params.campaignId)
     .maybeSingle();
   if (campaignError) throw campaignError;
   if (!campaign) throw new SettingsError('campaign not found', 404);
 
-  const merged = normalizeSettings({ ...normalizeSettings(campaign.settings), ...params.patch });
+  const current = normalizeSettings(campaign.settings);
+  // Permadeath is a rule of the whole game: it can only be flipped while still in the lobby.
+  if (campaign.started_at && params.patch.permadeath !== undefined && params.patch.permadeath !== current.permadeath) {
+    throw new SettingsError('permadeath cannot be changed after the game has started', 409);
+  }
+
+  const merged = normalizeSettings({ ...current, ...params.patch });
   const { error: updateError } = await supabase
     .from('campaigns')
     .update({ settings: merged })

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MessageRole } from '@/lib/messages/roles';
 import { D20Icon } from './D20Icon';
-import { DiceRollOverlay, checkFormula, type DiceCheckView, type DiceRollOverlayProps } from './DiceRollOverlay';
+import { DiceRollOverlay, attackFormula, checkFormula, enemyAttackFormula, spellAgainst, spellFormula, spellOutcome, spellWorked, type DiceSpellView, type DiceAttackView, type DiceCheckView, type DiceEnemyAttackView, type DiceRollOverlayProps } from './DiceRollOverlay';
 import { skillLabel } from '@/lib/character/skillLabels';
 
 export interface Message {
@@ -17,6 +17,24 @@ interface RollEntry {
   playerDisplayName: string;
   roll: number;
   check?: { skill: string; dc: number; modifier: number; proficiency: number; total: number; success: boolean };
+  /** I3: a player's attack on an enemy. */
+  attack?: { target: string; modifier: number; proficiency: number; magic: number; total: number; ac: number; hit: boolean; critical: 'success' | 'failure' | null };
+  /** K4: one die of a spell the player cast. */
+  spell?: { name: string; target: string; kind: 'attack' | 'save'; bonus: number; total: number; dc: number; success: boolean; critical: 'success' | 'failure' | null; pips: number };
+  /** I2: an enemy's attack on a player; `playerDisplayName` is the enemy. */
+  enemyAttack?: { target: string; bonus: number; total: number; ac: number; hit: boolean; critical: 'success' | 'failure' | null };
+}
+
+function attackViews(rolls: RollEntry[]): DiceAttackView[] {
+  return rolls.flatMap((r) => (r.attack ? [{ playerDisplayName: r.playerDisplayName, die: r.roll, ...r.attack }] : []));
+}
+
+function spellViews(rolls: RollEntry[]): DiceSpellView[] {
+  return rolls.flatMap((r) => (r.spell ? [{ playerDisplayName: r.playerDisplayName, die: r.roll, ...r.spell, spell: r.spell.name }] : []));
+}
+
+function enemyAttackViews(rolls: RollEntry[]): DiceEnemyAttackView[] {
+  return rolls.flatMap((r) => (r.enemyAttack ? [{ enemy: r.playerDisplayName, die: r.roll, ...r.enemyAttack }] : []));
 }
 
 function checkViews(rolls: RollEntry[]): DiceCheckView[] {
@@ -64,6 +82,23 @@ function RollSummary({ rolls, pending }: { rolls: RollEntry[]; pending: boolean 
           </span>
           <span className="who">{r.playerDisplayName}</span>
           <span className="num">{pending ? '?' : r.roll}</span>
+          {r.attack && !pending && (
+            <span className={`check-detail ${r.attack.hit ? 'pass' : 'fail'}`}>
+              → {r.attack.target} · {attackFormula({ die: r.roll, ...r.attack })} เทียบ AC {r.attack.ac} ·{' '}
+              {r.attack.hit ? 'โดน' : 'พลาด'}
+            </span>
+          )}
+          {r.spell && !pending && (
+            <span className={`check-detail ${spellWorked(r.spell) ? 'pass' : 'fail'}`}>
+              ร่าย{r.spell.name} → {r.spell.target} · {spellFormula({ die: r.roll, ...r.spell })} {spellAgainst(r.spell)} · {spellOutcome(r.spell)}
+            </span>
+          )}
+          {r.enemyAttack && !pending && (
+            <span className={`check-detail ${r.enemyAttack.hit ? 'fail' : 'pass'}`}>
+              → {r.enemyAttack.target} · {enemyAttackFormula({ die: r.roll, ...r.enemyAttack })} เทียบ AC {r.enemyAttack.ac} ·{' '}
+              {r.enemyAttack.hit ? 'โดน' : 'พลาด'}
+            </span>
+          )}
           {r.check && !pending && (
             <span className={`check-detail ${r.check.success ? 'pass' : 'fail'}`}>
               {skillLabel(r.check.skill)} DC {r.check.dc} · {checkFormula({ die: r.roll, ...r.check })} ·{' '}
@@ -109,7 +144,7 @@ export function MessageList({
   playerNames,
 }: MessageListProps) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[]; checks: DiceCheckView[] } | null>(
+  const [pendingRoll, setPendingRoll] = useState<{ messageId: string; values: number[]; checks: DiceCheckView[]; attacks: DiceAttackView[]; enemyAttacks: DiceEnemyAttackView[]; spells: DiceSpellView[] } | null>(
     null
   );
   const listRef = useRef<HTMLUListElement>(null);
@@ -150,7 +185,7 @@ export function MessageList({
         const rolls = parseRollMessage(message.content);
         if (rolls && rolls.length > 0) {
           pendingRollIdRef.current = message.id;
-          setPendingRoll({ messageId: message.id, values: rolls.map((r) => r.roll), checks: checkViews(rolls) });
+          setPendingRoll({ messageId: message.id, values: rolls.map((r) => r.roll), checks: checkViews(rolls), attacks: attackViews(rolls), enemyAttacks: enemyAttackViews(rolls), spells: spellViews(rolls) });
         }
       }
 
@@ -179,7 +214,7 @@ export function MessageList({
   return (
     <>
       {pendingRoll && (
-        <RollOverlay values={pendingRoll.values} checks={pendingRoll.checks} onComplete={handleRollOverlayComplete} />
+        <RollOverlay values={pendingRoll.values} checks={pendingRoll.checks} attacks={pendingRoll.attacks} enemyAttacks={pendingRoll.enemyAttacks} spells={pendingRoll.spells} onComplete={handleRollOverlayComplete} />
       )}
       <ul className="log" aria-label="session log" ref={listRef}>
         {messages.map((message) => {

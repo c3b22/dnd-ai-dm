@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CATALOG } from './catalog';
 import { SKILL_IDS } from '@/lib/character/classes';
+import { ITEM_EFFECT_IDS, KEEN_EYE_MAX, WARD_MAX, DEEP_PACK_MAX } from './effects';
 import {
   MAGIC_ITEMS, MAGIC_RARITIES, MAGIC_MECHANIC_KINDS, magicSellPrice, isSoldInShop,
   type MagicItem,
@@ -91,5 +92,58 @@ describe('magic item catalogue', () => {
   it('sells back at half price rounded down, and never sells legendaries in shops', () => {
     expect(magicSellPrice({ price: 75 } as MagicItem)).toBe(37);
     for (const i of MAGIC_ITEMS) expect(isSoldInShop(i)).toBe(i.rarity !== 'legendary');
+  });
+
+  describe('effects and themes (F5j9)', () => {
+    const SLOT_OK: Record<string, string[]> = {
+      crit_surge: ['weapon'], lifesteal: ['weapon'], ward: ['armor'], keen_eye: ['weapon', 'accessory'],
+      deep_pack: ['accessory'], lucky_purse: ['accessory'], quick_tempo: ['accessory'],
+    };
+    const slot = (i: MagicItem) => (['weapon', 'armor', 'accessory'].includes(i.mechanic.kind) ? i.mechanic.kind : null);
+
+    it('puts no effect on uncommon items', () => {
+      for (const i of MAGIC_ITEMS.filter((x) => x.rarity === 'uncommon')) expect(i.effect).toBeUndefined();
+    });
+
+    it('allows only small effects on rare items and main effects on legendary ones, at most one each', () => {
+      for (const i of MAGIC_ITEMS.filter((x) => x.rarity === 'rare' && x.effect))
+        expect(['lifesteal', 'keen_eye', 'lucky_purse', 'quick_tempo']).toContain(i.effect);
+      for (const i of MAGIC_ITEMS.filter((x) => x.rarity === 'legendary' && x.effect))
+        expect(['crit_surge', 'ward', 'deep_pack']).toContain(i.effect);
+      expect(MAGIC_ITEMS.filter((x) => x.rarity === 'legendary' && slot(x) && !x.effect)).toEqual([]);
+    });
+
+    it('keeps each effect on its allowed slot and effectValue in range', () => {
+      for (const i of MAGIC_ITEMS.filter((x) => x.effect)) {
+        expect(ITEM_EFFECT_IDS).toContain(i.effect);
+        expect(SLOT_OK[i.effect!]).toContain(slot(i));
+        if (i.effect === 'keen_eye' && i.effectValue !== undefined) expect([1, KEEN_EYE_MAX]).toContain(i.effectValue);
+        if (i.effect === 'ward' && i.effectValue !== undefined) { expect(i.effectValue).toBeGreaterThanOrEqual(2); expect(i.effectValue).toBeLessThanOrEqual(WARD_MAX); }
+        if (i.effect === 'deep_pack' && i.effectValue !== undefined) { expect(i.effectValue).toBeGreaterThanOrEqual(3); expect(i.effectValue).toBeLessThanOrEqual(DEEP_PACK_MAX); }
+      }
+    });
+
+    it('uses every implemented effect, and deep_pack sits only on legendary accessories', () => {
+      const used = new Set(MAGIC_ITEMS.flatMap((i) => (i.effect ? [i.effect] : [])));
+      for (const e of ITEM_EFFECT_IDS) expect(used.has(e)).toBe(true);
+      const packs = MAGIC_ITEMS.filter((i) => i.effect === 'deep_pack');
+      expect(packs.length).toBeGreaterThanOrEqual(1);
+      for (const i of packs) {
+        expect(i.mechanic.kind).toBe('accessory');
+        expect(i.rarity).toBe('legendary');
+        expect(isSoldInShop(i)).toBe(false);
+        expect(i.theme).toBeTruthy();
+      }
+    });
+
+    it('has at least 8 themes, each with a full weapon + armor + accessory set', () => {
+      const themes = new Set(MAGIC_ITEMS.flatMap((i) => (i.theme ? [i.theme] : [])));
+      expect(themes.size).toBeGreaterThanOrEqual(8);
+      for (const t of themes) {
+        const slots = new Set(MAGIC_ITEMS.filter((i) => i.theme === t).map(slot));
+        for (const s of ['weapon', 'armor', 'accessory']) expect(slots.has(s as never)).toBe(true);
+        expect(slots.has(null)).toBe(false);
+      }
+    });
   });
 });
