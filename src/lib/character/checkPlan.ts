@@ -3,6 +3,7 @@ import { abilityModifier, normalizeAbilities } from './constants';
 import { resolveCheck, shiftAdvantage, type Advantage } from './check';
 import { levelForXp } from './leveling';
 import type { Character } from './types';
+import { hasExpertise } from './subclasses';
 
 export interface PlannedCheck {
   player: string;
@@ -145,9 +146,11 @@ export function runChecks(
     const proficient = classOf(character.classId)?.skills.includes(check.skill) ?? false;
     const ability = abilities[SKILL_ABILITIES[check.skill]];
     const itemBonus = (character.skillBonuses?.[check.skill] ?? 0) + (character.itemEffects?.setSkillBonus ?? 0);
+    // K5 rogue_trickster: the proficiency bonus counts twice on stealth, deception and sleight_of_hand.
+    const expertise = proficient && hasExpertise(character, check.skill) ? proficiencyBonus(level) : 0;
     const advantage = skillAdvantage[character.id]?.includes(check.skill) ? shiftAdvantage(check.advantage, 'up') : check.advantage;
     const dice = advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
-    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage, bonus: itemBonus });
+    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage, bonus: itemBonus + expertise });
     const die = advantage === 'advantage' ? Math.max(...dice) : advantage === 'disadvantage' ? Math.min(...dice) : dice[0];
     out.push({
       playerDisplayName: character.displayName,
@@ -157,7 +160,7 @@ export function runChecks(
       dice,
       die,
       modifier: abilityModifier(ability),
-      proficiency: proficient ? proficiencyBonus(level) : 0,
+      proficiency: (proficient ? proficiencyBonus(level) : 0) + expertise,
       itemBonus,
       total: result.total,
       success: result.success,

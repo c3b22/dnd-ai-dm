@@ -1,4 +1,5 @@
 import { MAX_LEVEL, type AbilityKey, type AbilityScores } from './constants';
+import { TRICKSTER_EXPERTISE_SKILLS } from './subclassConstants';
 
 export type ClassId = 'warrior' | 'archer' | 'cleric' | 'rogue' | 'mage';
 /** Who an ability needs the player to pick: another ally, an ally or themselves, or nobody. */
@@ -59,9 +60,13 @@ export function skillModifier(params: {
   skillBonuses?: Partial<Record<SkillId, number>>;
   /** Complete-set bonus (X9), added to every skill once. */
   setSkillBonus?: number;
+  /** K5: rogue_trickster counts the proficiency bonus twice on stealth, deception and sleight_of_hand. */
+  subclassId?: string | null;
 }): number {
   const mod = Math.floor((params.abilities[SKILL_ABILITIES[params.skill]] - 10) / 2);
-  return mod + (CLASSES[params.classId].skills.includes(params.skill) ? proficiencyBonus(params.level) : 0) + (params.skillBonuses?.[params.skill] ?? 0) + (params.setSkillBonus ?? 0);
+  const expertise = params.subclassId === 'rogue_trickster' && params.classId === 'rogue' && TRICKSTER_EXPERTISE_SKILLS.includes(params.skill);
+  const proficient = CLASSES[params.classId].skills.includes(params.skill);
+  return mod + (proficient ? proficiencyBonus(params.level) * (expertise ? 2 : 1) : 0) + (params.skillBonuses?.[params.skill] ?? 0) + (params.setSkillBonus ?? 0);
 }
 
 export const CLASSES: Record<ClassId, ClassDef> = {

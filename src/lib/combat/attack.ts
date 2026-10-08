@@ -14,6 +14,8 @@ import { rollDice } from '@/lib/character/dice';
 import { guardDivisor } from '@/lib/character/abilities';
 import { levelForXp } from '@/lib/character/leveling';
 import { damageEnemy, findActiveEnemy, hasTrait, type Encounter, type EncounterEnemy } from './encounter';
+import { hasSubclass } from '@/lib/character/subclasses';
+import { HUNTER_AC_REDUCTION } from '@/lib/character/subclassConstants';
 
 /** I4: armor class bonus an enemy's traits add against player attacks. */
 export const traitAcBonus = (enemy: EncounterEnemy): number =>
@@ -48,6 +50,8 @@ export interface AttackOutcome {
   defeated: boolean;
   damage: number;
   maxDamage: number;
+  /** K5 volley: which shot this is (2 and up for the extra shots; absent for an ordinary attack or the first shot). */
+  shot?: number;
 }
 
 /**
@@ -131,36 +135,65 @@ export function runAttacks(
     const character = findByDisplayName(characters, planAttack.player);
     const target = findActiveEnemy(enemies, planAttack.target);
     if (!character || !target || character.status !== 'active' || seen.has(character.id)) continue;
-    // K4: a blessing or an exposed target gives advantage (one source is enough, it does not stack); fearsome then takes one step back.
+    // K4: a blessing or an exposed target gives advantage (one source is enough, it does not stack); K5: so does an ability that grants it.
+    // Fearsome then takes one step back.
+    const mods = effects?.attackMods?.[character.id];
     let advantage = planAttack.advantage;
-    if (effects?.advantage.has(character.id) || effects?.enemy[target.name]?.includes('exposed')) advantage = shiftAdvantage(advantage, 'up');
+    if (effects?.advantage.has(character.id) || effects?.enemy[target.name]?.includes('exposed') || mods?.advantage) advantage = shiftAdvantage(advantage, 'up');
     if (frightened) advantage = shiftAdvantage(advantage, 'down');
     const attack = { ...planAttack, advantage };
     seen.add(character.id);
-    const dice = attack.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
     const damage = damageOf(character) ?? 0;
     const maxDamage = maxDamageOf(character);
     const bonuses = attackBonuses(character);
-    const r = resolveAttack({ d20s: dice, advantage: attack.advantage, tier: target.tier, damage, maxDamage, ...bonuses, acBonus: traitAcBonus(target), critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) });
-    if (r.hit) damageEnemy(target, r.pips);
-    out.push({
-      playerId: character.id,
-      playerDisplayName: character.displayName,
-      target: target.name,
-      tier: target.tier,
-      dc: r.dc,
-      advantage: attack.advantage,
-      dice,
-      die: r.die,
-      ...bonuses,
-      total: r.total,
-      hit: r.hit,
-      critical: r.critical,
-      pips: r.pips,
-      defeated: r.hit && target.pip === 0,
-      damage,
-      maxDamage,
-    });
+    // K5: a class ability or subclass reshapes this attack (pips, several shots).
+    const shots = mods?.shots && mods.shots > 1 ? mods.shots : 1;
+    // Volley: the first shot goes to the chosen enemy, each next one to the next live enemy after it (else the same one).
+    const followers = enemies.slice(enemies.indexOf(target) + 1).filter(isLive);
+    for (let shot = 1; shot <= shots; shot++) {
+      const current = shot === 1 ? target : followers.shift() ?? target;
+      if (!isLive(current)) {
+        if (shots === 1) break;
+        continue;
+      }
+      const shotAdvantage = attack.advantage;
+      const dice = shotAdvantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
+      // K5 archer_hunter: strong and boss enemies are easier to hit (acts like keen_eye, and adds to it).
+      const hunter = hasSubclass(character, 'archer_hunter') && (current.tier === 'strong' || current.tier === 'boss') ? HUNTER_AC_REDUCTION : 0;
+      const r = resolveAttack({
+        d20s: dice, advantage: shotAdvantage, tier: current.tier,
+        // Volley shots roll no weapon damage: a plain hit is 1 pip, only a natural 20 is heavy.
+        damage: shots > 1 ? 0 : damage, maxDamage: shots > 1 ? 1 : maxDamage,
+        ...bonuses, acBonus: traitAcBonus(current), critSurge: character.itemEffects?.effects.includes('crit_surge'), keenEye: keenEyeOf(character) + hunter,
+      });
+      let pips = r.pips;
+      if (r.hit && mods) {
+        if (mods.minPips) pips = Math.max(pips, mods.minPips);
+        if (mods.critPips && r.critical === 'success') pips = Math.max(pips, mods.critPips);
+        if (mods.extraPipsVs?.tiers.includes(current.tier)) pips += mods.extraPipsVs.pips;
+        if (mods.extraPipIfFull && current.pip >= current.maxPip) pips += mods.extraPipIfFull;
+      }
+      if (r.hit) damageEnemy(current, pips);
+      out.push({
+        playerId: character.id,
+        playerDisplayName: character.displayName,
+        target: current.name,
+        tier: current.tier,
+        dc: r.dc,
+        advantage: shotAdvantage,
+        dice,
+        die: r.die,
+        ...bonuses,
+        total: r.total,
+        hit: r.hit,
+        critical: r.critical,
+        pips: r.hit ? pips : 0,
+        defeated: r.hit && current.pip === 0,
+        damage,
+        maxDamage,
+        ...(shot > 1 ? { shot } : {}),
+      });
+    }
   }
   return out;
 }
@@ -205,6 +238,29 @@ export function applyLifesteal(
     healed.add(wearer.id);
     wearer.hp = Math.min(wearer.maxHp, wearer.hp + LIFESTEAL_HEAL);
     changes.push(`${wearer.displayName} +${LIFESTEAL_HEAL} HP ดูดชีวิต`);
+  }
+  return { characters: next, changes };
+}
+
+/**
+ * K5 berserk strike (level 5+): an attacker whose hit defeated an enemy heals AttackMods.healOnDefeat HP, once per
+ * defeated enemy, never above max HP and never a downed/dead character.
+ */
+export function applyDefeatHeals(
+  characters: Character[],
+  outcomes: readonly AttackOutcome[],
+  effects: RoundEffects | undefined
+): { characters: Character[]; changes: string[] } {
+  const next = characters.map((c) => ({ ...c }));
+  const changes: string[] = [];
+  for (const o of outcomes) {
+    const heal = effects?.attackMods?.[o.playerId]?.healOnDefeat ?? 0;
+    if (!o.defeated || heal <= 0) continue;
+    const attacker = next.find((c) => c.id === o.playerId);
+    if (!attacker || attacker.status !== 'active' || attacker.hp <= 0 || attacker.hp >= attacker.maxHp) continue;
+    const gained = Math.min(heal, attacker.maxHp - attacker.hp);
+    attacker.hp += gained;
+    changes.push(`${attacker.displayName} +${gained} HP จากการฟันศัตรูจนหมด pip`);
   }
   return { characters: next, changes };
 }

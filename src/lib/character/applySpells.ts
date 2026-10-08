@@ -11,6 +11,9 @@ import { classOf } from './classes';
 import { FEARSOME_ROUND } from '@/lib/combat/constants';
 import { hasTrait, type Encounter } from '@/lib/combat/encounter';
 import { shiftAdvantage, type Advantage } from './check';
+import { hasSubclass } from './subclasses';
+import { EVOKER_EXTRA_PIPS, WARDER_FREE_SELF_SPELLS } from './subclassConstants';
+import { damageEnemy, findActiveEnemy } from '@/lib/combat/encounter';
 import { emptyRoundEffects, isSpellId, resolveSpell, SPELLS, spellSlotsOf, type RoundEffects, type SpellRoll } from './spells';
 import type { Character } from './types';
 
@@ -57,6 +60,7 @@ function mergeEffects(into: RoundEffects, add: RoundEffects): void {
   for (const [id, skills] of Object.entries(add.skillAdvantage)) into.skillAdvantage[id] = [...new Set([...(into.skillAdvantage[id] ?? []), ...skills])];
   for (const [enemy, statuses] of Object.entries(add.enemy)) into.enemy[enemy] = [...new Set([...(into.enemy[enemy] ?? []), ...statuses])];
   for (const [id, n] of Object.entries(add.cooldownCut)) into.cooldownCut[id] = (into.cooldownCut[id] ?? 0) + n;
+  for (const [id, mods] of Object.entries(add.attackMods ?? {})) into.attackMods = { ...into.attackMods, [id]: { ...into.attackMods?.[id], ...mods } };
 }
 
 export function applySpellActions(input: {
@@ -64,15 +68,21 @@ export function applySpellActions(input: {
   actions: SpellAction[];
   encounter: Encounter | null;
   rollDie: () => number;
+  /** K5: effects already set this round by class abilities (ward, AC, statuses, attack modifiers); spells add to them. */
+  effects?: RoundEffects;
 }): SpellActionsResult {
   let characters = input.characters.map((c) => ({ ...c }));
   let encounter = input.encounter;
   const effects = emptyRoundEffects();
+  if (input.effects) mergeEffects(effects, input.effects);
   const notes: Record<string, string> = {};
   const changes: string[] = [];
   const rolls: SpellRollEntry[] = [];
   const casters: string[] = [];
   const surgeUsed: string[] = [];
+  /** K5: casters whose once-per-round warder free cast / evoker extra pip is already spent. */
+  const freeCastSpent = new Set<string>();
+  const extraPipSpent = new Set<string>();
 
   for (const action of input.actions) {
     if (!action.playerId || action.useItemId) continue;
@@ -98,6 +108,10 @@ export function applySpellActions(input: {
     const frightened = encounter && (encounter.round ?? 1) === FEARSOME_ROUND && encounter.enemies.some((e) => e.pip > 0 && !e.fled && hasTrait(e, 'fearsome'));
     if (frightened) advantage = shiftAdvantage(advantage, 'down');
 
+    // K5 mage_warder: the first defense/support spell cast on themselves each round costs no slot.
+    const selfTarget = target !== undefined && (target === caster.id || target === caster.displayName);
+    const freeCast = !surgeReady && hasSubclass(caster, 'mage_warder') && !freeCastSpent.has(caster.id) && selfTarget && WARDER_FREE_SELF_SPELLS.includes(action.spellId);
+
     const result = resolveSpell({
       caster,
       spellId: action.spellId,
@@ -105,6 +119,7 @@ export function applySpellActions(input: {
       allies: characters,
       encounter,
       surge: surgeReady,
+      freeCast,
       advantage,
       d20: input.rollDie,
     });
@@ -116,6 +131,22 @@ export function applySpellActions(input: {
     if (!result.ok) {
       changes.push(lines[lines.length - 1] ?? `${caster.displayName} ร่าย${spell.nameTh}ไม่สำเร็จ`);
       continue;
+    }
+    if (freeCast) freeCastSpent.add(caster.id);
+    // K5 mage_evoker: the first spell of the round that took pips off takes one more off the first enemy it hurt.
+    if (hasSubclass(caster, 'mage_evoker') && !extraPipSpent.has(caster.id) && result.encounter) {
+      const hurt = result.rolls.find((r) => r.pips > 0);
+      if (hurt) {
+        extraPipSpent.add(caster.id);
+        const enemies = result.encounter.enemies.map((e) => ({ ...e }));
+        const enemy = findActiveEnemy(enemies, hurt.target);
+        if (enemy) {
+          damageEnemy(enemy, EVOKER_EXTRA_PIPS);
+          hurt.pips += EVOKER_EXTRA_PIPS;
+          result.encounter = { ...result.encounter, enemies };
+          lines.push(`สายทำลายล้าง: ${enemy.name} −${EVOKER_EXTRA_PIPS} pip เพิ่ม`);
+        }
+      }
     }
     characters = characters.map((c) => (c.id === caster.id ? result.caster : c));
     encounter = result.encounter;

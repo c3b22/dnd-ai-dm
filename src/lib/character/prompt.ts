@@ -2,6 +2,7 @@ import { ABILITY_KEYS, abilityModifier, diceLabel, normalizeAbilities, weaponFor
 import { classOf, skillModifier } from './classes';
 import { levelForXp } from './leveling';
 import { spellSlotsOf } from './spells';
+import { replacementOf, subclassOf } from './subclasses';
 import { armorClass } from '@/lib/combat/armorClass';
 import type { Character } from './types';
 
@@ -14,7 +15,7 @@ function abilityLine(c: Character): string {
   const cls = classOf(c.classId);
   const skills = cls
     ? `; proficient: ${cls.skills
-        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0), skillBonuses: c.skillBonuses, setSkillBonus: c.itemEffects?.setSkillBonus }))}`)
+        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0), skillBonuses: c.skillBonuses, setSkillBonus: c.itemEffects?.setSkillBonus, subclassId: c.subclassId }))}`)
         .join(', ')}`
     : '';
   return `  ${c.displayName} modifiers: ${mods}${skills}`;
@@ -42,6 +43,23 @@ function identityLines(characters: Character[]): string[] {
   ];
 }
 
+/** K5: who follows which subclass; empty when nobody has chosen one. */
+function subclassLines(characters: Character[]): string[] {
+  const rows = characters.flatMap((c) => {
+    const sub = subclassOf(c);
+    if (!sub) return [];
+    const replaced = replacementOf(c);
+    return [`  ${c.displayName} (${CLASSES_LABEL(c)}): ${sub.nameTh} - ${sub.descTh}${replaced ? ` Their main class ability is now ${replaced.nameTh}.` : ''}`];
+  });
+  if (rows.length === 0) return [];
+  return [
+    'Subclasses (chosen at level 3). The server applies their effects and reports them in action notes, so narrate a character in a way that fits their path (for example a guardian shielding allies, a berserker fighting recklessly) but never invent or change any numbers:',
+    ...rows,
+  ];
+}
+
+const CLASSES_LABEL = (c: Character): string => classOf(c.classId)?.nameTh ?? '';
+
 export function characterPrompt(
   characters: Character[],
   pendingWipe: boolean,
@@ -65,6 +83,7 @@ export function characterPrompt(
     }),
     'Ability modifiers (use them to set sensible DCs: easier for what a character is good at, harder for what they are bad at; the server adds the modifier to the roll, so never add it yourself):',
     ...characters.map(abilityLine),
+    ...subclassLines(characters),
     ...identityLines(characters),
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',

@@ -12,7 +12,7 @@ import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
 import { takeItem } from '@/lib/inventory/rules';
 import { advanceEncounter, applyEnemyTags, type Encounter } from '@/lib/combat/encounter';
-import { applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
+import { applyDefeatHeals, applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
@@ -91,6 +91,7 @@ export async function processRound(
   let roundCharacters: Character[] = [];
   let storedEncounter: Encounter | null = null;
   let venomChanges: string[] = [];
+  let defeatHealChanges: string[] = [];
   let corpses: Corpse[] = [];
   let diceEnabled = true;
   // J3: the passed rest vote for this round (not while a fight is on) and the DM's verdict on it.
@@ -137,12 +138,12 @@ export async function processRound(
     // so a failed generation leaves the potion untouched for the retry.
     potions = applyPotionActions(context.characters, context.inventories, context.actions, rollSides);
     // Class abilities resolve here too, before narration and unsaved until the end, like potions.
-    abilities = applyAbilityActions(potions.characters, context.actions, rollSides);
+    abilities = applyAbilityActions(potions.characters, context.actions, rollSides, context.currentEncounter ?? null);
     // F5e: scrolls cut pips off the targeted enemy before narration; like potions nothing is saved until the end.
     scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
     // K4: spells resolve after scrolls on the same working encounter (pips, statuses, slots); like everything above,
     // nothing is saved until the end. They roll with the server's d20 even at a table without dice rolls.
-    spells = applySpellActions({ characters: abilities.characters, actions: context.actions, encounter: scrolls.encounter, rollDie: rollD20 });
+    spells = applySpellActions({ characters: abilities.characters, actions: context.actions, encounter: scrolls.encounter, rollDie: rollD20, effects: abilities.effects });
     roundEncounter = spells.encounter;
     // H1: downed characters roll a death save before narration (dice tables only, like every other roll).
     // Unsaved until the end, like potions; a nat 20 stands the character up before the DM narrates.
@@ -215,6 +216,10 @@ export async function processRound(
           first.kind === 'checks'
             ? runAttacks(first.attacks.filter((a) => !casterNames.has(a.player.toLowerCase())), roundCharacters, roundEncounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie, spells.effects)
             : [];
+        // K5: a berserk strike that defeated an enemy heals the attacker before anything else reads their HP.
+        const defeatHeals = applyDefeatHeals(roundCharacters, attackOutcomes, spells.effects);
+        roundCharacters = defeatHeals.characters;
+        defeatHealChanges = defeatHeals.changes;
         const attackers = new Set(attackOutcomes.map((o) => o.playerDisplayName.toLowerCase()));
         const outcomes =
           first.kind === 'checks'
@@ -224,7 +229,8 @@ export async function processRound(
         enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, roundEncounter, rollDie, rollSides, applyAttackOutcomes(roundEncounter, attackOutcomes), spells.effects) : [];
         if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0 || restAnswer) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
-          const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
+          // K5: a volley has several outcomes for one player; the first shot rides on the action, the others get their own roll lines.
+          const attackByName = new Map(attackOutcomes.filter((o) => !o.shot).map((o) => [o.playerDisplayName.toLowerCase(), o]));
           rolled = rolled.map((a) => {
             const key = a.playerDisplayName.toLowerCase();
             const check = byName.get(key);
@@ -246,12 +252,12 @@ export async function processRound(
 
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
   // K4: each spell die is its own line (attack roll or enemy save); the caster's plain action die is dropped for them.
-  const spellEntries = spells.rolls.map((r): RollSummaryEntry => ({
+  const spellEntries = [...abilities.rolls, ...spells.rolls].map((r): RollSummaryEntry => ({
     playerDisplayName: r.playerDisplayName,
     roll: r.die,
     spell: { name: r.spellNameTh, target: r.target, kind: r.kind, bonus: r.bonus, total: r.total, dc: r.dc, success: r.success, critical: r.critical, pips: r.pips },
   }));
-  const spellRollers = new Set(spells.rolls.map((r) => r.playerDisplayName.toLowerCase()));
+  const spellRollers = new Set([...abilities.rolls, ...spells.rolls].map((r) => r.playerDisplayName.toLowerCase()));
   if (diceEnabled || spellEntries.length > 0) {
     await deps.repository
       .insertRollSummary(
@@ -269,7 +275,10 @@ export async function processRound(
             roll: c.die,
             check: { skill: c.skill, dc: c.dc, advantage: c.advantage, dice: c.dice, modifier: c.modifier, proficiency: c.proficiency, total: c.total, success: c.success, critical: c.critical },
           };
-        }), ...spellEntries, ...enemyAttackOutcomes.map(enemyAttackEntry), ...deathSaveRolls.map(deathSaveEntry)]
+        }), ...spellEntries,
+          // K5: the second and later shots of a volley, one line each.
+          ...attackOutcomes.filter((o) => o.shot).map((o): RollSummaryEntry => ({ playerDisplayName: o.playerDisplayName, roll: o.die, attack: { target: o.target, modifier: o.modifier, proficiency: o.proficiency, magic: o.magic, total: o.total, ac: o.dc, hit: o.hit, critical: o.critical } })),
+          ...enemyAttackOutcomes.map(enemyAttackEntry), ...deathSaveRolls.map(deathSaveEntry)]
       )
       .catch(() => {});
   }
@@ -340,9 +349,9 @@ export async function processRound(
       // K4: the round-only spell bonuses (roundAcBonus / roundWard) end with the round and are never handed to the repository.
       const finalCharacters = settleDeathSaves(tickCooldowns(
         rest.characters,
-        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
+        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...defeatHealChanges, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
         [...abilities.used, ...spells.surgeUsed],
-        [],
+        abilities.usedExtra,
         spells.effects.cooldownCut
       )).map(({ roundAcBonus: _ac, roundWard: _ward, ...c }) => {
         void _ac;
@@ -501,6 +510,7 @@ export async function processRound(
         ...spells.changes,
         ...enemyAttacks.changes,
         ...lifesteal.changes,
+        ...defeatHealChanges,
         ...result.changes,
         ...xpResult.changes,
         ...inventoryResult.changes,

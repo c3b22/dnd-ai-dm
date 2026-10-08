@@ -23,6 +23,11 @@ import {
   SPELL_HIGH_LEVEL, SPELL_SAVE_DC_BASE, SPELL_WARD, SPELL_WARD_HI, SURGE_UPGRADE_BONUS,
 } from './spellConstants';
 import { ABILITY_UPGRADE_LEVEL } from './abilities';
+import { hasSubclass, type AttackMods } from './subclasses';
+import {
+  EVOKER_DC_BONUS, WARDER_ARCANE_SHIELD_AC, WARDER_ARCANE_SHIELD_AC_HI, WARDER_CONTROL_DC_BONUS, WARDER_CONTROL_SPELLS,
+  WARDER_SPELL_WARD, WARDER_SPELL_WARD_HI,
+} from './subclassConstants';
 
 export type SpellCategory = 'attack_single' | 'attack_area' | 'defense' | 'control' | 'support' | 'explore';
 export type SpellTarget = 'enemy' | 'enemies' | 'ally_or_self' | 'ally' | 'self' | 'allies';
@@ -129,6 +134,8 @@ export interface RoundEffects {
   enemy: Record<string, EnemyStatus[]>;
   /** playerId -> how many rounds of cooldown are cut from every ability still cooling down. */
   cooldownCut: Record<string, number>;
+  /** K5: playerId -> changes to this round's weapon attack from a class ability or subclass (runAttacks). */
+  attackMods?: Record<string, AttackMods>;
 }
 
 export const emptyRoundEffects = (): RoundEffects => ({ acBonus: {}, ward: {}, advantage: new Set(), skillAdvantage: {}, enemy: {}, cooldownCut: {} });
@@ -183,6 +190,8 @@ export interface ResolveSpellInput {
   surge?: boolean;
   /** Attack advantage (e.g. from valor_blessing); fearsome can pass 'disadvantage'. */
   advantage?: Advantage;
+  /** K5 mage_warder: cast without spending a slot (no surge bonus). */
+  freeCast?: boolean;
   /** Rolls one d20. */
   d20: () => number;
 }
@@ -215,25 +224,35 @@ export function resolveSpell(input: ResolveSpellInput): SpellResult {
   const level = levelOf(caster);
   const slots = spellSlotsOf(caster)!;
   const surge = input.surge === true;
-  if (spell.slots > 0 && !surge && slots.current < spell.slots) {
+  if (spell.slots > 0 && !surge && !input.freeCast && slots.current < spell.slots) {
     return refuse(input, 'no_slots', `${name} ช่องเวทหมด ร่าย${spell.nameTh}ไม่ได้ (ยังร่ายเวทพื้นฐานได้)`);
   }
 
   const surgeBonus = surge && level >= ABILITY_UPGRADE_LEVEL ? SURGE_UPGRADE_BONUS : 0;
   const attackBonus = spellAttackBonus(caster, surgeBonus);
-  const dc = spellSaveDc(caster, surgeBonus);
+  // K5: evoker +1 to every save DC; warder +2 on hold_foe and illusion_fog.
+  const dc = spellSaveDc(
+    caster,
+    surgeBonus + (hasSubclass(caster, 'mage_evoker') ? EVOKER_DC_BONUS : 0) + (hasSubclass(caster, 'mage_warder') && WARDER_CONTROL_SPELLS.includes(spell.id) ? WARDER_CONTROL_DC_BONUS : 0)
+  );
+  const warder = hasSubclass(caster, 'mage_warder');
   const advantage: Advantage = input.advantage ?? 'none';
   const hi = level >= SPELL_HIGH_LEVEL;
   const effects = emptyRoundEffects();
   const rolls: SpellRoll[] = [];
   const notes: string[] = [];
-  const cast = surge ? `${name} ร่าย${spell.nameTh}ด้วยเวทไหลล้น (ไม่เสียช่องเวท)` : `${name} ร่าย${spell.nameTh}`;
+  const free = surge || input.freeCast === true;
+  const cast = surge
+    ? `${name} ร่าย${spell.nameTh}ด้วยเวทไหลล้น (ไม่เสียช่องเวท)`
+    : input.freeCast
+      ? `${name} ร่าย${spell.nameTh}ใส่ตัวเองโดยไม่เสียช่องเวท (สายผนึกเวท)`
+      : `${name} ร่าย${spell.nameTh}`;
 
   const finish = (encounter: Encounter | null): SpellResult => ({
     ok: true,
     spellId: spell.id,
-    slotCost: surge ? 0 : spell.slots,
-    caster: surge || spell.slots === 0 ? caster : spendSpellSlot(caster),
+    slotCost: free ? 0 : spell.slots,
+    caster: free || spell.slots === 0 ? caster : spendSpellSlot(caster),
     encounter,
     effects,
     rolls,
@@ -350,13 +369,14 @@ export function resolveSpell(input: ResolveSpellInput): SpellResult {
   const who = target.id === caster.id ? 'ตัวเอง' : target.displayName;
   switch (spell.id) {
     case 'arcane_shield': {
-      const ac = level >= ARCANE_SHIELD_HI_LEVEL ? ARCANE_SHIELD_AC_HI : ARCANE_SHIELD_AC;
+      const hiShield = level >= ARCANE_SHIELD_HI_LEVEL;
+      const ac = warder ? (hiShield ? WARDER_ARCANE_SHIELD_AC_HI : WARDER_ARCANE_SHIELD_AC) : hiShield ? ARCANE_SHIELD_AC_HI : ARCANE_SHIELD_AC;
       effects.acBonus[target.id] = ac;
       notes.push(`${cast} ให้ ${who}: AC +${ac} ตลอดรอบนี้`);
       break;
     }
     case 'spell_ward': {
-      const ward = hi ? SPELL_WARD_HI : SPELL_WARD;
+      const ward = warder ? (hi ? WARDER_SPELL_WARD_HI : WARDER_SPELL_WARD) : hi ? SPELL_WARD_HI : SPELL_WARD;
       effects.ward[target.id] = ward;
       notes.push(`${cast} ให้ ${who}: ลดดาเมจของการโดนครั้งแรกในรอบนี้ ${ward}`);
       break;
