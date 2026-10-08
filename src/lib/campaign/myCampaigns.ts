@@ -7,6 +7,8 @@ export interface MyCampaignSummary {
   name: string;
   adventureId: string | null;
   started: boolean;
+  /** L4: the campaign has ended (status = 'ended'); false when the column is not readable yet. */
+  ended: boolean;
   /** True when this user is the table owner (earliest-joined player). */
   isOwner: boolean;
 }
@@ -18,6 +20,7 @@ interface PlayerRow {
     name: string;
     adventure_id: string | null;
     started_at: string | null;
+    status?: string | null;
     created_at: string;
     players?: { id: string; created_at: string }[] | null;
   } | null;
@@ -27,10 +30,11 @@ export async function fetchMyCampaigns(
   supabase: SupabaseClient,
   userId: string
 ): Promise<MyCampaignSummary[]> {
-  const { data, error } = await supabase
-    .from('players')
-    .select('id, campaign_id, campaigns(name, adventure_id, started_at, created_at, players(id, created_at))')
-    .eq('user_id', userId);
+  const load = (campaignColumns: string) =>
+    supabase.from('players').select(`id, campaign_id, campaigns(${campaignColumns}, created_at, players(id, created_at))`).eq('user_id', userId);
+  // campaigns.status may not exist yet (migration not applied): retry without it, treating every room as not ended.
+  let { data, error } = await load('name, adventure_id, started_at, status');
+  if (error) ({ data, error } = await load('name, adventure_id, started_at'));
   if (error) throw error;
 
   return (data as unknown as PlayerRow[])
@@ -44,6 +48,7 @@ export async function fetchMyCampaigns(
       name: row.campaigns.name,
       adventureId: row.campaigns.adventure_id,
       started: Boolean(row.campaigns.started_at),
+      ended: row.campaigns.status === 'ended',
       isOwner:
         findOwnerId((row.campaigns.players ?? []).map((p) => ({ id: p.id, joinedAt: p.created_at }))) === row.id,
     }));

@@ -56,8 +56,8 @@ export function MyCampaigns({ campaigns }: { campaigns: MyCampaignSummary[] }) {
           <li key={c.id} className="my-campaign-item">
             <Link href={`/campaign/${c.id}?playerId=${c.playerId}`} className="my-campaign-row">
               <span className="name">{c.name}</span>
-              <span className={`status-badge ${c.started ? 'playing' : 'waiting'}`}>
-                {c.started ? 'กำลังเล่น' : 'ในห้องรอ'}
+              <span className={`status-badge ${c.ended ? 'ended' : c.started ? 'playing' : 'waiting'}`}>
+                {c.ended ? 'จบแล้ว' : c.started ? 'กำลังเล่น' : 'ในห้องรอ'}
               </span>
             </Link>
             {confirmingId === c.id ? (

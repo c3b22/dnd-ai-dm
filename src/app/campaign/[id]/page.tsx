@@ -66,6 +66,9 @@ import { fetchEncounter, subscribeToEncounter } from '@/lib/supabase/encounter';
 import type { Encounter } from '@/lib/combat/encounter';
 import { fetchCampaignFacts, subscribeToFacts } from '@/lib/supabase/factsRealtime';
 import type { CampaignFact } from '@/lib/memory/types';
+import { CampaignSummary } from '@/components/CampaignSummary';
+import { fetchCampaignEnd, fetchEpilogue, subscribeToCampaignEnd } from '@/lib/supabase/campaignEnd';
+import type { CampaignStats } from '@/lib/campaign/stats';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
@@ -93,6 +96,10 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [restVote, setRestVote] = useState<RestVote | null>(null);
   const [shortRestsUsed, setShortRestsUsed] = useState(0);
   const [facts, setFacts] = useState<CampaignFact[]>([]);
+  // L4: an ended campaign is read-only and shows the summary panel.
+  const [ended, setEnded] = useState(false);
+  const [endStats, setEndStats] = useState<CampaignStats | null>(null);
+  const [epilogue, setEpilogue] = useState<string | null>(null);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
@@ -236,6 +243,20 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshFacts();
     return subscribeToFacts(campaignId, refreshFacts);
   }, [campaignId, refreshFacts]);
+
+  const refreshEnd = useCallback(() => {
+    fetchCampaignEnd(campaignId)
+      .then((state) => {
+        setEnded(state.ended);
+        setEndStats(state.stats);
+        if (state.ended) fetchEpilogue(campaignId).then(setEpilogue).catch(() => {});
+      })
+      .catch(() => {});
+  }, [campaignId]);
+  useEffect(() => {
+    refreshEnd();
+    return subscribeToCampaignEnd(campaignId, refreshEnd);
+  }, [campaignId, refreshEnd]);
 
   const me = players.find((p) => p.id === playerId);
 
@@ -535,13 +556,14 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               <span>DM กำลังเรียบเรียงเรื่องราว… อาจใช้เวลาสักครู่ (ยังไม่ค้าง)</span>
             </div>
           )}
-          {me?.status === 'dead' && (
+          {ended && <CampaignSummary epilogue={epilogue} stats={endStats} players={players} facts={facts} />}
+          {!ended && me?.status === 'dead' && (
             <RespawnForm
               startLevel={respawnLevel(players.filter((p) => p.id !== playerId && p.status !== 'dead'))}
               onSubmit={handleRespawn}
             />
           )}
-          {roundId && me?.status !== 'dead' && (
+          {!ended && roundId && me?.status !== 'dead' && (
             <ActionInput
               key={roundId}
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
@@ -560,7 +582,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               alreadyActed={me?.acted ?? false}
             />
           )}
-          {roundId && me && me.status !== 'dead' && (
+          {!ended && roundId && me && me.status !== 'dead' && (
             <RestPanel
               vote={restVote}
               players={players}
@@ -573,7 +595,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onCancel={() => requestRest(campaignId, 'cancel')}
             />
           )}
-          {playerId && (
+          {!ended && playerId && (
             <ChatPanel
               onSendChat={(content) => sendTeamChat(campaignId, content)}
               onAsk={handleAsk}
@@ -587,7 +609,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             <PlayerOrder
               players={players}
               currentPlayerId={playerId}
-              locked={players.find((p) => p.id === playerId)?.acted ?? false}
+              locked={ended || (players.find((p) => p.id === playerId)?.acted ?? false)}
               onMove={handleMove}
               onReorder={handleReorder}
               onAbilityChoice={handleAbilityChoice}
@@ -600,16 +622,16 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             <Inventory
               items={me.items}
               gold={me.gold}
-              canAct={me.status === 'active' && !me.acted}
+              canAct={!ended && me.status === 'active' && !me.acted}
               fullHp={me.hp >= me.maxHp}
               onEquip={handleEquip}
               onDrink={handleDrink}
             />
           )}
-          {shop && me && (
+          {!ended && shop && me && (
             <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
           )}
-          {me && (
+          {!ended && me && (
             <Trades
               me={me}
               players={players}
@@ -619,7 +641,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               error={tradeError}
             />
           )}
-          {roundId && settings.roundSeconds > 0 && (
+          {!ended && roundId && settings.roundSeconds > 0 && (
             <RoundTimer
               openedAt={openedAt}
               durationMs={settings.roundSeconds * 1000}
@@ -633,7 +655,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             started={Boolean(startedAt)}
             onSave={handleSaveSettings}
           />
-          <QuestLog facts={facts} />
+          {!ended && <QuestLog facts={facts} />}
           {adventure && (
             <section className="card" aria-label="เรื่องที่เล่น">
               <h3>เรื่องที่เล่น</h3>
@@ -643,7 +665,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               </div>
             </section>
           )}
-          {roundId && (
+          {!ended && roundId && (
             <button type="button" className="btn ghost" onClick={() => triggerProcessing(roundId)}>
               ให้ DM ตัดสินตอนนี้ (ถ้ามีคนติดอยู่)
             </button>
