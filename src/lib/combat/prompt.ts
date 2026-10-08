@@ -1,4 +1,4 @@
-import { ENEMY_TRAIT_HINTS, ENEMY_TRAIT_IDS, MAX_ENEMY_TRAITS, TIER_PIPS } from './constants';
+import { ENEMY_TRAIT_HINTS, ENEMY_TRAIT_IDS, HURT_PIPS, MAX_ENEMY_TRAITS, TIER_PIPS } from './constants';
 import type { Encounter } from './encounter';
 
 /**
@@ -24,7 +24,7 @@ export function combatPrompt(encounter: Encounter | null, serverAttacks = false)
     ...ENEMY_TRAIT_IDS.map((id) => `    ${id}: ${ENEMY_TRAIT_HINTS[id]}`),
     ...(serverAttacks
       ? ['  Do not use an enemy_hurt tag: the server rolls the attacks of the players and removes the health of the enemies itself; just narrate the attack results you are given.']
-      : ['  [[enemy_hurt: Name | light/medium/heavy]] - the enemy was hurt this round (light or medium costs 1 pip, heavy costs 2); a boss cannot be killed by a single blow from full health']),
+      : ['  [[enemy_hurt: Name | light/medium/heavy]] - the enemy was hurt this round (light or medium costs ' + HURT_PIPS.light + ' pips, heavy costs ' + HURT_PIPS.heavy + '); a boss cannot be killed by a single blow from full health']),
     ...(serverAttacks
       ? ['  Enemy attacks on players are rolled by the server (d20 + a tier bonus against the player armor class, damage dice by tier): declare them in the "enemyAttacks" list of your JSON answer, never with a tag, and narrate the results you are given.']
       : ['  [[enemy_attack: EnemyName | PlayerName]] - an enemy attacks a player; the server rolls d20 + a tier bonus against the player armor class and the damage dice by tier (a miss deals nothing), so use this INSTEAD of a hurt tag for enemy attacks during a fight (hurt stays for traps, falls and the like). Use it at most once per enemy per round']),

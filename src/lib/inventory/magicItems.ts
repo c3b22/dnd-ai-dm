@@ -1,6 +1,7 @@
 import type { DiceSpec } from '@/lib/character/constants';
 import type { SkillId } from '@/lib/character/classes';
 import type { ItemEffectId } from './effects';
+import { SCROLL_PIPS } from '@/lib/combat/constants';
 
 /**
  * Magic item catalogue (F5b). Pure data with 6 mechanic kinds only. Variety comes from names, numbers,
@@ -78,8 +79,7 @@ const potion = (id: string, nameTh: string, rarity: R, count: number, sides: num
   mechanic: { kind: 'consumable', heal: { count, sides, bonus } },
 });
 
-// --- scrolls: remove 1 / 2 / 3 enemy pips by rarity (a boss at full pips keeps at least 1, existing rule) ---
-const SCROLL_PIPS: Record<R, number> = { uncommon: 1, rare: 2, legendary: 3 };
+// --- scrolls: remove SCROLL_PIPS enemy pips by rarity (a boss at full pips keeps at least 1, existing rule) ---
 const scroll = (id: string, nameTh: string, rarity: R, price: number, flavorTh: string): MagicItem => ({
   id: `scroll_${id}`, nameTh, flavorTh, rarity, weight: 1, price,
   mechanic: { kind: 'scroll', pipReduction: SCROLL_PIPS[rarity] },
@@ -175,7 +175,7 @@ const BASE_MAGIC_ITEMS: readonly MagicItem[] = [
   potion('stream', 'ยาสายธารฟื้นฟู', RA, 3, 6, 0, 90, 'น้ำจากต้นธารศักดิ์สิทธิ์ที่แผลเก่าแก่ก็หายสนิท'),
   potion('ambrosia', 'ยาน้ำอมฤต', L, 4, 8, 4, 220, 'หยดเดียวจากน้ำอมฤตก็ดึงคนใกล้ตายกลับมาลืมตาได้'),
 
-  // scrolls: 5 uncommon (1 pip), 6 rare (2 pips), 1 legendary (3 pips)
+  // scrolls: 5 uncommon, 6 rare, 1 legendary (pips in SCROLL_PIPS)
   scroll('spark', 'ม้วนคัมภีร์ประกายไฟ', U, 35, 'ตัวอักษรบนม้วนร้อนผ่าวและแตกเป็นประกายเมื่ออ่านออกเสียง'),
   scroll('cuttingwind', 'ม้วนคัมภีร์สายลมบาด', U, 35, 'ลมที่หลุดจากม้วนกระดาษคมเหมือนใบมีดบาง'),
   scroll('frostdew', 'ม้วนคัมภีร์น้ำค้างแข็ง', U, 40, 'เมื่อคลี่ม้วนออก อากาศรอบตัวเย็นจนหายใจเป็นไอ'),

@@ -54,9 +54,9 @@ describe('applyEnemyTags', () => {
 
   it('applies hurt amounts and ignores unknown names', () => {
     const start = applyEnemyTags(null, [enemy('a', 'strong')])!;
-    expect(applyEnemyTags(start, [hurt('a', 'light')])?.enemies[0].pip).toBe(5);
-    expect(applyEnemyTags(start, [hurt('a', 'medium')])?.enemies[0].pip).toBe(5);
-    expect(applyEnemyTags(start, [hurt('a', 'heavy')])?.enemies[0].pip).toBe(4);
+    expect(applyEnemyTags(start, [hurt('a', 'light')])?.enemies[0].pip).toBe(4);
+    expect(applyEnemyTags(start, [hurt('a', 'medium')])?.enemies[0].pip).toBe(4);
+    expect(applyEnemyTags(start, [hurt('a', 'heavy')])?.enemies[0].pip).toBe(2);
     expect(applyEnemyTags(start, [hurt('zzz', 'heavy')])).toEqual(start);
   });
 
@@ -70,16 +70,16 @@ describe('applyEnemyTags', () => {
   it('a boss at full pips is never killed by one blow, and can still fall later', () => {
     const start = applyEnemyTags(null, [enemy('b', 'boss')])!;
     const hit = applyEnemyTags(start, [hurt('b', 'heavy')])!;
-    expect(hit.enemies[0].pip).toBe(8);
+    expect(hit.enemies[0].pip).toBe(6);
     const low = { enemies: [{ ...hit.enemies[0], pip: 1 }] };
     const other = applyEnemyTags(low, [enemy('m', 'minion'), hurt('b', 'light')])!;
     expect(other.enemies[0].pip).toBe(0);
   });
 
   it('downed enemies stay while others remain; pip 0 is down and cannot be hurt again', () => {
-    const start = applyEnemyTags(null, [enemy('a', 'minion'), enemy('b', 'normal')])!;
+    const start = applyEnemyTags(null, [enemy('a', 'normal'), enemy('b', 'normal')])!;
     const r = applyEnemyTags(start, [hurt('a', 'light')])!;
-    expect(r.enemies[0].pip).toBe(1);
+    expect(r.enemies[0].pip).toBe(2);
     expect(r.enemies).toHaveLength(2);
     const down = applyEnemyTags(r, [hurt('a', 'light')])!;
     expect(down.enemies[0].pip).toBe(0);
@@ -87,10 +87,10 @@ describe('applyEnemyTags', () => {
   });
 
   it('targets numbered duplicates by base name, skipping downed ones', () => {
-    const start = applyEnemyTags(null, [enemy('หมาป่า', 'minion'), enemy('หมาป่า', 'normal')])!;
+    const start = applyEnemyTags(null, [enemy('หมาป่า', 'minion'), enemy('หมาป่า', 'strong')])!;
     const r = applyEnemyTags(start, [hurt('หมาป่า', 'light'), hurt('หมาป่า', 'light'), hurt('หมาป่า', 'light')])!;
-    expect(r.enemies.map((e) => e.pip)).toEqual([0, 3]);
-    expect(applyEnemyTags(start, [hurt('หมาป่า 2', 'light')])?.enemies[1].pip).toBe(3);
+    expect(r.enemies.map((e) => e.pip)).toEqual([0, 2]);
+    expect(applyEnemyTags(start, [hurt('หมาป่า 2', 'light')])?.enemies[1].pip).toBe(4);
   });
 
   it('enemy_flee marks fled', () => {

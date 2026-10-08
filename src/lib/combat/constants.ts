@@ -2,7 +2,7 @@
 // These are starting values that have not been play-tested yet.
 import type { DiceSpec } from '@/lib/character/constants';
 import type { AbilityKey } from '@/lib/character/constants';
-import type { EnemyTier } from '@/lib/character/tags';
+import type { EnemyHurtTier, EnemyTier } from '@/lib/character/tags';
 
 /** I3: an enemy's armor class. A player's attack hits when d20 + ability mod + proficiency + magic bonus is at least this (nat 1 always misses, nat 20 always hits). */
 export const HIT_THRESHOLD: Record<EnemyTier, number> = { minion: 11, normal: 13, strong: 15, boss: 17 };
@@ -19,6 +19,11 @@ export const WEAPON_ATTACK_ABILITIES: Record<string, readonly AbilityKey[]> = {
 
 /** I6: pips an enemy starts with, by tier (also its health bar length; the EncounterPanel draws up to the largest of these). */
 export const TIER_PIPS: Record<EnemyTier, number> = { minion: 2, normal: 4, strong: 6, boss: 10 };
+
+/** Q1: pips a [[enemy_hurt]] tag removes, by tier (doubled with the I6 pips so its share of an enemy stays what it was). */
+export const HURT_PIPS: Record<EnemyHurtTier, number> = { light: 2, medium: 2, heavy: 4 };
+/** Q1: pips a scroll removes, by rarity (doubled with the I6 pips: a rare scroll takes 40% off a boss again). */
+export const SCROLL_PIPS = { uncommon: 2, rare: 4, legendary: 6 } as const;
 
 /** Pips a normal hit removes. */
 export const HIT_PIPS = 1;

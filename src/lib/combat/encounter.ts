@@ -1,5 +1,5 @@
-import type { CharacterTag, EnemyHurtTier, EnemyTier } from '@/lib/character/tags';
-import { BOSS_ONLY_TRAITS, ENEMY_TRAIT_IDS, MAX_ENEMY_TRAITS, REGEN_CALM_ROUNDS, REGEN_PIPS, TIER_PIPS, type EnemyTrait } from './constants';
+import type { CharacterTag, EnemyTier } from '@/lib/character/tags';
+import { BOSS_ONLY_TRAITS, ENEMY_TRAIT_IDS, MAX_ENEMY_TRAITS, REGEN_CALM_ROUNDS, HURT_PIPS, REGEN_PIPS, TIER_PIPS, type EnemyTrait } from './constants';
 
 export type EncounterEnemy = {
   name: string;
@@ -37,7 +37,6 @@ export function cleanTraits(raw: unknown, tier: EnemyTier): EnemyTrait[] {
 
 export const MAX_ENEMIES = 8;
 
-const HURT_PIPS: Record<EnemyHurtTier, number> = { light: 1, medium: 1, heavy: 2 };
 
 const isActive = (e: EncounterEnemy) => e.pip > 0 && !e.fled;
 

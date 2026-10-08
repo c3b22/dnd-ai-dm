@@ -791,7 +791,7 @@ describe('processRound encounter', () => {
   it('updates the stored encounter on a hurt tag and ends it when the last enemy falls', async () => {
     const hurt = one({ currentEncounter: { enemies: [wolf] } });
     await run(hurt, '[[enemy_hurt: หมาป่า | light]]');
-    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 3 }] });
+    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 2 }] });
 
     const dead = one({ currentEncounter: { enemies: [{ ...wolf, pip: 2 }] } });
     await run(dead, '[[enemy_hurt: หมาป่า | heavy]]');
@@ -1187,8 +1187,8 @@ describe('processRound scrolls (F5e)', () => {
     const prompt = generateNarration.mock.calls[0][0] as string;
     expect(prompt).toContain('read ม้วนคัมภีร์เปลวไฟ at หมาป่า');
     expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [], baseItems: [scrollItem] }]);
-    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 4 }] });
-    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 2 }] });
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-4 pip)']);
   });
 
   it('keeps the scroll when there is no fight or the target is wrong', async () => {
