@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { persistCampaignStats, type StatsDelta } from '@/lib/campaign/stats';
 import type { StoredMessage, RoundAction } from './assemblePrompt';
 import { sortByTurnOrder } from '@/lib/campaign/turnOrder';
 import { normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
@@ -149,6 +150,8 @@ export interface RoundRepository {
   saveFacts(campaignId: string, facts: FactInput[]): Promise<void>;
   /** Records magic items handed out this round (F5f). Optional so older fakes keep working. */
   saveMagicGiven?(campaignId: string, itemIds: string[]): Promise<void>;
+  /** L1: adds one round's numbers to campaigns.stats. Optional so older fakes keep working; throws when the column is missing (the caller swallows it). */
+  addCampaignStats?(campaignId: string, delta: StatsDelta): Promise<void>;
   insertStatsSummary(campaignId: string, roundId: string, changes: string[]): Promise<void>;
   insertDmMessagePlaceholder(campaignId: string, roundId: string): Promise<string>;
   appendToMessage(messageId: string, textChunk: string): Promise<void>;
@@ -547,6 +550,10 @@ export function createSupabaseRoundRepository(supabase: SupabaseClient): RoundRe
 
     async saveMagicGiven(campaignId, itemIds) {
       await persistMagicGiven(supabase, campaignId, itemIds);
+    },
+
+    async addCampaignStats(campaignId, delta) {
+      await persistCampaignStats(supabase, campaignId, delta);
     },
 
     async insertStatsSummary(campaignId, roundId, changes) {

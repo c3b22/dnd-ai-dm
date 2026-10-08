@@ -1541,3 +1541,37 @@ describe('processRound cooldown map persistence (K2)', () => {
     await expect(run(repo)).resolves.not.toThrow();
   });
 });
+
+describe('processRound campaign stats (L1)', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const make = (addCampaignStats: RoundRepository['addCampaignStats'], over: object = {}) => createFakeRepository({
+    addCampaignStats,
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('counts the round, the fallen enemy by tier and the gold earned', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    await run(make(add, { currentEncounter: { enemies: [wolf] } }), ['[[enemy_hurt: หมาป่า | heavy]]', '[[gold: Prem | small]]'].join('\n'));
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith('camp-1', expect.objectContaining({
+      rounds: 1, defeated: { minion: 0, normal: 1, strong: 0, boss: 0 }, gold: 4, magicItems: 0, downs: 0, deaths: 0, nat20: 0,
+    }));
+  });
+
+  it('still closes the round when the stats update fails (column missing)', async () => {
+    const add = vi.fn().mockRejectedValue(new Error('column "stats" does not exist'));
+    const repository = make(add);
+    const result = await run(repository, 'เงียบสงบ');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+    expect(add).toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+  });
+
+  it('works with a repository that has no stats support', async () => {
+    const result = await run(make(undefined), 'เงียบสงบ');
+    expect(result).toMatchObject({ processed: true });
+  });
+});

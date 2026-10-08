@@ -24,6 +24,7 @@ import { applyLootTags } from '@/lib/character/loot';
 import type { Character } from '@/lib/character/types';
 import { applyTeamRest } from '@/lib/character/applyRest';
 import type { RestAnswer } from '@/lib/character/checkPlan';
+import { defeatedThisRound, countStatusChanges, goldEarned } from '@/lib/campaign/stats';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
   let text = '';
@@ -501,6 +502,24 @@ export async function processRound(
           await deps.repository.saveFacts(context.campaignId, facts);
         } catch {
           /* best-effort, like the encounter */
+        }
+      }
+      // L1: campaign totals. Best-effort in its own try: a missing campaigns.stats column or any failure here
+      // must never stall the round (and the tags claim above keeps a retry from counting twice).
+      if (deps.repository.addCampaignStats) {
+        try {
+          const { downs, deaths } = countStatusChanges(context.characters, finalCharacters);
+          await deps.repository.addCampaignStats(context.campaignId, {
+            rounds: 1,
+            defeated: defeatedThisRound(sceneChanged ? null : before, sceneChanged ? null : applyAttackOutcomes(roundEncounter, attackOutcomes), tags),
+            gold: goldEarned(economy.goldDeltas),
+            magicItems: inventoryResult.magicGiven.length,
+            downs,
+            deaths,
+            nat20: rolled.filter((r) => r.check?.die === 20).length,
+          });
+        } catch {
+          /* best-effort */
         }
       }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
