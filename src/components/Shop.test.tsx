@@ -42,3 +42,31 @@ describe('Shop', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('เงินไม่พอ');
   });
 });
+
+describe('Shop item tooltip (O2)', () => {
+  it('shows price and stats for a ware on hover, and buying still works with the tooltip open', () => {
+    const onBuy = vi.fn();
+    render(<Shop shop={shop} items={[]} gold={50} onBuy={onBuy} onSell={() => {}} />);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    const row = screen.getByText(/ดาบสั้น/).closest('li')!;
+    fireEvent.mouseEnter(row);
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveTextContent('ดาบสั้น');
+    expect(tip).toHaveTextContent('ราคาซื้อ');
+    expect(row).toHaveAttribute('aria-describedby', tip.id);
+    fireEvent.click(screen.getByRole('button', { name: 'ซื้อ ดาบสั้น' }));
+    expect(onBuy).toHaveBeenCalledWith('shortsword');
+    fireEvent.mouseLeave(row);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('shows a tooltip for items you sell, and selling still works', () => {
+    const onSell = vi.fn();
+    render(<Shop shop={shop} items={[potion]} gold={0} onBuy={() => {}} onSell={onSell} />);
+    const row = screen.getAllByText(/ยาฟื้นฟูเล็ก/).map((e) => e.closest('li')!).pop()!;
+    fireEvent.focus(row);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('ขายคืน');
+    fireEvent.click(screen.getByRole('button', { name: 'ขาย ยาฟื้นฟูเล็ก' }));
+    expect(onSell).toHaveBeenCalledWith('potion_minor', '');
+  });
+});

@@ -83,3 +83,20 @@ describe('Trades', () => {
     expect(screen.queryByRole('button', { name: 'เสนอ' })).toBeNull();
   });
 });
+
+describe('Trades item tooltip (O2)', () => {
+  it('shows item details on hover over an offered item and still proposes the trade', () => {
+    const onPropose = vi.fn();
+    renderTrades({ onPropose });
+    const box = screen.getByLabelText('ให้: ดาบสั้น');
+    fireEvent.mouseEnter(box.closest('[data-tip-host]')!);
+    const tip = screen.getByRole('tooltip');
+    expect(tip).toHaveTextContent('ดาบสั้น');
+    expect(box).toHaveAttribute('aria-describedby', tip.id);
+    fireEvent.click(box);
+    fireEvent.click(screen.getByLabelText('ขอ: ยาฟื้นฟูเล็ก'));
+    fireEvent.click(screen.getByRole('button', { name: 'เสนอ' }));
+    expect(onPropose).toHaveBeenCalledTimes(1);
+    expect(onPropose.mock.calls[0][0]).toMatchObject({ toPlayerId: 'p2', giveGold: 0, wantGold: 0 });
+  });
+});
