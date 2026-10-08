@@ -45,6 +45,7 @@ export function applyCharacterTags(
   for (const tag of tags) {
     if (tag.kind === 'sanctuary') {
       for (const c of next) {
+        if (c.status === 'dead') continue; // H3a: permanent death is not undone by a sanctuary
         c.maxHp = BASE_MAX_HP + bonusOf(c);
         c.revivesSinceSanctuary = 0;
       }
@@ -98,9 +99,11 @@ export function applyCharacterTags(
     }
   }
 
-  const wiped = next.length > 0 && next.every((c) => c.status === 'downed');
+  // H3a: the permanently dead neither count toward a wipe nor come back from one.
+  const living = next.filter((c) => c.status !== 'dead');
+  const wiped = living.length > 0 && living.every((c) => c.status === 'downed');
   if (wiped) {
-    for (const c of next) {
+    for (const c of living) {
       c.revivesSinceSanctuary += 1;
       const cost = REVIVE_MAX_HP_STEP * c.revivesSinceSanctuary + WIPE_EXTRA_MAX_HP_PENALTY;
       c.maxHp = Math.max(MIN_MAX_HP + bonusOf(c), c.maxHp - cost);

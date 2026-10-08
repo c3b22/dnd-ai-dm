@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import type { TradeRow } from '@/lib/supabase/economy';
 import type { RoundPlayer } from '@/lib/supabase/players';
+import { ItemTooltip } from './ItemTooltip';
+import { useItemTip } from './useItemTip';
 import { TRADE_TTL_MS, type TradeItem, type TradeTerms } from '@/lib/economy/trade';
 import { itemLabel } from '@/lib/inventory/rules';
 import type { InventoryItem } from '@/lib/inventory/types';
@@ -32,6 +34,7 @@ function pick(items: InventoryItem[], keys: string[]): TradeItem[] {
 }
 
 export function Trades({ me, players, trades, onPropose, onRespond, error }: TradesProps) {
+  const tip = useItemTip();
   const others = players.filter((p) => p.id !== me.id);
   const [toPlayerId, setToPlayerId] = useState('');
   const [give, setGive] = useState<string[]>([]);
@@ -85,21 +88,45 @@ export function Trades({ me, players, trades, onPropose, onRespond, error }: Tra
             ))}
           </select>
           <div className="trade-side">
-            {me.items.map((i) => (
-              <label key={keyOf(i)}>
-                <input type="checkbox" aria-label={`ให้: ${itemLabel(i)}`} checked={give.includes(keyOf(i))} onChange={() => toggle(give, setGive, keyOf(i))} />{' '}
-                {itemLabel(i)}
-              </label>
-            ))}
+            {me.items.map((i) => {
+              const tipKey = `give|${keyOf(i)}`;
+              return (
+                <div key={keyOf(i)} className={`tip-host${tip.isOpen(tipKey) ? ' is-open' : ''}`} {...tip.hostProps(tipKey)}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label={`ให้: ${itemLabel(i)}`}
+                      aria-describedby={tip.isOpen(tipKey) ? tip.tipId(tipKey) : undefined}
+                      checked={give.includes(keyOf(i))}
+                      onChange={() => toggle(give, setGive, keyOf(i))}
+                    />{' '}
+                    {itemLabel(i)}
+                  </label>
+                  {tip.isOpen(tipKey) && <ItemTooltip id={tip.tipId(tipKey)} item={i} worn={me.items.filter((w) => w.equipped)} />}
+                </div>
+              );
+            })}
             <input type="number" min={0} aria-label="ทองที่ให้" placeholder="ทองที่ให้" value={giveGold} onChange={(e) => setGiveGold(e.target.value)} />
           </div>
           <div className="trade-side">
-            {(partner?.items ?? []).map((i) => (
-              <label key={keyOf(i)}>
-                <input type="checkbox" aria-label={`ขอ: ${itemLabel(i)}`} checked={want.includes(keyOf(i))} onChange={() => toggle(want, setWant, keyOf(i))} />{' '}
-                {itemLabel(i)}
-              </label>
-            ))}
+            {(partner?.items ?? []).map((i) => {
+              const tipKey = `want|${keyOf(i)}`;
+              return (
+                <div key={keyOf(i)} className={`tip-host${tip.isOpen(tipKey) ? ' is-open' : ''}`} {...tip.hostProps(tipKey)}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label={`ขอ: ${itemLabel(i)}`}
+                      aria-describedby={tip.isOpen(tipKey) ? tip.tipId(tipKey) : undefined}
+                      checked={want.includes(keyOf(i))}
+                      onChange={() => toggle(want, setWant, keyOf(i))}
+                    />{' '}
+                    {itemLabel(i)}
+                  </label>
+                  {tip.isOpen(tipKey) && <ItemTooltip id={tip.tipId(tipKey)} item={i} worn={(partner?.items ?? []).filter((w) => w.equipped)} />}
+                </div>
+              );
+            })}
             <input type="number" min={0} aria-label="ทองที่ขอ" placeholder="ทองที่ขอ" value={wantGold} onChange={(e) => setWantGold(e.target.value)} />
           </div>
           <button type="button" className="btn" disabled={empty} onClick={submit}>

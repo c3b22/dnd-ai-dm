@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 
 const { getAdventureById, campaignRow, supabaseBrowserClient, fetchEncounter, subscribeToEncounter, unsubscribeEncounter } = vi.hoisted(() => {
   const campaignRow: { current: Record<string, unknown> } = { current: {} };
@@ -55,6 +55,15 @@ vi.mock('@/lib/supabase/roundActionsRealtime', () => ({
   subscribeToCampaignStarted: () => () => {},
 }));
 vi.mock('@/lib/supabase/encounter', () => ({ fetchEncounter, subscribeToEncounter }));
+const { fetchRestState, subscribeToRestVote, unsubscribeRest } = vi.hoisted(() => {
+  const unsubscribeRest = vi.fn();
+  return {
+    fetchRestState: vi.fn((_c: string, _p: string) => Promise.resolve({ vote: null as unknown, shortRestsUsed: 0 })),
+    subscribeToRestVote: vi.fn((_c: string, _cb: () => void) => unsubscribeRest),
+    unsubscribeRest,
+  };
+});
+vi.mock('@/lib/supabase/restVoteClient', () => ({ fetchRestState, subscribeToRestVote, requestRest: vi.fn() }));
 const { fetchCampaignFacts, subscribeToFacts, unsubscribeFacts } = vi.hoisted(() => {
   const unsubscribeFacts = vi.fn();
   return {
@@ -64,6 +73,16 @@ const { fetchCampaignFacts, subscribeToFacts, unsubscribeFacts } = vi.hoisted(()
   };
 });
 vi.mock('@/lib/supabase/factsRealtime', () => ({ fetchCampaignFacts, subscribeToFacts }));
+const { fetchCampaignEnd, fetchEpilogue, subscribeToCampaignEnd, unsubscribeEnd } = vi.hoisted(() => {
+  const unsubscribeEnd = vi.fn();
+  return {
+    fetchCampaignEnd: vi.fn(() => Promise.resolve({ ended: false, stats: null as unknown })),
+    fetchEpilogue: vi.fn(() => Promise.resolve(null as string | null)),
+    subscribeToCampaignEnd: vi.fn((_c: string, _cb: () => void) => unsubscribeEnd),
+    unsubscribeEnd,
+  };
+});
+vi.mock('@/lib/supabase/campaignEnd', () => ({ fetchCampaignEnd, fetchEpilogue, subscribeToCampaignEnd }));
 vi.mock('@/lib/supabase/startCampaign', () => ({ startCampaignForClient: vi.fn() }));
 vi.mock('@/lib/round/triggerRoundProcessing', () => ({ triggerRoundProcessing: vi.fn() }));
 
@@ -71,11 +90,23 @@ vi.mock('@/lib/round/triggerRoundProcessing', () => ({ triggerRoundProcessing: v
 vi.mock('@/components/CampaignLobby', () => ({
   CampaignLobby: ({ adventureTitle }: { adventureTitle?: string }) => <p data-testid="lobby-title">{adventureTitle ?? ''}</p>,
 }));
+vi.mock('@/components/ActionInput', () => ({ ActionInput: () => <div data-testid="action-input" /> }));
+vi.mock('@/components/RestPanel', () => ({ RestPanel: () => <div data-testid="rest-panel" /> }));
+vi.mock('@/components/ChatPanel', () => ({ ASK_LIMIT: 3, ChatPanel: () => <div data-testid="chat-panel" /> }));
 vi.mock('@/components/MessageList', () => ({ MessageList: () => null }));
 vi.mock('@/components/SceneBanner', () => ({ SceneBanner: () => null }));
 vi.mock('@/components/CampaignSettingsPanel', () => ({ CampaignSettingsPanel: () => null }));
 
 import CampaignPage from './page';
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
+// P2: these rail cards start collapsed; open one by its header button.
+async function expandCard(title: string) {
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${title}`) }));
+}
 
 const customAdventure = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -106,6 +137,7 @@ describe('CampaignPage — adventure title', () => {
     campaignRow.current = { current_round_id: null, name: '', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: customAdventure.id, current_scene_id: null };
     getAdventureById.mockResolvedValue(customAdventure);
     await renderPage();
+    await expandCard('เรื่องที่เล่น');
     const quest = await screen.findByLabelText('เรื่องที่เล่น');
     expect(quest.textContent).toContain('เรื่องที่ฉันแต่งเอง');
     expect(quest.textContent).toContain('แทกไลน์ของฉัน');
@@ -162,6 +194,17 @@ describe('CampaignPage — encounter sync', () => {
   });
 });
 
+describe('CampaignPage — rest vote sync', () => {
+  it('loads the rest state, subscribes to realtime updates and unsubscribes on unmount', async () => {
+    campaignRow.current = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: null, adventure_id: null, current_scene_id: null };
+    await renderPage();
+    expect(fetchRestState).toHaveBeenCalledWith('c1', 'p1');
+    expect(subscribeToRestVote).toHaveBeenCalledWith('c1', expect.any(Function));
+    cleanup();
+    expect(unsubscribeRest).toHaveBeenCalled();
+  });
+});
+
 describe('CampaignPage — quest log', () => {
   const started = { current_round_id: null, name: 'ปาร์ตี้', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: null, current_scene_id: null };
 
@@ -180,14 +223,64 @@ describe('CampaignPage — quest log', () => {
     await renderPage();
     expect(fetchCampaignFacts).toHaveBeenCalledWith('c1');
     expect(subscribeToFacts).toHaveBeenCalledWith('c1', expect.any(Function));
+    await expandCard('สมุดบันทึก');
     expect((await screen.findByLabelText('NPC ที่พบ')).textContent).toContain('เกรตา');
   });
 
   it('shows the empty state and unsubscribes on unmount', async () => {
     campaignRow.current = started;
     await renderPage();
+    await expandCard('สมุดบันทึก');
     expect(await screen.findByText(/ยังไม่มีบันทึก/)).toBeTruthy();
     cleanup();
     expect(unsubscribeFacts).toHaveBeenCalled();
+  });
+});
+
+describe('CampaignPage — ended campaign (L4)', () => {
+  const started = { current_round_id: 'r1', name: 'ปาร์ตี้', join_code: 'ABC', started_at: '2026-10-01T00:00:00Z', adventure_id: null, current_scene_id: null };
+
+  beforeEach(() => {
+    fetchCampaignEnd.mockReset();
+    fetchEpilogue.mockReset();
+    fetchEpilogue.mockResolvedValue(null);
+    subscribeToCampaignEnd.mockClear();
+    unsubscribeEnd.mockClear();
+  });
+
+  it('keeps the action input, rest and chat panels and shows no summary while the campaign is running', async () => {
+    campaignRow.current = started;
+    fetchCampaignEnd.mockResolvedValue({ ended: false, stats: null });
+    await renderPage();
+    expect(await screen.findByTestId('action-input')).toBeTruthy();
+    expect(screen.getByTestId('chat-panel')).toBeTruthy();
+    expect(screen.queryByLabelText('สรุปแคมเปญ')).toBeNull();
+    expect(screen.getByText(/ให้ DM ตัดสินตอนนี้/)).toBeTruthy();
+  });
+
+  it('shows the summary with the epilogue and goes read-only once ended', async () => {
+    campaignRow.current = started;
+    fetchCampaignEnd.mockResolvedValue({ ended: true, stats: { rounds: 20, defeated: { minion: 0, normal: 0, strong: 0, boss: 0 }, gold: 0, magicItems: 0, downs: 0, deaths: 0, nat20: 0 } });
+    fetchEpilogue.mockResolvedValue('— บทส่งท้าย —\nซูกิกลับบ้าน');
+    await renderPage();
+    const summary = await screen.findByLabelText('สรุปแคมเปญ');
+    expect(summary.textContent).toContain('ซูกิกลับบ้าน');
+    expect(screen.queryByTestId('action-input')).toBeNull();
+    expect(screen.queryByTestId('rest-panel')).toBeNull();
+    expect(screen.queryByTestId('chat-panel')).toBeNull();
+    expect(screen.queryByText(/ให้ DM ตัดสินตอนนี้/)).toBeNull();
+  });
+
+  it('re-checks when the campaign changes and unsubscribes on unmount', async () => {
+    campaignRow.current = started;
+    fetchCampaignEnd.mockResolvedValue({ ended: false, stats: null });
+    await renderPage();
+    expect(subscribeToCampaignEnd).toHaveBeenCalledWith('c1', expect.any(Function));
+    fetchCampaignEnd.mockResolvedValue({ ended: true, stats: null });
+    const onChange = subscribeToCampaignEnd.mock.calls[0][1] as () => void;
+    await act(async () => onChange());
+    expect(await screen.findByLabelText('สรุปแคมเปญ')).toBeTruthy();
+    cleanup();
+    expect(unsubscribeEnd).toHaveBeenCalled();
   });
 });

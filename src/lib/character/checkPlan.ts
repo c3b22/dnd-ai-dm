@@ -1,8 +1,9 @@
 import { SKILL_ABILITIES, SKILL_IDS, classOf, proficiencyBonus, type SkillId } from './classes';
 import { abilityModifier, normalizeAbilities } from './constants';
-import { resolveCheck, type Advantage } from './check';
+import { resolveCheck, shiftAdvantage, type Advantage } from './check';
 import { levelForXp } from './leveling';
 import type { Character } from './types';
+import { hasExpertise } from './subclasses';
 
 export interface PlannedCheck {
   player: string;
@@ -18,9 +19,18 @@ export interface PlannedAttack {
   advantage: Advantage;
 }
 
+/** I2: an enemy attack on a player; the server rolls it against the player's armor class. */
+export interface PlannedEnemyAttack {
+  enemy: string;
+  player: string;
+}
+
+/** J3: the DM's verdict on the team's rest vote; absent = no rest (also when the model left the field out). */
+export type RestAnswer = 'ok' | 'interrupted';
+
 export type CheckPlan =
-  | { kind: 'checks'; checks: PlannedCheck[]; attacks: PlannedAttack[] }
-  | { kind: 'narration'; text: string }
+  | { kind: 'checks'; checks: PlannedCheck[]; attacks: PlannedAttack[]; enemyAttacks: PlannedEnemyAttack[]; rest?: RestAnswer }
+  | { kind: 'narration'; text: string; rest?: RestAnswer }
   /** The model ignored the JSON format and just narrated: use it as the narration. */
   | { kind: 'plain'; text: string }
   /** Looked like JSON but unusable: the caller falls back to an ordinary narration call. */
@@ -37,7 +47,7 @@ export interface CheckOutcome {
   die: number;
   modifier: number;
   proficiency: number;
-  /** Bonus from a worn accessory matching the skill (F5d); 0 when none. */
+  /** Bonus from a worn accessory matching the skill (F5d) plus the complete-set bonus (X9, once, any skill); 0 when none. */
   itemBonus: number;
   total: number;
   success: boolean;
@@ -69,7 +79,8 @@ export function parseCheckPlan(raw: string): CheckPlan {
   const parsed = parseObject(text);
   if (parsed === undefined) return { kind: 'plain', text };
   if (!parsed || typeof parsed !== 'object') return { kind: 'invalid' };
-  const obj = parsed as { checks?: unknown; attacks?: unknown; narration?: unknown };
+  const obj = parsed as { checks?: unknown; attacks?: unknown; enemyAttacks?: unknown; narration?: unknown; rest?: unknown };
+  const rest: { rest?: RestAnswer } = obj.rest === 'ok' || obj.rest === 'interrupted' ? { rest: obj.rest } : {};
 
   const attacks: PlannedAttack[] = [];
   if (Array.isArray(obj.attacks)) {
@@ -84,7 +95,16 @@ export function parseCheckPlan(raw: string): CheckPlan {
       });
     }
   }
-  if (Array.isArray(obj.checks) || attacks.length > 0) {
+  const enemyAttacks: PlannedEnemyAttack[] = [];
+  if (Array.isArray(obj.enemyAttacks)) {
+    for (const a of obj.enemyAttacks) {
+      if (!a || typeof a !== 'object') continue;
+      const { enemy, player } = a as Record<string, unknown>;
+      if (typeof enemy !== 'string' || !enemy.trim() || typeof player !== 'string' || !player.trim()) continue;
+      enemyAttacks.push({ enemy: enemy.trim(), player: player.trim() });
+    }
+  }
+  if (Array.isArray(obj.checks) || attacks.length > 0 || enemyAttacks.length > 0 || rest.rest) {
     const checks: PlannedCheck[] = [];
     for (const c of Array.isArray(obj.checks) ? obj.checks : []) {
       if (!c || typeof c !== 'object') continue;
@@ -98,16 +118,22 @@ export function parseCheckPlan(raw: string): CheckPlan {
         advantage: advantage === 'advantage' || advantage === 'disadvantage' ? advantage : 'none',
       });
     }
-    if (checks.length > 0 || attacks.length > 0) return { kind: 'checks', checks, attacks };
+    if (checks.length > 0 || attacks.length > 0 || enemyAttacks.length > 0 || (rest.rest && !(typeof obj.narration === 'string' && obj.narration.trim()))) return { kind: 'checks', checks, attacks, enemyAttacks, ...rest };
   }
   if (typeof obj.narration === 'string' && obj.narration.trim()) {
-    return { kind: 'narration', text: obj.narration.trim() };
+    return { kind: 'narration', text: obj.narration.trim(), ...rest };
   }
   return { kind: 'invalid' };
 }
 
 /** Rolls and resolves each planned check on the server. One check per known player; others are ignored. */
-export function runChecks(planned: PlannedCheck[], characters: Character[], rollDie: () => number): CheckOutcome[] {
+export function runChecks(
+  planned: PlannedCheck[],
+  characters: Character[],
+  rollDie: () => number,
+  /** K4: skills a spell gave advantage on this round (RoundEffects.skillAdvantage, by player id). */
+  skillAdvantage: Record<string, readonly SkillId[]> = {}
+): CheckOutcome[] {
   const byName = new Map(characters.map((c) => [c.displayName.toLowerCase(), c]));
   const seen = new Set<string>();
   const out: CheckOutcome[] = [];
@@ -119,19 +145,22 @@ export function runChecks(planned: PlannedCheck[], characters: Character[], roll
     const level = levelForXp(character.xp ?? 0);
     const proficient = classOf(character.classId)?.skills.includes(check.skill) ?? false;
     const ability = abilities[SKILL_ABILITIES[check.skill]];
-    const itemBonus = character.skillBonuses?.[check.skill] ?? 0;
-    const dice = check.advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
-    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage: check.advantage, bonus: itemBonus });
-    const die = check.advantage === 'advantage' ? Math.max(...dice) : check.advantage === 'disadvantage' ? Math.min(...dice) : dice[0];
+    const itemBonus = (character.skillBonuses?.[check.skill] ?? 0) + (character.itemEffects?.setSkillBonus ?? 0);
+    // K5 rogue_trickster: the proficiency bonus counts twice on stealth, deception and sleight_of_hand.
+    const expertise = proficient && hasExpertise(character, check.skill) ? proficiencyBonus(level) : 0;
+    const advantage = skillAdvantage[character.id]?.includes(check.skill) ? shiftAdvantage(check.advantage, 'up') : check.advantage;
+    const dice = advantage === 'none' ? [rollDie()] : [rollDie(), rollDie()];
+    const result = resolveCheck({ d20s: dice, ability, proficient, level, dc: check.dc, advantage, bonus: itemBonus + expertise });
+    const die = advantage === 'advantage' ? Math.max(...dice) : advantage === 'disadvantage' ? Math.min(...dice) : dice[0];
     out.push({
       playerDisplayName: character.displayName,
       skill: check.skill,
       dc: check.dc,
-      advantage: check.advantage,
+      advantage,
       dice,
       die,
       modifier: abilityModifier(ability),
-      proficiency: proficient ? proficiencyBonus(level) : 0,
+      proficiency: (proficient ? proficiencyBonus(level) : 0) + expertise,
       itemBonus,
       total: result.total,
       success: result.success,
@@ -151,6 +180,7 @@ export function checkPlanInstructions(fighting = false): string[] {
     ...(fighting
       ? [
           'A fight is in progress. When a player ATTACKS a listed enemy, do not use a skill check: add them to an "attacks" list instead, e.g. {"attacks":[{"player":"PlayerName","target":"EnemyName","advantage":"none"}],"checks":[]} (attacks and checks may be combined; a player gets either one attack or one check). The server rolls the hit and the damage and removes the enemy health itself, so never decide yourself whether an attack lands.',
+          'When an ENEMY attacks a player this round, you MUST answer in shape 1 (never shape 2), listing each attack in "enemyAttacks", e.g. {"checks":[],"enemyAttacks":[{"enemy":"EnemyName","player":"PlayerName"}]} (at most one attack per enemy, except a boss with boss_signature, which may list 2 different players in every 3rd round of the fight; it may be combined with checks and attacks). Use the exact enemy names listed above. The server rolls the d20 against the armor class and the damage dice, then asks you to narrate the real result (hit, miss or critical), so do NOT narrate the enemy attack yourself and do not use an enemy_attack tag.',
         ]
       : []),
     'Set a check ONLY for actions whose result is truly uncertain, not for every action. Most rounds with routine actions should use shape 2.',

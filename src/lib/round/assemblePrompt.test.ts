@@ -121,7 +121,7 @@ describe('assemblePrompt with characters', () => {
       characters,
       pendingWipe: false,
     });
-    expect(prompt).toContain('Prem (Lv 1): HP 20/20, shortsword (1d8), standing');
+    expect(prompt).toContain('Prem (Lv 1): HP 20/20, AC 10, shortsword (1d8), standing');
     expect(prompt).toContain("Brother Tolliver's empty chapel");
   });
 
@@ -178,6 +178,15 @@ describe('assemblePrompt economy', () => {
     expect(prompt).toContain('Prem: 14 gold');
     expect(prompt).toContain('Old Mara');
   });
+
+  it('carries the mandatory [[shop]] rule in both modes (planChecks on and off)', () => {
+    const state = { characters: [prem], pendingWipe: false, inventories: {}, shop: null };
+    for (const planChecks of [false, true]) {
+      const prompt = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'ไปร้านค้า' }], null, '', undefined, state, [], { planChecks });
+      expect(prompt).toContain('MUST emit [[shop:');
+      expect(prompt).toContain('Example (opens the shop)');
+    }
+  });
 });
 
 describe('assemblePrompt combat', () => {
@@ -187,7 +196,7 @@ describe('assemblePrompt combat', () => {
     const prompt = assemblePrompt('', [], act, null, '', undefined,
       { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pip: 1, maxPip: 2, fled: false }] } });
     expect(prompt).not.toContain('[[enemy_hurt:');
-    expect(prompt).toContain('[[enemy_attack: EnemyName | PlayerName]]');
+    expect(prompt).toContain('"enemyAttacks"');
     expect(prompt).toContain('- หมาป่า (normal): 1/2 pips');
   });
 
@@ -198,13 +207,26 @@ describe('assemblePrompt combat', () => {
   });
 
   it('tells the DM the attack result and asks for attacks in the first call during a fight', () => {
-    const attack = { playerId: 'p1', playerDisplayName: 'Prem', target: 'หมาป่า', tier: 'normal' as const, dc: 9, advantage: 'none' as const, dice: [12], die: 12, hit: true, critical: null, pips: 2, defeated: true, damage: 6, maxDamage: 8 };
+    const attack = { playerId: 'p1', playerDisplayName: 'Prem', target: 'หมาป่า', tier: 'normal' as const, dc: 13, advantage: 'none' as const, dice: [12], die: 12, modifier: 3, proficiency: 2, magic: 1, total: 18, hit: true, critical: null, pips: 2, defeated: true, damage: 6, maxDamage: 8 };
     const state = { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false }] } };
     const text = assemblePrompt('', [], [{ playerDisplayName: 'Prem', actionText: 'ฟัน', attack }], null, '', undefined, state);
-    expect(text).toContain('attack on หมาป่า: d20 12 vs 9 -> HEAVY HIT');
+    expect(text).toContain('attack on หมาป่า: d20 12 + 6 = 18 vs armor class 13 -> HEAVY HIT');
     expect(text).toContain('the enemy is defeated');
     expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('"attacks"');
     expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('"attacks"');
+    expect(assemblePrompt('', [], act, null, '', undefined, state, [], { planChecks: true })).toContain('you MUST answer in shape 1');
+    expect(assemblePrompt('', [], act, null, '', undefined, { ...state, encounter: null }, [], { planChecks: true })).not.toContain('you MUST answer in shape 1');
+  });
+
+  it('tells the DM the rolled enemy attacks (hit, miss, critical) without damage numbers', () => {
+    const state = { characters: [prem], pendingWipe: false, inventories: {}, encounter: { enemies: [{ name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false }] } };
+    const base = { enemy: 'หมาป่า', tier: 'normal' as const, playerId: 'p1', playerDisplayName: 'Prem', die: 12, bonus: 4, total: 16, ac: 14, hit: true, critical: null, damage: 5 };
+    const text = assemblePrompt('', [], act, null, '', undefined, state, [], { enemyAttacks: [base, { ...base, die: 3, total: 7, hit: false }, { ...base, die: 20, total: 24, critical: 'success' }] });
+    expect(text).toContain('หมาป่า attacks Prem: d20 12 + 4 = 16 vs armor class 14 -> HIT');
+    expect(text).toContain('-> MISS');
+    expect(text).toContain('natural 20 vs armor class 14 -> CRITICAL HIT');
+    expect(text).not.toContain('damage 5');
+    expect(assemblePrompt('', [], act, null, '', undefined, state, [], { enemyAttacks: [] })).not.toContain('Enemy attacks this round');
   });
   it('says no fight is in progress without an encounter', () => {
     const prompt = assemblePrompt('', [], act, null, '', undefined, { characters: [prem], pendingWipe: false });

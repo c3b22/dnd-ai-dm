@@ -8,8 +8,15 @@ import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
 import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
-import type { AbilityChoice } from '@/lib/character/leveling';
+import { RespawnForm } from '@/components/RespawnForm';
+import { respawnLevel } from '@/lib/character/respawnLevel';
+import { levelForXp, type AbilityChoice } from '@/lib/character/leveling';
+import { extraAbilities, replacementAbility, type PendingChoice } from '@/lib/character/classOptionsView';
+import { SPELLS, SPELL_IDS, mageSpellSlots } from '@/lib/character/spells';
 import { EncounterPanel } from '@/components/EncounterPanel';
+import { RestPanel } from '@/components/RestPanel';
+import { fetchRestState, requestRest, subscribeToRestVote } from '@/lib/supabase/restVoteClient';
+import type { RestKind, RestVote } from '@/lib/campaign/restVote';
 import { Inventory } from '@/components/Inventory';
 import { Shop } from '@/components/Shop';
 import { Trades } from '@/components/Trades';
@@ -28,6 +35,10 @@ import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
 import {
   fetchRoundPlayers,
   requestAbilityChoice,
+  requestAbilityPick,
+  requestSubclassChoice,
+  requestRespawn,
+  type RespawnRequest,
   saveTurnOrder,
   subscribeToPlayers,
   type RoundPlayer,
@@ -37,7 +48,9 @@ import { submitAction } from '@/lib/supabase/submitAction';
 import { classOf } from '@/lib/character/classes';
 import { requestEquip, subscribeToInventory } from '@/lib/supabase/inventory';
 import { itemLabel } from '@/lib/inventory/rules';
-import { fetchPendingTrades, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
+import { CollapsibleCard } from '@/components/CollapsibleCard';
+import { RailSummary, roundStatusText } from '@/components/RailSummary';
+import { fetchPendingTrades, requestSequel, requestShop, requestTrade, subscribeToTrades, type TradeRow } from '@/lib/supabase/economy';
 import type { TradeTerms } from '@/lib/economy/trade';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
@@ -55,6 +68,9 @@ import { fetchEncounter, subscribeToEncounter } from '@/lib/supabase/encounter';
 import type { Encounter } from '@/lib/combat/encounter';
 import { fetchCampaignFacts, subscribeToFacts } from '@/lib/supabase/factsRealtime';
 import type { CampaignFact } from '@/lib/memory/types';
+import { CampaignSummary } from '@/components/CampaignSummary';
+import { fetchCampaignEnd, fetchEpilogue, subscribeToCampaignEnd } from '@/lib/supabase/campaignEnd';
+import type { CampaignStats } from '@/lib/campaign/stats';
 
 function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
@@ -79,12 +95,31 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [shop, setShop] = useState<ShopState | null>(null);
   // Synced only; the combat tracker UI reads it later.
   const [encounter, setEncounter] = useState<Encounter | null>(null);
+  const [restVote, setRestVote] = useState<RestVote | null>(null);
+  const [shortRestsUsed, setShortRestsUsed] = useState(0);
   const [facts, setFacts] = useState<CampaignFact[]>([]);
+  // L4: an ended campaign is read-only and shows the summary panel.
+  const [ended, setEnded] = useState(false);
+  const [endStats, setEndStats] = useState<CampaignStats | null>(null);
+  const [epilogue, setEpilogue] = useState<string | null>(null);
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
   const [asksUsed, setAsksUsed] = useState(0);
+
+  // Separate query so a database without the scene columns still loads the campaign.
+  const refreshAdventure = useCallback(() => {
+    supabaseBrowserClient
+      .from('campaigns')
+      .select('adventure_id, current_scene_id')
+      .eq('id', campaignId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setAdventureId(data?.adventure_id ?? null);
+        setSceneId(data?.current_scene_id ?? null);
+      });
+  }, [campaignId]);
 
   const triggerProcessing = useCallback((currentRoundId: string) => {
     setProcessing(true);
@@ -107,16 +142,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
         setLoadingCampaign(false);
       });
 
-    // Separate query so a database without the scene columns still loads the campaign.
-    supabaseBrowserClient
-      .from('campaigns')
-      .select('adventure_id, current_scene_id')
-      .eq('id', campaignId)
-      .maybeSingle()
-      .then(({ data }) => {
-        setAdventureId(data?.adventure_id ?? null);
-        setSceneId(data?.current_scene_id ?? null);
-      });
+    refreshAdventure();
 
     // Separate, tolerant query so a database without the economy columns still loads the campaign.
     supabaseBrowserClient
@@ -129,6 +155,15 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
     fetchEncounter(campaignId).then(setEncounter);
     const unsubscribeEncounter = subscribeToEncounter(campaignId, setEncounter);
+
+    const refreshRest = () =>
+      fetchRestState(campaignId, playerId).then((r) => {
+        setRestVote(r.vote);
+        setShortRestsUsed(r.shortRestsUsed);
+      });
+    refreshRest();
+    const unsubscribeRest = subscribeToRestVote(campaignId, refreshRest);
+    const unsubscribeRestPlayers = subscribeToPlayers(campaignId, refreshRest);
 
     fetchCampaignSettings(campaignId).then(setSettings);
     const unsubscribeSettings = subscribeToCampaignSettings(campaignId, setSettings);
@@ -145,10 +180,12 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       unsubscribeScene();
       unsubscribeShop();
       unsubscribeEncounter();
+      unsubscribeRest();
+      unsubscribeRestPlayers();
       unsubscribeSettings();
       unsubscribeStarted();
     };
-  }, [campaignId]);
+  }, [campaignId, playerId]);
 
   // Built-in adventures resolve locally; a custom one is read from custom_adventures.
   useEffect(() => {
@@ -213,7 +250,34 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     return subscribeToFacts(campaignId, refreshFacts);
   }, [campaignId, refreshFacts]);
 
+  const wasEnded = useRef(false);
+  const refreshEnd = useCallback(() => {
+    fetchCampaignEnd(campaignId)
+      .then((state) => {
+        // L5: a sequel flips the room back to active with a new adventure; pick that up.
+        if (wasEnded.current && !state.ended) {
+          setEpilogue(null);
+          refreshAdventure();
+        }
+        wasEnded.current = state.ended;
+        setEnded(state.ended);
+        setEndStats(state.stats);
+        if (state.ended) fetchEpilogue(campaignId).then(setEpilogue).catch(() => {});
+      })
+      .catch(() => {});
+  }, [campaignId, refreshAdventure]);
+  useEffect(() => {
+    refreshEnd();
+    return subscribeToCampaignEnd(campaignId, refreshEnd);
+  }, [campaignId, refreshEnd]);
+
   const me = players.find((p) => p.id === playerId);
+
+  // L5: the owner starts the next chapter; the server flips the room back to active and posts the opening.
+  async function handleSequel() {
+    await requestSequel(campaignId);
+    refreshEnd();
+  }
 
   // Ask-the-DM quota resets every round. Count from messages when player_id exists, then follow local answers.
   useEffect(() => {
@@ -313,6 +377,17 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  async function handleClassChoice(choice: PendingChoice, optionId: string) {
+    if (choice.kind === 'subclass') await requestSubclassChoice(campaignId, optionId);
+    else await requestAbilityPick(campaignId, optionId);
+    refreshPlayers();
+  }
+
+  async function handleRespawn(request: RespawnRequest) {
+    await requestRespawn(campaignId, request);
+    refreshPlayers();
+  }
+
   async function handleDrink(itemId: string) {
     if (!roundId) return;
     const item = me?.items.find((i) => i.itemId === itemId);
@@ -324,8 +399,58 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     refreshPlayers();
   }
 
+  // M1: a scroll is read at a live enemy; the name travels as the action's item_target (migration 0024).
+  async function handleUseScroll(itemId: string, enemy: string) {
+    if (!roundId) return;
+    const item = me?.items.find((i) => i.itemId === itemId);
+    try {
+      await submitAction(roundId, playerId, `ใช้${item ? itemLabel(item) : 'ม้วนคัมภีร์'} ใส่ ${enemy}`, itemId, undefined, enemy);
+    } catch {
+      /* the refresh below shows whether the action landed */
+    }
+    refreshPlayers();
+  }
+
   const myClass = classOf(me?.classId);
-  const abilityProp = myClass
+  // K4: the mage casts spells instead of pressing a plain ability button; the arcane surge is a switch in the spell menu.
+  const spellMenu =
+    me && myClass?.id === 'mage'
+      ? (() => {
+          const max = mageSpellSlots(levelForXp(me.xp ?? 0));
+          return {
+            slotsLeft: max - Math.min(max, me.spellSlotsUsed ?? 0),
+            slotsMax: max,
+            list: SPELL_IDS.map((id) => ({ id, nameTh: SPELLS[id].nameTh, descTh: SPELLS[id].descTh, slots: SPELLS[id].slots, target: SPELLS[id].target })),
+            enemies: (encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name),
+            allies: players.filter((p) => p.status === 'active').map((p) => ({ id: p.id, name: p.displayName, isSelf: p.id === playerId })),
+            surge: { nameTh: myClass.ability.nameTh, cooldown: me.abilityCooldown ?? 0 },
+          };
+        })()
+      : undefined;
+
+  async function handleCastSpell(spellId: string, target: { allyId?: string | null; enemy?: string | null }, surge: boolean) {
+    if (!roundId) return;
+    const spell = SPELLS[spellId as keyof typeof SPELLS];
+    const targetName = target.enemy ?? players.find((p) => p.id === target.allyId)?.displayName;
+    const text = `ร่าย${spell?.nameTh ?? 'เวท'}${targetName ? ` ใส่ ${targetName}` : ''}${surge ? ' ด้วยเวทไหลล้น' : ''}`;
+    await submitAction(roundId, playerId, text, undefined, undefined, undefined, { spellId, targetId: target.allyId, enemy: target.enemy, surge });
+    refreshPlayers();
+  }
+
+  // K7: a subclass replacement shows as its own button instead of the class's plain one.
+  const extras = me ? extraAbilities(me) : [];
+  const hasReplacement = me ? replacementAbility(me) !== null : false;
+  const liveEnemies = (encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name);
+
+  async function handleUseExtraAbility(abilityId: string, enemy: string | null) {
+    if (!roundId) return;
+    const extra = extras.find((a) => a.id === abilityId);
+    const text = `ใช้${extra?.nameTh ?? 'ท่า'}${enemy ? ` ใส่ ${enemy}` : ''}`;
+    await submitAction(roundId, playerId, text, undefined, { abilityId }, enemy ?? undefined);
+    refreshPlayers();
+  }
+
+  const abilityProp = myClass && myClass.id !== 'mage' && !hasReplacement
     ? {
         nameTh: myClass.ability.nameTh,
         target: myClass.ability.target,
@@ -442,6 +567,15 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   return (
     <main className="screen">
       <div className="table-grid">
+        {me && (
+          <RailSummary
+            name={me.displayName}
+            hp={me.hp}
+            maxHp={me.maxHp}
+            gold={me.gold}
+            status={roundStatusText({ ended, processing, dead: me.status === 'dead', acted: me.acted, progress: actionStatus })}
+          />
+        )}
         <div className="stage">
           <div className="stage-head">
             <span className="n">{campaignName || adventure?.titleTh || 'โต๊ะเล่น'}</span>
@@ -462,12 +596,24 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               <span>DM กำลังเรียบเรียงเรื่องราว… อาจใช้เวลาสักครู่ (ยังไม่ค้าง)</span>
             </div>
           )}
-          {roundId && (
+          {ended && <CampaignSummary epilogue={epilogue} stats={endStats} players={players} facts={facts} onContinue={me?.isOwner ? handleSequel : undefined} />}
+          {!ended && me?.status === 'dead' && (
+            <RespawnForm
+              startLevel={respawnLevel(players.filter((p) => p.id !== playerId && p.status !== 'dead'))}
+              onSubmit={handleRespawn}
+            />
+          )}
+          {!ended && roundId && me?.status !== 'dead' && (
             <ActionInput
               key={roundId}
               onSubmit={(actionText) => submitAction(roundId, playerId, actionText)}
               ability={abilityProp}
               onUseAbility={handleUseAbility}
+              extraAbilities={extras}
+              enemies={liveEnemies}
+              onUseExtraAbility={handleUseExtraAbility}
+              spells={spellMenu}
+              onCastSpell={handleCastSpell}
               disabledReason={
                 players.find((p) => p.id === playerId)?.status === 'downed'
                   ? 'คุณล้มลง ทำ action ไม่ได้ รอเพื่อนช่วยพยุง'
@@ -476,7 +622,20 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               alreadyActed={me?.acted ?? false}
             />
           )}
-          {playerId && (
+          {!ended && roundId && me && me.status !== 'dead' && (
+            <RestPanel
+              vote={restVote}
+              players={players}
+              currentPlayerId={playerId}
+              encounterActive={encounter !== null}
+              shortRestsUsed={shortRestsUsed}
+              isOwner={me.isOwner}
+              onPropose={(kind: RestKind) => requestRest(campaignId, 'propose', kind)}
+              onAgree={() => requestRest(campaignId, 'agree')}
+              onCancel={() => requestRest(campaignId, 'cancel')}
+            />
+          )}
+          {!ended && playerId && (
             <ChatPanel
               onSendChat={(content) => sendTeamChat(campaignId, content)}
               onAsk={handleAsk}
@@ -487,31 +646,53 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
 
         <aside className="rail">
           {players.length > 0 && (
+            <CollapsibleCard id="players" title="ผู้เล่นรอบนี้">
             <PlayerOrder
               players={players}
               currentPlayerId={playerId}
-              locked={players.find((p) => p.id === playerId)?.acted ?? false}
+              locked={ended || (players.find((p) => p.id === playerId)?.acted ?? false)}
               onMove={handleMove}
               onReorder={handleReorder}
               onAbilityChoice={handleAbilityChoice}
+              onClassChoice={handleClassChoice}
               reorderPolicy={settings.reorderPolicy}
             />
+            </CollapsibleCard>
           )}
-          <EncounterPanel encounter={encounter} />
+          <CollapsibleCard
+            id="encounter"
+            title="ศัตรู"
+            visible={Boolean(encounter)}
+            signal={encounter && encounter.enemies.length > 0 ? `enemies:${encounter.enemies.length}` : null}
+          >
+            <EncounterPanel encounter={encounter} />
+          </CollapsibleCard>
           {me && (
+            <CollapsibleCard id="inventory" title="กระเป๋า">
             <Inventory
               items={me.items}
               gold={me.gold}
-              canAct={me.status === 'active' && !me.acted}
+              canAct={!ended && me.status === 'active' && !me.acted}
               fullHp={me.hp >= me.maxHp}
               onEquip={handleEquip}
               onDrink={handleDrink}
+              enemies={(encounter?.enemies ?? []).filter((e) => e.pip > 0 && !e.fled).map((e) => e.name)}
+              onUseScroll={handleUseScroll}
             />
+            </CollapsibleCard>
           )}
-          {shop && me && (
-            <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
-          )}
-          {me && (
+          <CollapsibleCard id="shop" title="ร้านค้า" visible={Boolean(!ended && shop && me)} signal={shop ? shop.name : null}>
+            {shop && me && (
+              <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
+            )}
+          </CollapsibleCard>
+          {!ended && me && (
+            <CollapsibleCard
+              id="trades"
+              title="แลกของ"
+              defaultOpen={trades.some((t) => t.toPlayerId === me.id)}
+              signal={trades.filter((t) => t.toPlayerId === me.id).length || null}
+            >
             <Trades
               me={me}
               players={players}
@@ -520,8 +701,9 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onRespond={handleRespond}
               error={tradeError}
             />
+            </CollapsibleCard>
           )}
-          {roundId && settings.roundSeconds > 0 && (
+          {!ended && roundId && settings.roundSeconds > 0 && (
             <RoundTimer
               openedAt={openedAt}
               durationMs={settings.roundSeconds * 1000}
@@ -529,22 +711,31 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onExpire={() => setTimeUpRoundId(roundId)}
             />
           )}
-          <CampaignSettingsPanel
-            settings={settings}
-            isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
-            onSave={handleSaveSettings}
-          />
-          <QuestLog facts={facts} />
-          {adventure && (
-            <section className="card" aria-label="เรื่องที่เล่น">
-              <h3>เรื่องที่เล่น</h3>
-              <div className="quest">
-                {adventure.titleTh}
-                <small>{adventure.taglineTh}</small>
-              </div>
-            </section>
+          <CollapsibleCard id="settings" title="ตั้งค่าโต๊ะ" defaultOpen={false}>
+            <CampaignSettingsPanel
+              settings={settings}
+              isOwner={players.find((p) => p.id === playerId)?.isOwner ?? false}
+              started={Boolean(startedAt)}
+              onSave={handleSaveSettings}
+            />
+          </CollapsibleCard>
+          {!ended && (
+            <CollapsibleCard id="questlog" title="สมุดบันทึก" defaultOpen={false}>
+              <QuestLog facts={facts} />
+            </CollapsibleCard>
           )}
-          {roundId && (
+          {adventure && (
+            <CollapsibleCard id="adventure" title="เรื่องที่เล่น" defaultOpen={false}>
+              <section className="card" aria-label="เรื่องที่เล่น">
+                <h3>เรื่องที่เล่น</h3>
+                <div className="quest">
+                  {adventure.titleTh}
+                  <small>{adventure.taglineTh}</small>
+                </div>
+              </section>
+            </CollapsibleCard>
+          )}
+          {!ended && roundId && (
             <button type="button" className="btn ghost" onClick={() => triggerProcessing(roundId)}>
               ให้ DM ตัดสินตอนนี้ (ถ้ามีคนติดอยู่)
             </button>

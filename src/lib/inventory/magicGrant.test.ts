@@ -45,6 +45,16 @@ describe('pickMagicItem', () => {
   });
 
   it('returns an empty-pool result when nothing matches', () => {
-    expect(pickMagicItem('legendary', 'accessory', new Set(), first)).toEqual({ item: null, reason: 'empty_pool' });
+    expect(pickMagicItem('mythic' as never, null, new Set(), first)).toEqual({ item: null, reason: 'empty_pool' });
+  });
+
+  it('draws deep_pack accessories from the legendary pool and still caps legendaries at one per campaign', () => {
+    const pool = magicPool('legendary', 'accessory');
+    expect(pool.length).toBeGreaterThanOrEqual(1);
+    expect(pool.every((i) => i.effect === 'deep_pack')).toBe(true);
+    const pick = pickMagicItem('legendary', 'accessory', new Set(), first);
+    expect(pick.item?.effect).toBe('deep_pack');
+    expect(pickMagicItem('legendary', 'accessory', new Set([pick.item!.id]), first)).toEqual({ item: null, reason: 'legendary_limit' });
+    expect(pickMagicItem('legendary', null, new Set([pick.item!.id]), first)).toEqual({ item: null, reason: 'legendary_limit' });
   });
 });

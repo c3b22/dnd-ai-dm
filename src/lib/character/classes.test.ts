@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { SKILL_ABILITIES, SKILL_IDS, proficiencyBonus, skillModifier, startingAbilities, CLASSES, CLASS_IDS, DEFAULT_CLASS_ID, classForWeapon, classOf, isClassId, resolveClassId } from './classes';
-import { ABILITY_KEYS, WEAPONS } from './constants';
+import { ABILITY_KEYS, WEAPONS, weaponFor } from './constants';
+import { catalogEntry } from '@/lib/inventory/catalog';
+import { WEAPON_ATTACK_ABILITIES } from '@/lib/combat/constants';
+import { attackBonuses } from '@/lib/combat/attack';
+import { buyPrice } from '@/lib/economy/prices';
 
 describe('CLASSES', () => {
-  it('defines the four classes with a Thai name, an existing weapon and an ability', () => {
-    expect([...CLASS_IDS]).toEqual(['warrior', 'archer', 'cleric', 'rogue']);
+  it('defines the five classes with a Thai name, an existing weapon and an ability', () => {
+    expect([...CLASS_IDS]).toEqual(['warrior', 'archer', 'cleric', 'rogue', 'mage']);
     for (const id of CLASS_IDS) {
       const c = CLASSES[id];
       expect(c.id).toBe(id);
@@ -21,15 +25,17 @@ describe('CLASSES', () => {
       ['shortbow', null, 3],
       ['staff', 'ally_or_self', 3],
       ['dagger', null, 4],
+      ['wand', null, 4],
     ]);
     expect(DEFAULT_CLASS_ID).toBe('warrior');
   });
 });
 
 describe('isClassId / classOf', () => {
-  it('recognises only the four ids', () => {
+  it('recognises only the five ids', () => {
     expect(isClassId('archer')).toBe(true);
-    expect(isClassId('mage')).toBe(false);
+    expect(isClassId('mage')).toBe(true);
+    expect(isClassId('paladin')).toBe(false);
     expect(isClassId(null)).toBe(false);
     expect(isClassId('constructor')).toBe(false);
   });
@@ -37,7 +43,8 @@ describe('isClassId / classOf', () => {
   it('looks a class up or returns null', () => {
     expect(classOf('rogue')?.weaponId).toBe('dagger');
     expect(classOf(null)).toBeNull();
-    expect(classOf('mage')).toBeNull();
+    expect(classOf('mage')?.weaponId).toBe('wand');
+    expect(classOf('paladin')).toBeNull();
   });
 });
 
@@ -47,6 +54,7 @@ describe('classForWeapon', () => {
     expect(classForWeapon('staff')).toBe('cleric');
     expect(classForWeapon('dagger')).toBe('rogue');
     expect(classForWeapon('shortsword')).toBe('warrior');
+    expect(classForWeapon('wand')).toBe('mage');
     expect(classForWeapon('lightsaber')).toBe('warrior');
     expect(classForWeapon(undefined)).toBe('warrior');
   });
@@ -57,8 +65,8 @@ describe('resolveClassId', () => {
     expect(resolveClassId({ classId: 'rogue' })).toBe('rogue');
     expect(resolveClassId({ classId: 'rogue', weaponId: 'staff' })).toBe('rogue');
     expect(resolveClassId({ weaponId: 'shortbow' })).toBe('archer');
-    expect(resolveClassId({ classId: 'mage', weaponId: 'staff' })).toBe('cleric');
-    expect(resolveClassId({ classId: 'mage' })).toBe('warrior');
+    expect(resolveClassId({ classId: 'paladin', weaponId: 'staff' })).toBe('cleric');
+    expect(resolveClassId({ classId: 'paladin' })).toBe('warrior');
     expect(resolveClassId({})).toBe('warrior');
   });
 });
@@ -71,7 +79,7 @@ describe('class starting abilities and skills', () => {
       expect([...scores].sort((a, b) => b - a)).toEqual([15, 14, 13, 12, 10, 8]);
       seen.add(scores.join('/'));
     }
-    expect(seen.size).toBe(4);
+    expect(seen.size).toBe(5);
   });
 
   it('puts each class best score where it leans', () => {
@@ -107,6 +115,8 @@ describe('class starting abilities and skills', () => {
     const base = { abilities: CLASSES.rogue.abilities, classId: 'rogue' as const, level: 5 };
     expect(skillModifier({ ...base, skill: 'stealth' })).toBe(2 + 3);
     expect(skillModifier({ ...base, skill: 'athletics' })).toBe(-1);
+    expect(skillModifier({ ...base, skill: 'athletics', setSkillBonus: 1 })).toBe(0);
+    expect(skillModifier({ ...base, skill: 'stealth', skillBonuses: { stealth: 2 }, setSkillBonus: 1 })).toBe(2 + 3 + 2 + 1);
   });
 });
 
@@ -115,5 +125,24 @@ describe('skillModifier with accessory bonuses (F5d)', () => {
   it('adds the bonus only to its own skill', () => {
     expect(skillModifier({ ...base, skill: 'stealth', skillBonuses: { stealth: 2 } })).toBe(2 + 3 + 2);
     expect(skillModifier({ ...base, skill: 'athletics', skillBonuses: { stealth: 2 } })).toBe(-1);
+  });
+});
+
+describe('mage (K3)', () => {
+  it('starts with INT as the highest score, DEX second, and arcane skills', () => {
+    const m = CLASSES.mage;
+    expect(m.abilities).toEqual({ STR: 8, DEX: 14, CON: 13, INT: 15, WIS: 12, CHA: 10 });
+    expect([...m.skills]).toEqual(['arcana', 'history', 'investigation', 'insight']);
+    expect(m.ability).toMatchObject({ target: null, cooldown: 4 });
+  });
+  it('carries a wand: d4, attacks with INT, in the catalog and the shop price list', () => {
+    expect(weaponFor('wand')).toMatchObject({ id: 'wand', nameTh: 'ไม้กายสิทธิ์', dice: { count: 1, sides: 4, bonus: 0 } });
+    expect(catalogEntry('wand')).toMatchObject({ kind: 'weapon', weight: 1 });
+    expect(WEAPON_ATTACK_ABILITIES.wand).toEqual(['INT']);
+    expect(buyPrice('wand')).toBe(20);
+  });
+  it('uses INT + proficiency for its weapon attack', () => {
+    const c = { id: 'm', displayName: 'M', weaponId: 'wand', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, classId: 'mage', xp: 0, abilities: startingAbilities('mage') };
+    expect(attackBonuses(c)).toEqual({ modifier: 2, proficiency: 2, magic: 0 });
   });
 });

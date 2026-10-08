@@ -11,6 +11,7 @@ import { characterPrompt } from '@/lib/character/prompt';
 import { sanctuaryFor } from '@/lib/character/sanctuaries';
 import type { Character } from '@/lib/character/types';
 import { inventoryPrompt } from '@/lib/inventory/prompt';
+import { corpsePrompt, type LootableCorpse } from '@/lib/character/loot';
 import type { Inventories } from '@/lib/inventory/types';
 import { economyPrompt } from '@/lib/economy/prompt';
 import type { ShopState } from '@/lib/economy/apply';
@@ -20,7 +21,7 @@ import { combatPrompt } from '@/lib/combat/prompt';
 import type { Encounter } from '@/lib/combat/encounter';
 import { isStoryRole, type MessageRole } from '@/lib/messages/roles';
 import { checkPlanInstructions, type CheckOutcome } from '@/lib/character/checkPlan';
-import type { AttackOutcome } from '@/lib/combat/attack';
+import type { AttackOutcome, EnemyAttackOutcome } from '@/lib/combat/attack';
 
 export interface StoredMessage {
   role: MessageRole;
@@ -44,6 +45,9 @@ export interface RoundAction {
   /** True when the player triggers their class ability this round, with an optional ally target. */
   useAbility?: boolean;
   abilityTargetId?: string | null;
+  /** K2: which ability / spell the player picked (round_actions.ability_id / spell_id); absent = the class's main ability. */
+  abilityId?: string;
+  spellId?: string;
   /** Server-side outcome of the action (for example a potion drunk) that the narration must match. */
   note?: string;
   /** Skill check the server rolled for this action; the narration must match its success or failure. */
@@ -55,6 +59,25 @@ export interface RoundAction {
 export interface AssembleOptions {
   /** First call of a dice round: the DM answers with a JSON check plan or the narration instead of narrating directly. */
   planChecks?: boolean;
+  /** I2: enemy attacks the server already rolled this round; the narration must match them. */
+  enemyAttacks?: EnemyAttackOutcome[];
+  /** J3: the team's passed rest vote. With `planChecks` the DM must answer `rest`; `answer` is set on the narration call. */
+  rest?: { kind: 'short' | 'long'; answer?: 'ok' | 'interrupted' };
+}
+
+function restLines(rest: NonNullable<AssembleOptions['rest']>, planChecks: boolean): string[] {
+  const label = rest.kind === 'long' ? 'long rest (a night of sleep)' : 'short rest (about an hour)';
+  if (rest.answer === 'ok') {
+    return ['', `The team's ${label} was approved and the server has restored them; narrate a quiet, undisturbed rest.`];
+  }
+  if (rest.answer === 'interrupted') {
+    return ['', `The team tried to take a ${label} but it was INTERRUPTED; narrate the event that cuts the rest short (you may start an encounter with an enemy tag). Nobody recovers anything.`];
+  }
+  if (!planChecks) return [];
+  return [
+    '',
+    `The team voted to take a ${label} this round. In your JSON answer (either shape) add "rest": "ok" if nothing prevents it${rest.kind === 'long' ? ' and the place is safe enough to sleep' : ''}, or "rest": "interrupted" if an event interrupts it (you may then open an encounter with an enemy tag in your narration). Only the server restores HP and abilities, so never say numbers yourself. Leave "rest" out and the team does not rest.`,
+  ];
 }
 
 function attackText(a: AttackOutcome): string {
@@ -62,7 +85,14 @@ function attackText(a: AttackOutcome): string {
   const crit = a.critical === 'success' ? ', natural 20' : a.critical === 'failure' ? ', natural 1' : '';
   const after = a.defeated ? 'the enemy is defeated' : 'the enemy is still standing';
   const result = !a.hit ? 'MISS, the enemy is unharmed' : `${a.pips >= 2 ? 'HEAVY HIT, a devastating blow' : 'HIT, a solid wound'}, ${after}`;
-  return ` (attack on ${a.target}${adv}: d20 ${a.die}${crit} vs ${a.dc} -> ${result})`;
+  const bonus = a.modifier + a.proficiency + a.magic;
+  return ` (attack on ${a.target}${adv}: d20 ${a.die}${crit} ${bonus < 0 ? '-' : '+'} ${Math.abs(bonus)} = ${a.total} vs armor class ${a.dc} -> ${result})`;
+}
+
+function enemyAttackText(o: EnemyAttackOutcome): string {
+  const crit = o.critical === 'success' ? ', natural 20' : o.critical === 'failure' ? ', natural 1' : '';
+  const result = !o.hit ? 'MISS, the player is unharmed' : o.critical === 'success' ? 'CRITICAL HIT, a brutal wound' : 'HIT, the player is wounded';
+  return `- ${o.enemy} attacks ${o.playerDisplayName}: d20 ${o.die} + ${o.bonus} = ${o.total}${crit} vs armor class ${o.ac}${o.advantage ? ' (rolled with advantage, the pack presses in)' : o.disadvantage ? ' (rolled with disadvantage, the enemy is dazed)' : ''} -> ${result}${o.venomous ? ', and the venom seeps in (the player will feel it next round)' : ''}`;
 }
 
 function checkText(c: CheckOutcome): string {
@@ -79,7 +109,7 @@ export function assemblePrompt(
   adventure: Adventure | null = null,
   sceneInstructionText = '',
   settings: CampaignSettings = DEFAULT_SETTINGS,
-  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null },
+  characterState?: { characters: Character[]; pendingWipe: boolean; inventories?: Inventories; shop?: ShopState | null; encounter?: Encounter | null; corpses?: LootableCorpse[] },
   facts: CampaignFact[] = [],
   options: AssembleOptions = {}
 ): string {
@@ -124,11 +154,13 @@ export function assemblePrompt(
             sanctuaryFor(adventure?.id ?? null)
           );
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
+          const corpseBlock = corpsePrompt(characterState.corpses ?? []);
           const economy = economyPrompt(characterState.characters, characterState.shop ?? null);
           const combat = combatPrompt(characterState.encounter ?? null, settings.diceEnabled && characterState.characters.length > 0);
           return [
             ...(block.length ? [...block, ''] : []),
             ...(inventory.length ? [...inventory, ''] : []),
+            ...(corpseBlock.length ? [...corpseBlock, ''] : []),
             ...(economy.length ? [...economy, ''] : []),
             ...combat,
             '',
@@ -150,6 +182,13 @@ export function assemblePrompt(
     ...(actions.some((a) => a.check || a.attack)
       ? ['', 'Skill checks and attacks above are final and decided by the server: narrate each SUCCESS or HIT as the player achieving what they tried and each FAILURE or MISS as it going wrong or falling short. Never re-roll or change them.']
       : []),
+    ...(actions.some((a) => a.spellId)
+      ? ['', 'Spells cast above are resolved by the server (see the server note on each action): narrate every effect, hit, miss, resisted spell, stunned or dazed enemy and protection exactly as the note says, spend no extra spell slots, invent no numbers, and never use hurt/enemy tags for the spell itself. A refused cast simply fizzles.']
+      : []),
+    ...(options.enemyAttacks && options.enemyAttacks.length > 0
+      ? ['', 'Enemy attacks this round, rolled and final (decided by the server; narrate each HIT as the enemy landing the blow and each MISS as it failing; never state damage numbers, never use an enemy_attack tag for them):', ...options.enemyAttacks.map(enemyAttackText)]
+      : []),
+    ...(options.rest ? restLines(options.rest, !!options.planChecks) : []),
     ...(options.planChecks ? ['', ...checkPlanInstructions(!!characterState?.encounter)] : []),
   ].join('\n');
 }

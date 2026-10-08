@@ -1,6 +1,10 @@
 import { ABILITY_KEYS, abilityModifier, diceLabel, normalizeAbilities, weaponFor } from './constants';
 import { classOf, skillModifier } from './classes';
 import { levelForXp } from './leveling';
+import { spellSlotsOf } from './spells';
+import { replacementOf, subclassOf } from './subclasses';
+import { picksOf } from './abilityPicks';
+import { armorClass } from '@/lib/combat/armorClass';
 import type { Character } from './types';
 
 const signed = (n: number): string => (n >= 0 ? `+${n}` : `${n}`);
@@ -12,7 +16,7 @@ function abilityLine(c: Character): string {
   const cls = classOf(c.classId);
   const skills = cls
     ? `; proficient: ${cls.skills
-        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0), skillBonuses: c.skillBonuses }))}`)
+        .map((skill) => `${skill} ${signed(skillModifier({ skill, abilities, classId: cls.id, level: levelForXp(c.xp ?? 0), skillBonuses: c.skillBonuses, setSkillBonus: c.itemEffects?.setSkillBonus, subclassId: c.subclassId }))}`)
         .join(', ')}`
     : '';
   return `  ${c.displayName} modifiers: ${mods}${skills}`;
@@ -40,6 +44,36 @@ function identityLines(characters: Character[]): string[] {
   ];
 }
 
+/** K5: who follows which subclass; empty when nobody has chosen one. */
+function subclassLines(characters: Character[]): string[] {
+  const rows = characters.flatMap((c) => {
+    const sub = subclassOf(c);
+    if (!sub) return [];
+    const replaced = replacementOf(c);
+    return [`  ${c.displayName} (${CLASSES_LABEL(c)}): ${sub.nameTh} - ${sub.descTh}${replaced ? ` Their main class ability is now ${replaced.nameTh}.` : ''}`];
+  });
+  if (rows.length === 0) return [];
+  return [
+    'Subclasses (chosen at level 3). The server applies their effects and reports them in action notes, so narrate a character in a way that fits their path (for example a guardian shielding allies, a berserker fighting recklessly) but never invent or change any numbers:',
+    ...rows,
+  ];
+}
+
+/** K6: the abilities picked at level 6 and 9; empty when nobody has picked one. */
+function pickLines(characters: Character[]): string[] {
+  const rows = characters.flatMap((c) => {
+    const picks = picksOf(c);
+    return picks.length === 0 ? [] : [`  ${c.displayName}: ${picks.map((p) => `${p.nameTh} (${p.kind === 'passive' ? 'passive' : 'active'}) - ${p.descTh}`).join(' | ')}`];
+  });
+  if (rows.length === 0) return [];
+  return [
+    'Abilities picked at level 6 and 9. The server applies them and reports each use in action notes, so narrate them when the notes say they were used, but never invent or change any numbers:',
+    ...rows,
+  ];
+}
+
+const CLASSES_LABEL = (c: Character): string => classOf(c.classId)?.nameTh ?? '';
+
 export function characterPrompt(
   characters: Character[],
   pendingWipe: boolean,
@@ -52,14 +86,19 @@ export function characterPrompt(
     ...characters.map((c) => {
       const weapon = weaponFor(c.weaponId);
       const state =
-        c.status === 'downed'
-          ? "DOWNED (cannot act; only a teammate's action can get them back up)"
-          : 'standing';
+        c.status === 'dead'
+          ? 'DEAD for good (permanent death: gone from the story, cannot act, and [[revive]] cannot bring them back; do not narrate them acting)'
+          : c.status === 'downed'
+            ? "DOWNED (cannot act; only a teammate's action can get them back up)"
+            : 'standing';
       const cls = classOf(c.classId);
-      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}`;
+      const slots = spellSlotsOf(c);
+      return `- ${c.displayName} (Lv ${levelForXp(c.xp ?? 0)}${cls ? `, ${cls.nameTh}` : ''}): HP ${c.hp}/${c.maxHp}, AC ${armorClass(c)}, ${weapon.id} (${diceLabel(weapon.dice)}), ${state}${slots ? `, spell slots ${slots.current}/${slots.max} (the server spends them; cantrips are free)` : ''}`;
     }),
     'Ability modifiers (use them to set sensible DCs: easier for what a character is good at, harder for what they are bad at; the server adds the modifier to the roll, so never add it yourself):',
     ...characters.map(abilityLine),
+    ...subclassLines(characters),
+    ...pickLines(characters),
     ...identityLines(characters),
     '',
     'Announce mechanical outcomes with tags, each on its own line after your narration. The server rolls the numbers:',
@@ -68,6 +107,7 @@ export function characterPrompt(
     '  [[revive: PlayerName]] - a downed player was helped back up by a teammate',
     '  [[xp: small]] (or medium, large) - the whole party earned experience. Award it only when the party overcame an obstacle, solved a problem, or genuinely advanced the story, not every round: small for a minor step, medium for a notable one, large for a major one. At most one per round.',
     '  [[milestone]] - the party closed a major event or scene of the story. Rare; at most one per round. Never state XP or level numbers in your narration.',
+    '  [[campaign_end]] - the whole campaign is over. Use it ONLY once the party has reached the final act and has resolved the main story; never for a side quest, a single scene or a mere pause. The server ignores it while a fight is on or before enough rounds have been played in this chapter. When you use it, write the closing scene of the story in that same narration.',
     ...(sanctuary
       ? [`  [[sanctuary]] only when the party is at: ${sanctuary}. Never use it anywhere else.`]
       : []),

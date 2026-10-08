@@ -122,6 +122,13 @@ export function armorReduction(items: InventoryItem[]): number {
   return entry?.kind === 'armor' ? entry.reduction : 0;
 }
 
+/** Weight of the worn armor (decides the DEX cap of armor class); 0 when none is worn. */
+export function armorWeight(items: InventoryItem[]): number {
+  const id = equippedArmorId(items);
+  const entry = id ? catalogEntry(id) : null;
+  return entry?.kind === 'armor' ? entry.weight : 0;
+}
+
 /** Check bonus per skill from worn accessories (F5d); empty when none are worn. */
 export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<SkillId, number>> {
   const bonuses: Partial<Record<SkillId, number>> = {};
@@ -131,6 +138,16 @@ export function equippedSkillBonuses(items: InventoryItem[]): Partial<Record<Ski
     if (entry?.kind === 'accessory') bonuses[entry.skill] = (bonuses[entry.skill] ?? 0) + entry.skillBonus;
   }
   return bonuses;
+}
+
+/** F5g: the revive charm worn in the accessory slot, or null. */
+export function equippedReviveCharm(items: InventoryItem[]): { itemId: string; reviveHp: number } | null {
+  for (const i of items) {
+    if (!i.equipped || i.slot !== 'accessory') continue;
+    const entry = catalogEntry(i.itemId);
+    if (entry?.kind === 'charm') return { itemId: i.itemId, reviveHp: entry.reviveHp };
+  }
+  return null;
 }
 
 /** Special effects and set bonus from worn magic items (F5j0). */

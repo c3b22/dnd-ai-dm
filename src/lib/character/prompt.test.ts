@@ -14,8 +14,15 @@ describe('characterPrompt', () => {
 
   it('lists each character with HP, weapon and standing/downed', () => {
     const text = characterPrompt(party, false, undefined).join('\n');
-    expect(text).toContain('Prem (Lv 1): HP 15/18, shortsword (1d8), standing');
-    expect(text).toContain('Suki (Lv 1): HP 0/20, fists (1d2), DOWNED');
+    expect(text).toContain('Prem (Lv 1): HP 15/18, AC 10, shortsword (1d8), standing');
+    expect(text).toContain('Suki (Lv 1): HP 0/20, AC 10, fists (1d2), DOWNED');
+  });
+
+  it('shows armor class from DEX and worn armor', () => {
+    const armored: Character = {
+      ...party[0], abilities: { STR: 10, DEX: 14, CON: 10, INT: 10, WIS: 10, CHA: 10 }, armorReduction: 2, armorWeight: 2,
+    };
+    expect(characterPrompt([armored], false, undefined).join(' ')).toContain('HP 15/18, AC 16,');
   });
 
   it('teaches the tags and forbids inventing HP numbers', () => {
@@ -38,6 +45,12 @@ describe('characterPrompt', () => {
     expect(text).not.toMatch(/\b150\b/);
     const statusLines = text.split('\n').filter((line) => line.startsWith('- '));
     expect(statusLines.join('\n')).not.toMatch(/XP/);
+  });
+
+  it('teaches [[campaign_end]] as a last-act-only tag', () => {
+    const text = characterPrompt(party, false, undefined).join(' ');
+    expect(text).toContain('[[campaign_end]]');
+    expect(text).toMatch(/final act/);
   });
 
   it('shows the class next to the level and nothing extra for a classless player', () => {
@@ -82,6 +95,15 @@ describe('characterPrompt harm-risk guidance', () => {
     const text = characterPrompt([warrior], false, undefined).join('\n');
     expect(text).toContain('Prem modifiers: STR +2 DEX +1 CON +2 INT -1 WIS +1 CHA +0; proficient: athletics +4, intimidation +2, perception +3, survival +3');
     expect(text).toContain('set sensible DCs');
+  });
+
+  it('includes the complete-set bonus in proficient skill modifiers (X9)', () => {
+    const warrior: Character = {
+      ...party[0], classId: 'warrior', abilities: { STR: 15, DEX: 13, CON: 14, INT: 8, WIS: 12, CHA: 10 },
+      itemEffects: { effects: [], setTheme: 'เงา', setSkillBonus: 1 },
+    };
+    const text = characterPrompt([warrior], false, undefined).join('\n');
+    expect(text).toContain('proficient: athletics +5, intimidation +3, perception +4, survival +4');
   });
 
   it('treats missing abilities as 10 and omits skills for a classless character', () => {

@@ -5,6 +5,7 @@ const BASE_PRICES = {
   potion_major: 25,
   staff: 20,
   dagger: 20,
+  wand: 20,
   shortsword: 30,
   shortbow: 30,
   armor_light: 25,
@@ -12,9 +13,9 @@ const BASE_PRICES = {
   armor_heavy: 90,
 } as const;
 
-/** Every magic item that lands in CATALOG (weapon / armor / consumable / accessory / scroll) is priced from magicItems.ts (F5c). */
+/** Every magic item that lands in CATALOG (weapon / armor / consumable / accessory / scroll / charm) is priced from magicItems.ts (F5c). */
 const MAGIC_PRICES: Record<string, number> = Object.fromEntries(
-  MAGIC_ITEMS.filter((i) => ['weapon', 'armor', 'consumable', 'accessory', 'scroll'].includes(i.mechanic.kind)).map((i) => [i.id, i.price])
+  MAGIC_ITEMS.filter((i) => ['weapon', 'armor', 'consumable', 'accessory', 'scroll', 'charm'].includes(i.mechanic.kind)).map((i) => [i.id, i.price])
 );
 
 export const PRICES: Readonly<Record<string, number>> & typeof BASE_PRICES = { ...MAGIC_PRICES, ...BASE_PRICES };

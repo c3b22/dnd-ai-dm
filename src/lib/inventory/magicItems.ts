@@ -1,6 +1,7 @@
 import type { DiceSpec } from '@/lib/character/constants';
 import type { SkillId } from '@/lib/character/classes';
 import type { ItemEffectId } from './effects';
+import { SCROLL_PIPS } from '@/lib/combat/constants';
 
 /**
  * Magic item catalogue (F5b). Pure data with 6 mechanic kinds only. Variety comes from names, numbers,
@@ -13,7 +14,7 @@ export type MagicRarity = (typeof MAGIC_RARITIES)[number];
 export const MAGIC_RARITY_TH: Record<MagicRarity, string> = { uncommon: 'ไม่ธรรมดา', rare: 'หายาก', legendary: 'ตำนาน' };
 
 export const MAGIC_MECHANIC_KINDS = ['weapon', 'armor', 'consumable', 'scroll', 'accessory', 'charm'] as const;
-export type MagicWeaponId = 'shortsword' | 'shortbow' | 'staff' | 'dagger';
+export type MagicWeaponId = 'shortsword' | 'shortbow' | 'staff' | 'dagger' | 'wand';
 
 export type MagicMechanic =
   | { kind: 'weapon'; weaponId: MagicWeaponId; damageBonus: number }
@@ -49,12 +50,13 @@ const L: R = 'legendary';
 
 // --- weapons: bonus +1/+2/+3 by rarity; price ~3x the ordinary weapon (sword/bow 30, dagger/staff 20) ---
 const WEAPON_BONUS: Record<R, number> = { uncommon: 1, rare: 2, legendary: 3 };
-const WEAPON_WEIGHT: Record<MagicWeaponId, number> = { shortsword: 2, shortbow: 2, staff: 2, dagger: 1 };
+const WEAPON_WEIGHT: Record<MagicWeaponId, number> = { shortsword: 2, shortbow: 2, staff: 2, dagger: 1, wand: 1 };
 const WEAPON_PRICE: Record<MagicWeaponId, Record<R, number>> = {
   shortsword: { uncommon: 90, rare: 150, legendary: 350 },
   shortbow: { uncommon: 90, rare: 150, legendary: 350 },
   staff: { uncommon: 60, rare: 150, legendary: 350 },
   dagger: { uncommon: 60, rare: 150, legendary: 350 },
+  wand: { uncommon: 60, rare: 150, legendary: 350 },
 };
 const weapon = (weaponId: MagicWeaponId, id: string, nameTh: string, rarity: R, flavorTh: string): MagicItem => ({
   id: `${weaponId}_${id}`, nameTh, flavorTh, rarity,
@@ -77,17 +79,18 @@ const potion = (id: string, nameTh: string, rarity: R, count: number, sides: num
   mechanic: { kind: 'consumable', heal: { count, sides, bonus } },
 });
 
-// --- scrolls: remove 1 / 2 / 3 enemy pips by rarity (a boss at full pips keeps at least 1, existing rule) ---
-const SCROLL_PIPS: Record<R, number> = { uncommon: 1, rare: 2, legendary: 3 };
+// --- scrolls: remove SCROLL_PIPS enemy pips by rarity (a boss at full pips keeps at least 1, existing rule) ---
 const scroll = (id: string, nameTh: string, rarity: R, price: number, flavorTh: string): MagicItem => ({
   id: `scroll_${id}`, nameTh, flavorTh, rarity, weight: 1, price,
   mechanic: { kind: 'scroll', pipReduction: SCROLL_PIPS[rarity] },
 });
 
-// --- accessories: +1 (uncommon) / +2 (rare) on checks of one skill ---
+// --- accessories: +1 (uncommon) / +2 (rare) / +3 (legendary) on checks of one skill ---
+const ACC_BONUS: Record<R, number> = { uncommon: 1, rare: 2, legendary: 3 };
+const ACC_PRICE: Record<R, number> = { uncommon: 120, rare: 220, legendary: 450 };
 const accessory = (id: string, nameTh: string, skill: SkillId, rarity: R, weight: number, flavorTh: string): MagicItem => ({
-  id: `acc_${id}`, nameTh, flavorTh, rarity, weight, price: rarity === 'rare' ? 220 : 120,
-  mechanic: { kind: 'accessory', skill, skillBonus: rarity === 'rare' ? 2 : 1 },
+  id: `acc_${id}`, nameTh, flavorTh, rarity, weight, price: ACC_PRICE[rarity],
+  mechanic: { kind: 'accessory', skill, skillBonus: ACC_BONUS[rarity] },
 });
 
 // --- one-use revive charms ---
@@ -96,7 +99,7 @@ const charm = (id: string, nameTh: string, reviveHp: number, price: number, flav
   mechanic: { kind: 'charm', effect: 'revive', reviveHp },
 });
 
-export const MAGIC_ITEMS: readonly MagicItem[] = [
+const BASE_MAGIC_ITEMS: readonly MagicItem[] = [
   // shortswords
   weapon('shortsword', 'dawn', 'ดาบสั้นยามเช้า', U, 'คมดาบสะท้อนแสงแรกของวันจนศัตรูตาพร่า'),
   weapon('shortsword', 'ember', 'ดาบสั้นถ่านแดง', U, 'ใบดาบอุ่นเหมือนถ่านที่ยังไม่มอดดับ'),
@@ -172,7 +175,7 @@ export const MAGIC_ITEMS: readonly MagicItem[] = [
   potion('stream', 'ยาสายธารฟื้นฟู', RA, 3, 6, 0, 90, 'น้ำจากต้นธารศักดิ์สิทธิ์ที่แผลเก่าแก่ก็หายสนิท'),
   potion('ambrosia', 'ยาน้ำอมฤต', L, 4, 8, 4, 220, 'หยดเดียวจากน้ำอมฤตก็ดึงคนใกล้ตายกลับมาลืมตาได้'),
 
-  // scrolls: 5 uncommon (1 pip), 6 rare (2 pips), 1 legendary (3 pips)
+  // scrolls: 5 uncommon, 6 rare, 1 legendary (pips in SCROLL_PIPS)
   scroll('spark', 'ม้วนคัมภีร์ประกายไฟ', U, 35, 'ตัวอักษรบนม้วนร้อนผ่าวและแตกเป็นประกายเมื่ออ่านออกเสียง'),
   scroll('cuttingwind', 'ม้วนคัมภีร์สายลมบาด', U, 35, 'ลมที่หลุดจากม้วนกระดาษคมเหมือนใบมีดบาง'),
   scroll('frostdew', 'ม้วนคัมภีร์น้ำค้างแข็ง', U, 40, 'เมื่อคลี่ม้วนออก อากาศรอบตัวเย็นจนหายใจเป็นไอ'),
@@ -212,9 +215,67 @@ export const MAGIC_ITEMS: readonly MagicItem[] = [
   accessory('thirdeye', 'จี้ตาที่สาม', 'arcana', RA, 0, 'ลูกตาแก้วที่เปิดขึ้นเองเมื่อเวทมนตร์ปรากฏ'),
   accessory('calmtassel', 'พู่ห้อยจิตสงบ', 'insight', U, 0, 'ความสงบจากพู่ห้อยช่วยให้อ่านใจคนได้ละเอียดขึ้น'),
 
+  // legendary accessories (F5k): carry deep_pack (X6), never in shops
+  accessory('shadowpouch', 'ถุงคาดเอวเงาไร้ก้น', 'stealth', L, 0, 'ถุงใบเล็กที่เงาข้างในลึกไม่สิ้นสุด ใส่ของเท่าไรก็ยังมีที่ว่างเสมอ'),
+  accessory('forestpack', 'กระเป๋าสะพายป่าไม่รู้จบ', 'survival', L, 0, 'กระเป๋าถักจากเถาวัลย์ที่ภายในกว้างเหมือนผืนป่าทั้งผืน'),
+
   // revive charms (legendary, never in shops)
   charm('revive', 'เครื่องรางคืนชีพ', 1, 500, 'เมื่อลมหายใจสุดท้ายจะหลุดไป เครื่องรางจะแตกสลายและดึงผู้สวมกลับมา'),
   charm('phoenix', 'ขนนกฟีนิกซ์', 2, 550, 'ขนนกสีเพลิงที่จะลุกไหม้แทนเจ้าของหนึ่งครั้ง'),
   charm('twinheart', 'ลูกปัดหัวใจสอง', 2, 600, 'ลูกปัดที่เต้นเป็นจังหวะเดียวกับหัวใจดวงที่สองซึ่งสำรองไว้'),
   charm('crossing', 'เหรียญข้ามฝั่ง', 3, 700, 'เหรียญที่ใช้ซื้อทางกลับจากฝั่งตรงข้ามของความตาย'),
 ];
+
+/**
+ * F5j9: special effects. Rules: uncommon = no effect; rare = one small effect (X2 lifesteal, X3 keen_eye, X7 lucky_purse,
+ * X8 quick_tempo); legendary = one main effect. Each effect only on the slots the draft allows (crit_surge/lifesteal: weapon,
+ * ward: armor, keen_eye: weapon or accessory, deep_pack/lucky_purse/quick_tempo: accessory). Rare armor, potions and scrolls
+ * get none because no small effect is allowed on armor. Every rare weapon and accessory carries one: lifesteal on the
+ * "biting/draining/holy" ones, keen_eye on bows and sharp-sight pieces (value 2 only on hawkeye), the rest on accessories.
+ * F5k: deep_pack (X6) sits on the two legendary accessories (acc_shadowpouch, acc_forestpack), 3 extra slots each.
+ */
+const EFFECTS: Readonly<Record<string, { effect: ItemEffectId; effectValue?: number }>> = {
+  // rare weapons: lifesteal (X2)
+  shortsword_thornbite: { effect: 'lifesteal' }, dagger_batfang: { effect: 'lifesteal' }, staff_bodhiroot: { effect: 'lifesteal' },
+  shortsword_nightsilver: { effect: 'lifesteal' }, dagger_shadowsnake: { effect: 'lifesteal' }, staff_silverbell: { effect: 'lifesteal' },
+  // rare weapons + rare accessory: keen_eye (X3)
+  shortbow_hawkeye: { effect: 'keen_eye', effectValue: 2 }, shortbow_galewind: { effect: 'keen_eye', effectValue: 1 },
+  shortbow_meteor: { effect: 'keen_eye', effectValue: 1 }, shortsword_stormcall: { effect: 'keen_eye', effectValue: 1 },
+  dagger_moonflick: { effect: 'keen_eye', effectValue: 1 }, staff_moonglass: { effect: 'keen_eye', effectValue: 1 },
+  acc_nightfalcon: { effect: 'keen_eye', effectValue: 1 },
+  // rare accessories: lucky_purse (X7) / quick_tempo (X8)
+  acc_envoyring: { effect: 'lucky_purse', effectValue: 2 }, acc_soundlessanklet: { effect: 'lucky_purse', effectValue: 2 },
+  acc_thirdeye: { effect: 'quick_tempo' }, acc_giantbelt: { effect: 'quick_tempo' },
+  // legendary weapons: crit_surge (X1)
+  shortsword_oathkeeper: { effect: 'crit_surge' }, shortbow_horizon: { effect: 'crit_surge' },
+  staff_lifetree: { effect: 'crit_surge' }, dagger_eternalwhisper: { effect: 'crit_surge' },
+  // legendary accessories: deep_pack (X6)
+  acc_shadowpouch: { effect: 'deep_pack', effectValue: 3 }, acc_forestpack: { effect: 'deep_pack', effectValue: 3 },
+  // legendary armor: ward (X4), the heaviest/most defensive pieces get 3
+  armor_hero: { effect: 'ward', effectValue: 2 }, armor_golddrake: { effect: 'ward', effectValue: 3 }, armor_eternalstar: { effect: 'ward', effectValue: 3 },
+};
+
+/**
+ * F5j9: themes for X9 (matching weapon + armor + accessory = +1 on every skill check). 9 themes, each with at least one full
+ * 3-slot set (first three ids of each entry); extra pieces let players mix and collect. Themes may sit on any rarity.
+ */
+const THEME_SETS: Readonly<Record<string, readonly string[]>> = {
+  'เงา': ['dagger_shadowsnake', 'armor_shadowhide', 'acc_silentshawl', 'dagger_blackrat', 'dagger_batfang', 'acc_grinmask', 'acc_shadowpouch'],
+  'ป่า': ['shortbow_vine', 'armor_campo', 'acc_evergreen', 'staff_mossy', 'armor_fallenleaf', 'acc_wolffang', 'acc_forestpack'],
+  'จันทรา': ['shortsword_nightsilver', 'armor_indigo', 'acc_nightfalcon', 'dagger_moonflick', 'staff_moonglass'],
+  'ผู้พิทักษ์': ['shortsword_oathkeeper', 'armor_gatewarden', 'acc_truthring', 'armor_hero', 'acc_fightband'],
+  'พายุ': ['shortbow_galewind', 'armor_frostwind', 'acc_wandercompass', 'shortsword_stormcall', 'acc_giantbelt'],
+  'มังกร': ['shortsword_ember', 'armor_wyrmling', 'acc_skullring', 'armor_golddrake', 'dagger_rain'],
+  'ดวงดาว': ['shortbow_meteor', 'armor_starfall', 'acc_thirdeye', 'armor_eternalstar', 'acc_crystalear'],
+  'ศักดิ์สิทธิ์': ['staff_bodhiroot', 'armor_crane', 'acc_prayerbeads', 'staff_silverbell', 'staff_lifetree'],
+  'มิธริล': ['dagger_needle', 'armor_mithril', 'acc_silverbrooch', 'armor_fishscale', 'acc_envoyring'],
+};
+const THEME_OF: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(THEME_SETS).flatMap(([theme, ids]) => ids.map((id) => [id, theme] as const))
+);
+
+export const MAGIC_ITEMS: readonly MagicItem[] = BASE_MAGIC_ITEMS.map((item) => {
+  const fx = EFFECTS[item.id];
+  const theme = THEME_OF[item.id];
+  return { ...item, ...(fx ?? {}), ...(theme ? { theme } : {}) };
+});

@@ -16,10 +16,12 @@ import {
 export interface CampaignSettingsPanelProps {
   settings: CampaignSettings;
   isOwner: boolean;
+  /** The game has started: permadeath is then locked. */
+  started?: boolean;
   onSave: (patch: Partial<CampaignSettings>) => Promise<void>;
 }
 
-export function CampaignSettingsPanel({ settings, isOwner, onSave }: CampaignSettingsPanelProps) {
+export function CampaignSettingsPanel({ settings, isOwner, started = false, onSave }: CampaignSettingsPanelProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<CampaignSettings>(settings);
   const [saving, setSaving] = useState(false);
@@ -50,6 +52,7 @@ export function CampaignSettingsPanel({ settings, isOwner, onSave }: CampaignSet
     ['ความยาก', DIFFICULTY_LABELS[settings.difficulty]],
     ['ลูกเต๋า', settings.diceEnabled ? 'ใช้ทอย d20' : 'ไม่ใช้ลูกเต๋า'],
     ['คนที่จัดลำดับได้', REORDER_LABELS[settings.reorderPolicy]],
+    ['โหมดตายจริง', settings.permadeath ? 'เปิด' : 'ปิด'],
   ];
 
   if (!editing) {
@@ -149,6 +152,15 @@ export function CampaignSettingsPanel({ settings, isOwner, onSave }: CampaignSet
           ))}
         </select>
       </div>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={draft.permadeath}
+          disabled={started}
+          onChange={(e) => setDraft({ ...draft, permadeath: e.target.checked })}
+        />
+        โหมดตายจริง (ตัวละครที่ตายแล้วไม่กลับมา){started ? ' — แก้ไม่ได้หลังเริ่มเกม' : ''}
+      </label>
       {error && (
         <p role="alert" className="error">
           {error}

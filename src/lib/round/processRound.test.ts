@@ -1,8 +1,10 @@
+import { DEFAULT_SHOP_ITEMS } from '@/lib/economy/shopFallback';
 import { describe, it, expect, vi } from 'vitest';
 import { processRound, ProcessRoundDeps } from './processRound';
 import type { RoundRepository } from './roundRepository';
 import { PromptBlockedError } from '@/lib/ai/geminiClient';
 import { allowedScenes } from '@/lib/scenes/scenes';
+import { emptyStats } from '@/lib/campaign/stats';
 
 async function* fakeStream(chunks: string[]) {
   for (const chunk of chunks) yield chunk;
@@ -509,6 +511,43 @@ describe('processRound economy', () => {
     expect(close.setShop).toHaveBeenCalledWith('camp-1', null);
   });
 
+  it('N2: auto-opens the default shop when the DM narrates buying without a shop tag, and logs it', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const repository = one();
+    await run(repository, 'เจ้าของร้านบอกว่าซูกิสามารถเลือกซื้อสินค้าได้');
+    expect(repository.setShop).toHaveBeenCalledWith('camp-1', { name: 'ร้านค้า', itemIds: DEFAULT_SHOP_ITEMS });
+    expect(repository.appendToMessage).toHaveBeenCalledWith('msg-1', 'เจ้าของร้านบอกว่าซูกิสามารถเลือกซื้อสินค้าได้');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('auto-opened shop campaign=camp-1 round=round-1'));
+    log.mockRestore();
+  });
+
+  it('N2: does not auto-open when the DM refuses', async () => {
+    const repository = one();
+    await run(repository, 'เจ้าของร้านปฏิเสธและปิดประตู');
+    expect(repository.setShop).not.toHaveBeenCalled();
+  });
+
+  // N3: regression fixtures from the real production round (campaign 1, 2026-10-07). The sentence before "..." is the real DM text;
+  // the continuation, and the whole refusal narration, are composed fixtures.
+  const withAction = (actionText: string) =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [gold], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText, playerId: 'p1', useItemId: null }] })),
+    });
+
+  it('N3: real round "พยายามปิดบังหน้า แล้วไปที่ร้านอื่น" with purchase narration and no [[shop]] opens the default shop', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const repository = withAction('พยายามปิดบังหน้า แล้วไปที่ร้านอื่น');
+    await run(repository, 'ซูกิสามารถเลือกซื้ออาหารแห้งและอุปกรณ์สำรวจที่จำเป็นสำหรับการเดินทางใส่ย่ามได้ เจ้าของร้านวางของทั้งหมดไว้บนเคาน์เตอร์ให้เลือก');
+    expect(repository.setShop).toHaveBeenCalledWith('camp-1', { name: 'ร้านค้า', itemIds: DEFAULT_SHOP_ITEMS });
+    log.mockRestore();
+  });
+
+  it('N3: real round "ไปที่ร้านค้า" where the DM narrates the owner refusing and closing the door does not open a shop', async () => {
+    const repository = withAction('ไปที่ร้านค้า');
+    await run(repository, 'ซูกิเดินเข้าไปที่ร้านค้า แต่เจ้าของร้านจำเธอได้ เขาปฏิเสธที่จะขายของให้ แล้วผลักเธอออกมาและปิดประตูดังปัง');
+    expect(repository.setShop).not.toHaveBeenCalled();
+  });
+
   it('closes the open shop when the scene actually changes, but not when the same scene is repeated', async () => {
     const shop = { name: 'Old Mara', itemIds: ['staff'] };
     const moved = one({ currentShop: shop, currentSceneId: 'crypt' });
@@ -729,7 +768,7 @@ describe('processRound abilities', () => {
 
 describe('processRound encounter', () => {
   const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
   const one = (over: object = {}) => createFakeRepository({
     getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
   });
@@ -740,7 +779,7 @@ describe('processRound encounter', () => {
     const repository = one({ currentEncounter: { enemies: [wolf] } });
     const generateNarration = vi.fn().mockResolvedValue(fakeStream(['ok']));
     await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
-    expect(generateNarration.mock.calls[0][0]).toContain('- หมาป่า (normal): 2/2 pips');
+    expect(generateNarration.mock.calls[0][0]).toContain('- หมาป่า (normal): 4/4 pips');
   });
 
   it('starts an encounter from an enemy tag and strips the tag', async () => {
@@ -753,9 +792,9 @@ describe('processRound encounter', () => {
   it('updates the stored encounter on a hurt tag and ends it when the last enemy falls', async () => {
     const hurt = one({ currentEncounter: { enemies: [wolf] } });
     await run(hurt, '[[enemy_hurt: หมาป่า | light]]');
-    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
+    expect(hurt.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 2 }] });
 
-    const dead = one({ currentEncounter: { enemies: [wolf] } });
+    const dead = one({ currentEncounter: { enemies: [{ ...wolf, pip: 2 }] } });
     await run(dead, '[[enemy_hurt: หมาป่า | heavy]]');
     expect(dead.setEncounter).toHaveBeenCalledWith('camp-1', null);
   });
@@ -969,7 +1008,7 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
     id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
     revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 }, armorReduction: 1,
   };
-  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 2, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 2, maxPip: 4, fled: false };
   const repo = () =>
     createFakeRepository({
       getRoundContext: vi.fn().mockResolvedValue({
@@ -989,32 +1028,150 @@ describe('processRound C8 attacks on enemies and from enemies', () => {
   };
   const attackPlan = '{"attacks":[{"player":"Prem","target":"หมาป่า","advantage":"none"}]}';
 
-  it('a hit (d20 9 vs 9, dagger 4 of max 4 = heavy) removes 2 pips and ends the fight; the DM is told', async () => {
+  it('a hit (d20 8 + DEX 3 + prof 2 = 13 vs AC 13, dagger 4 of max 4 = heavy) removes 2 pips and ends the fight; the DM is told', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 9], attackPlan, 'หมาป่าล้มลง');
+    const generate = await go(repository, [5, 8], attackPlan, 'หมาป่าล้มลง');
     const second = generate.mock.calls[1][0] as string;
-    expect(second).toContain('attack on หมาป่า: d20 9 vs 9 -> HEAVY HIT');
+    expect(second).toContain('attack on หมาป่า: d20 8 + 5 = 13 vs armor class 13 -> HEAVY HIT');
     expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', null);
-    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 9 }]);
+    expect(vi.mocked(repository.insertRollSummary).mock.calls[0][2]).toEqual([{ playerDisplayName: 'Prem', roll: 8, attack: { target: 'หมาป่า', modifier: 3, proficiency: 2, magic: 0, total: 13, ac: 13, hit: true, critical: null } }]);
   });
 
-  it('a miss (d20 8 vs 9) leaves the enemy untouched and the encounter is not rewritten', async () => {
+  it('a miss (d20 7 + 5 = 12 vs AC 13) leaves the enemy untouched and the encounter is not rewritten', async () => {
     const repository = repo();
-    const generate = await go(repository, [5, 8], attackPlan, 'พลาด');
+    const generate = await go(repository, [5, 7], attackPlan, 'พลาด');
     expect(generate.mock.calls[1][0]).toContain('MISS');
     expect(repository.setEncounter).not.toHaveBeenCalled();
   });
 
-  it('an enemy_attack tag hurts the player by the tier damage minus armor (4 - 1 = 3)', async () => {
+  it('an enemy_attack tag is rolled by the server: d20 10 + 5 vs AC 15 hits for 1d8+2 = 6 with rollSides 4 (no armor reduction)', async () => {
     const repository = repo();
-    await go(repository, [5, 8], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
-    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 17 })], false);
+    await go(repository, [5, 8, 10], attackPlan, 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 14 })], false);
+  });
+
+  it('I4 venomous: a hit records the poisoned player, and the next round takes 1 HP first and clears the list', async () => {
+    const venomWolf = { ...wolf, traits: ['venomous' as const] };
+    const hit = repo();
+    vi.mocked(hit.getRoundContext).mockResolvedValue({ ...(await hit.getRoundContext('round-1')), currentEncounter: { enemies: [venomWolf] } });
+    await go(hit, [5, 2, 10], attackPlan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
+    expect(hit.setEncounter).toHaveBeenCalledWith('camp-1', expect.objectContaining({ poisoned: ['p1'] }));
+
+    const next = repo();
+    vi.mocked(next.getRoundContext).mockResolvedValue({ ...(await next.getRoundContext('round-1')), currentEncounter: { enemies: [venomWolf], poisoned: ['p1'] } });
+    await go(next, [5], 'เงียบ');
+    expect(next.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 19 })], false);
+    expect(next.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [venomWolf] });
+  });
+});
+
+describe('processRound I2 enemy attacks against AC', () => {
+  // Prem: DEX 16 (+3), armor reduction 1 light (weight 1): AC 10 + 3 + 2 = 15.
+  const prem = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilities: { STR: 8, DEX: 16, CON: 13, INT: 12, WIS: 10, CHA: 14 }, armorReduction: 1, armorWeight: 1,
+  };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
+  const repo = (over: object = {}) =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'ซ่อนตัว' }],
+        characters: [prem], currentEncounter: { enemies: [wolf] }, ...over,
+      }),
+    });
+  // rollDie order: Prem's own action die first, then the enemy attack d20 (damage dice use rollSides = 3).
+  const go = async (repository: RoundRepository, rolls: number[], ...texts: string[]) => {
+    const generate = vi.fn();
+    texts.forEach((t) => generate.mockResolvedValueOnce(fakeStream([t])));
+    const queue = [...rolls];
+    await processRound({ claimRound: claim(), repository, generateNarration: generate, rollDie: () => queue.shift() ?? 10, rollSides: () => 3 }, 'round-1');
+    return generate;
+  };
+  const plan = '{"checks":[],"enemyAttacks":[{"enemy":"หมาป่า","player":"Prem"}]}';
+
+  it('a hit (d20 10 + 5 = 15 vs AC 15): rolls 1d8+2 = 5 with no armor reduction, tells the DM, shows it in the roll summary and stats', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 10], plan, 'หมาป่ากัด');
+    expect(generate).toHaveBeenCalledTimes(2);
+    const second = generate.mock.calls[1][0] as string;
+    expect(second).toContain('หมาป่า attacks Prem: d20 10 + 5 = 15 vs armor class 15 -> HIT');
+    expect(second).not.toContain('FORMAT OF YOUR ANSWER');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ id: 'p1', hp: 15 })], false);
+    const rolls = vi.mocked(repository.insertRollSummary).mock.calls[0][2];
+    expect(rolls).toContainEqual({ playerDisplayName: 'หมาป่า', roll: 10, enemyAttack: { target: 'Prem', bonus: 5, total: 15, ac: 15, hit: true, critical: null } });
+    expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('หมาป่า โจมตี Prem') && l.includes('โดน −5 HP'))).toBe(true);
+  });
+
+  it('a miss (d20 9 + 5 = 14 vs AC 15) costs nothing', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 9], plan, 'หมาป่าพลาด');
+    expect(generate.mock.calls[1][0]).toContain('-> MISS');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 20 })], false);
+  });
+
+  it('nat 1 misses and nat 20 hits for doubled dice (2d8+2 = 8)', async () => {
+    const miss = repo();
+    await go(miss, [5, 1], plan, 'x');
+    expect(miss.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 20 })], false);
+    const crit = repo();
+    const generate = await go(crit, [5, 20], plan, 'x');
+    expect(generate.mock.calls[1][0]).toContain('CRITICAL HIT');
+    expect(crit.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 12 })], false);
+  });
+
+  it('a ward is spent on the hit (5 - 2 = 3 damage)', async () => {
+    const ward = { effects: ['ward'], setTheme: null, setSkillBonus: 0 };
+    const repository = repo({ characters: [{ ...prem, itemEffects: ward }] });
+    await go(repository, [5, 10], plan, 'x');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 17 })], false);
+  });
+
+  it('ยืนบัง: the warrior guarding Prem takes the halved hit', async () => {
+    const warrior = { ...prem, id: 'w1', displayName: 'Bram', classId: 'warrior', hp: 30, maxHp: 30 };
+    const repository = repo({
+      characters: [prem, warrior],
+      actions: [
+        { playerDisplayName: 'Prem', actionText: 'ซ่อนตัว', playerId: 'p1' },
+        { playerDisplayName: 'Bram', actionText: 'ยืนบัง Prem', playerId: 'w1', useAbility: true, abilityTargetId: 'p1' },
+      ],
+    });
+    await go(repository, [5, 5, 10], plan, 'x');
+    const saved = vi.mocked(repository.saveCharacterState).mock.calls[0][1] as { id: string; hp: number }[];
+    expect(saved.find((c) => c.id === 'p1')?.hp).toBe(20);
+    expect(saved.find((c) => c.id === 'w1')?.hp).toBe(27); // ceil(5 / 2)
+  });
+
+  it('narration fallback: an [[enemy_attack]] tag in a pure narration is rolled by the same formula and reported in the stats summary', async () => {
+    const repository = repo();
+    // rollDie: Prem's action die 5, then the fallback d20 = 10 (hit vs AC 15).
+    const generate = await go(repository, [5, 10], JSON.stringify({ narration: 'หมาป่ากัด\n[[enemy_attack: หมาป่า | Prem]]' }));
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 15 })], false);
+    expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('หมาป่า โจมตี Prem') && l.includes('เทียบ AC 15'))).toBe(true);
+  });
+
+  it('the tag is ignored when the plan already listed enemy attacks (no double roll)', async () => {
+    const repository = repo();
+    await go(repository, [5, 10, 10], plan, 'หมาป่ากัด' + NL + '[[enemy_attack: หมาป่า | Prem]]');
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', [expect.objectContaining({ hp: 15 })], false);
+  });
+
+  it('an unknown enemy or player in the plan is ignored and the round still completes', async () => {
+    const repository = repo();
+    const generate = await go(repository, [5, 10], '{"checks":[],"enemyAttacks":[{"enemy":"มังกร","player":"Prem"}]}', 'เล่า');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0]).not.toContain('Enemy attacks this round');
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
   });
 });
 
 describe('processRound scrolls (F5e)', () => {
   const scrollItem = { itemId: 'scroll_flame', customName: '', quantity: 1, slot: null, equipped: false };
-  const wolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 3, maxPip: 3, fled: false };
+  const wolf = { name: 'หมาป่า', tier: 'strong' as const, pip: 6, maxPip: 6, fled: false };
   const scrollContext = (over: object = {}) =>
     contextWith({
       inventories: { p1: [scrollItem] },
@@ -1031,8 +1188,8 @@ describe('processRound scrolls (F5e)', () => {
     const prompt = generateNarration.mock.calls[0][0] as string;
     expect(prompt).toContain('read ม้วนคัมภีร์เปลวไฟ at หมาป่า');
     expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [], baseItems: [scrollItem] }]);
-    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 1 }] });
-    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-2 pip)']);
+    expect(repository.setEncounter).toHaveBeenCalledWith('camp-1', { enemies: [{ ...wolf, pip: 2 }] });
+    expect(repository.insertStatsSummary).toHaveBeenCalledWith('camp-1', 'round-1', ['Prem ใช้ ม้วนคัมภีร์เปลวไฟ ใส่ หมาป่า (-4 pip)']);
   });
 
   it('keeps the scroll when there is no fight or the target is wrong', async () => {
@@ -1066,5 +1223,510 @@ describe('processRound scrolls (F5e)', () => {
     expect(generateNarration).toHaveBeenCalledTimes(2);
     expect(generateNarration.mock.calls[0][0]).toContain('HISTORY-MARKER');
     expect(generateNarration.mock.calls[1][0]).not.toContain('HISTORY-MARKER');
+  });
+});
+
+describe('processRound death saves (H1)', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+  const aria = { id: 'p2', displayName: 'Aria', weaponId: null, hp: 0, maxHp: 10, status: 'downed' as const, revivesSinceSanctuary: 0 };
+
+  function setup(characters: unknown[], die: number, extra: Record<string, unknown> = {}, saveDeathSaves = vi.fn().mockResolvedValue(undefined)) {
+    const repository = createFakeRepository({
+      saveDeathSaves,
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], actions: [{ playerDisplayName: 'Prem', actionText: 'Guard Aria' }],
+        characters, pendingWipe: false, adventure: null, allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '', ...extra,
+      }),
+    });
+    const d: ProcessRoundDeps = {
+      claimRound: vi.fn().mockResolvedValue(true),
+      repository,
+      generateNarration: vi.fn().mockImplementation(async () => fakeStream(['Quiet.'])),
+      rollDie: () => die,
+      rollSides: () => 4,
+    };
+    return { repository, d };
+  }
+
+  it('rolls a death save for a downed character, shows it in the roll summary and saves the tally', async () => {
+    const { repository, d } = setup([prem, aria], 12);
+    await processRound(d, 'round-1');
+
+    const posted = vi.mocked(repository.insertRollSummary).mock.calls[0][2];
+    expect(posted).toContainEqual(expect.objectContaining({ playerDisplayName: 'Aria', roll: 12, check: expect.objectContaining({ skill: 'death_save', dc: 10, total: 12, success: true }) }));
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: expect.objectContaining({ successes: 1 }) })]);
+    const stats = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(stats.some((l) => l.includes('Aria'))).toBe(true);
+  });
+
+  it('nat 20 brings the character back with 1 HP and clears the tally', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 1, failures: 2, stable: false, dead: false } }], 20);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', hp: 1, status: 'active' })]), false);
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
+  });
+
+  it('a third failure leaves the character downed so revive still works', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 0, failures: 2, stable: false, dead: false } }], 3);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'downed', hp: 0 })]), false);
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: expect.objectContaining({ dead: true, failures: 3 }) })]);
+  });
+
+  it('a revive tag clears the saved tally', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 1, failures: 1, stable: false, dead: false } }], 12);
+    (d.generateNarration as any).mockImplementation(async () => fakeStream(['Light.\n[[revive: Aria]]']));
+    await processRound(d, 'round-1');
+
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
+  });
+
+  it('F5g: a worn revive charm brings the character back on the third failure and is removed from the pack', async () => {
+    const charmRow = { itemId: 'charm_revive', customName: '', quantity: 1, slot: 'accessory', equipped: true };
+    const worn = { ...aria, deathSaves: { successes: 0, failures: 2, stable: false, dead: false }, reviveCharm: { itemId: 'charm_revive', reviveHp: 1 } };
+    const { repository, d } = setup([prem, worn], 3, { inventories: { p2: [charmRow] } });
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'active', hp: 1 })]), false);
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p2', items: [], baseItems: [charmRow] }]);
+    expect(repository.saveDeathSaves).toHaveBeenCalledWith([expect.objectContaining({ id: 'p2', deathSaves: null })]);
+    const stats = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(stats.some((l) => l.includes('เครื่องราง'))).toBe(true);
+  });
+
+  it('F5g: without a charm the third failure still leaves the pack untouched', async () => {
+    const { repository, d } = setup([prem, { ...aria, deathSaves: { successes: 0, failures: 2, stable: false, dead: false } }], 3, { inventories: { p2: [] } });
+    await processRound(d, 'round-1');
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+  });
+
+  it('does not roll when dice are off, and a missing saveDeathSaves or failing write never breaks the round', async () => {
+    const off = setup([prem, aria], 12, { settings: { diceEnabled: false } });
+    await processRound(off.d, 'round-1');
+    expect(off.repository.saveDeathSaves).not.toHaveBeenCalled();
+
+    const failing = setup([prem, aria], 12, {}, vi.fn().mockRejectedValue(new Error('no column')));
+    await expect(processRound(failing.d, 'round-1')).resolves.toMatchObject({ processed: true });
+
+    const old = setup([prem, aria], 12);
+    delete (old.repository as any).saveDeathSaves;
+    await expect(processRound(old.d, 'round-1')).resolves.toMatchObject({ processed: true });
+  });
+});
+
+describe('processRound permanent death (H3a)', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0 };
+  const dying = { id: 'p2', displayName: 'Aria', weaponId: null, hp: 0, maxHp: 10, status: 'downed' as const, revivesSinceSanctuary: 0, gold: 35, deathSaves: { successes: 0, failures: 2, stable: false, dead: false } };
+  const sword = { itemId: 'shortsword', customName: '', quantity: 1, slot: 'weapon', equipped: true };
+
+  function setup(characters: unknown[], permadeath: boolean, extra: Record<string, unknown> = {}, actions: unknown[] = [{ playerDisplayName: 'Prem', playerId: 'p1', actionText: 'Guard Aria' }]) {
+    const repository = createFakeRepository({
+      saveDeathSaves: vi.fn().mockResolvedValue(undefined),
+      saveCorpses: vi.fn().mockResolvedValue(undefined),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], actions, characters,
+        inventories: { p1: [], p2: [sword] }, settings: { permadeath }, pendingWipe: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '', ...extra,
+      }),
+    });
+    const generateNarration = vi.fn().mockImplementation(async () => fakeStream(['Quiet.']));
+    const d: ProcessRoundDeps = { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration, rollDie: () => 3, rollSides: () => 4 };
+    return { repository, d, generateNarration };
+  }
+
+  it('permadeath on: the third failure makes the character dead and moves pack and gold to a corpse', async () => {
+    const { repository, d } = setup([prem, dying], true);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'dead', hp: 0 })]), false);
+    expect(repository.saveCorpses).toHaveBeenCalledWith('camp-1', [{ playerId: 'p2', name: 'Aria', items: [sword], gold: 35 }]);
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p2', items: [], baseItems: [sword] }]);
+    expect(repository.applyGold).toHaveBeenCalledWith([{ playerId: 'p2', delta: -35 }]);
+    const stats = vi.mocked(repository.insertStatsSummary).mock.calls[0][2];
+    expect(stats.some((l) => l.includes('ตายถาวร'))).toBe(true);
+  });
+
+  it('permadeath off: same situation leaves the character downed, no corpse, pack and gold untouched', async () => {
+    const { repository, d } = setup([prem, dying], false);
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'downed' })]), false);
+    expect(repository.saveCorpses).not.toHaveBeenCalled();
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('permadeath on: a worn revive charm still saves the character from dying', async () => {
+    const charm = { itemId: 'charm_revive', customName: '', quantity: 1, slot: 'accessory', equipped: true };
+    const { repository, d } = setup([prem, { ...dying, reviveCharm: { itemId: 'charm_revive', reviveHp: 1 } }], true, { inventories: { p1: [], p2: [charm] } });
+    await processRound(d, 'round-1');
+
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'active', hp: 1 })]), false);
+    expect(repository.saveCorpses).not.toHaveBeenCalled();
+  });
+
+  it('permadeath on: if the corpse cannot be saved the pack and gold stay with the character', async () => {
+    const { repository, d } = setup([prem, dying], true);
+    vi.mocked(repository.saveCorpses!).mockRejectedValue(new Error('no table'));
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveInventories).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('a [[revive]] aimed at a dead character is ignored without failing the round', async () => {
+    const dead = { ...dying, status: 'dead' as const, deathSaves: { successes: 0, failures: 3, stable: false, dead: true } };
+    const { repository, d } = setup([prem, dead], true);
+    (d.generateNarration as any).mockImplementation(async () => fakeStream(['Light.\n[[revive: Aria]]']));
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveCharacterState).toHaveBeenCalledWith('camp-1', expect.arrayContaining([expect.objectContaining({ id: 'p2', status: 'dead' })]), false);
+  });
+
+  it('actions from a dead character never reach the AI or the message log', async () => {
+    const dead = { ...dying, status: 'dead' as const, deathSaves: { successes: 0, failures: 3, stable: false, dead: true } };
+    const actions = [
+      { playerDisplayName: 'Prem', playerId: 'p1', actionText: 'Look around' },
+      { playerDisplayName: 'Aria', playerId: 'p2', actionText: 'ZOMBIE-ACTION' },
+    ];
+    const { repository, d, generateNarration } = setup([prem, dead], true, {}, actions);
+    await processRound(d, 'round-1');
+
+    expect(vi.mocked(generateNarration).mock.calls.every(([prompt]) => !String(prompt).includes('ZOMBIE-ACTION'))).toBe(true);
+    expect(vi.mocked(repository.insertPlayerActionMessages).mock.calls[0][2]).toEqual([expect.objectContaining({ playerId: 'p1' })]);
+  });
+
+  it('the AI is told a permanently dead character is gone', async () => {
+    const dead = { ...dying, status: 'dead' as const };
+    const { d, generateNarration } = setup([prem, dead], true);
+    await processRound(d, 'round-1');
+    expect(String(vi.mocked(generateNarration).mock.calls[0][0])).toMatch(/Aria.*DEAD/);
+  });
+});
+
+describe('processRound looting corpses (H3c)', () => {
+  const prem = { id: 'p1', displayName: 'Prem', weaponId: null, hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 5 };
+  const potions = { itemId: 'potion_minor', customName: '', quantity: 2, slot: null, equipped: false };
+  const corpses = [{ id: 'c1', name: 'Aria', items: [potions], gold: 35 }];
+
+  function setup(extra: Record<string, unknown> = {}, narration = 'Prem searches.\n[[loot: Aria | Prem]]') {
+    const repository = createFakeRepository({
+      saveCorpseLoot: vi.fn().mockResolvedValue(undefined),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], actions: [{ playerDisplayName: 'Prem', playerId: 'p1', actionText: 'Search Aria' }],
+        characters: [prem], inventories: { p1: [] }, settings: { permadeath: true }, pendingWipe: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '', corpses, ...extra,
+      }),
+    });
+    const generateNarration = vi.fn().mockImplementation(async () => fakeStream([narration]));
+    const d: ProcessRoundDeps = { claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration, rollDie: () => 3, rollSides: () => 4 };
+    return { repository, d, generateNarration };
+  }
+
+  it('tells the AI which corpses are in the room', async () => {
+    const { d, generateNarration } = setup();
+    await processRound(d, 'round-1');
+    const prompt = String(vi.mocked(generateNarration).mock.calls[0][0]);
+    expect(prompt).toContain('Aria');
+    expect(prompt).toContain('[[loot: CorpseName | PlayerName]]');
+  });
+
+  it('moves the items and gold to the looter and deletes the emptied corpse', async () => {
+    const { repository, d } = setup();
+    await processRound(d, 'round-1');
+    expect(repository.saveInventories).toHaveBeenCalledWith('camp-1', [{ playerId: 'p1', items: [expect.objectContaining({ itemId: 'potion_minor', quantity: 2 })], baseItems: [] }]);
+    expect(repository.applyGold).toHaveBeenCalledWith([{ playerId: 'p1', delta: 35 }]);
+    expect(repository.saveCorpseLoot).toHaveBeenCalledWith([{ id: 'c1', items: [], gold: 0, empty: true }]);
+    expect(vi.mocked(repository.insertStatsSummary).mock.calls[0][2].some((l) => l.includes('Aria'))).toBe(true);
+  });
+
+  it('ignores a loot tag with an unknown corpse', async () => {
+    const { repository, d } = setup({}, 'x\n[[loot: Nobody | Prem]]');
+    await processRound(d, 'round-1');
+    expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the corpse or give gold when the looter pack cannot be saved', async () => {
+    const { repository, d } = setup();
+    vi.mocked(repository.saveInventories).mockRejectedValue(new Error('db down'));
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
+    expect(repository.applyGold).not.toHaveBeenCalled();
+  });
+
+  it('works like before when the repository has no corpse support', async () => {
+    const { repository, d } = setup({ corpses: undefined });
+    await expect(processRound(d, 'round-1')).resolves.toMatchObject({ processed: true });
+    expect(repository.saveCorpseLoot).not.toHaveBeenCalled();
+  });
+});
+
+describe('processRound team rest (J3)', () => {
+  const hurt = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 5, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilityCooldown: 2, shortRestsUsed: 0,
+    abilities: { STR: 8, DEX: 16, CON: 14, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const downed = { ...hurt, id: 'p2', displayName: 'Nok', status: 'downed' as const, hp: 0 };
+  const vote = (kind: 'short' | 'long') => ({ kind, proposerId: 'p1', agree: ['p1'], roundId: 'round-1', status: 'passed' as const });
+  const make = (restVote: unknown, extra: object = {}) =>
+    createFakeRepository({
+      saveShortRestsUsed: vi.fn().mockResolvedValue(undefined),
+      clearRestVote: vi.fn().mockResolvedValue(undefined),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'พักผ่อน', playerId: 'p1' }],
+        characters: [hurt, downed], restVote, ...extra,
+      }),
+    });
+  const run = async (repository: RoundRepository, ...texts: string[]) => {
+    const generate = vi.fn();
+    texts.forEach((t) => generate.mockResolvedValueOnce(fakeStream([t])));
+    await processRound({ claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration: generate, rollDie: () => 10, rollSides: () => 4 }, 'round-1');
+    return generate;
+  };
+  const savedState = (r: RoundRepository) => vi.mocked(r.saveCharacterState).mock.calls[0][1];
+  const stats = (r: RoundRepository) => vi.mocked(r.insertStatsSummary).mock.calls[0]?.[2] ?? [];
+
+  it('asks the DM about the rest only when a passed vote exists', async () => {
+    const withVote = await run(make(vote('short')), '{"narration":"x"}');
+    expect(withVote.mock.calls[0][0]).toContain('"rest": "ok"');
+    const without = await run(make(null), '{"narration":"x"}');
+    expect(without.mock.calls[0][0]).not.toContain('"rest"');
+    const open = await run(make({ ...vote('short'), status: 'open' }), '{"narration":"x"}');
+    expect(open.mock.calls[0][0]).not.toContain('"rest"');
+  });
+
+  it('ok short rest: heals active characters only, counts the rest, posts it and consumes the vote', async () => {
+    const repo = make(vote('short'));
+    await run(repo, '{"narration":"พักริมกองไฟ","rest":"ok"}');
+    const [prem, nok] = savedState(repo);
+    expect(prem.hp).toBe(11);
+    expect(prem.abilityCooldown).toBe(0);
+    expect(nok).toMatchObject({ hp: 0, status: 'downed' });
+    expect(vi.mocked(repo.saveShortRestsUsed!).mock.calls[0][0].map((c) => [c.id, c.shortRestsUsed])).toEqual([['p1', 1]]);
+    expect(repo.clearRestVote).toHaveBeenCalledWith('camp-1');
+    expect(stats(repo).join(' ')).toContain('พักสั้น');
+  });
+
+  it('ok long rest: full HP, cooldown cleared, short rests reset, only for active characters', async () => {
+    const repo = make(vote('long'), { characters: [{ ...hurt, shortRestsUsed: 2 }, downed] });
+    await run(repo, '{"narration":"นอนหลับ","rest":"ok"}');
+    const [prem, nok] = savedState(repo);
+    expect(prem).toMatchObject({ hp: 20, abilityCooldown: 0, shortRestsUsed: 0 });
+    expect(nok).toMatchObject({ hp: 0, status: 'downed' });
+    expect(vi.mocked(repo.saveShortRestsUsed!).mock.calls[0][0][0]).toMatchObject({ id: 'p1', shortRestsUsed: 0 });
+    expect(stats(repo).join(' ')).toContain('พักยาว');
+  });
+
+  it('ok rest gives a mage its spent spell slots back and persists them (K3)', async () => {
+    const mage = { ...hurt, classId: 'mage', weaponId: 'wand', spellSlotsUsed: 2 };
+    const repo = make(vote('short'), { characters: [mage, downed] });
+    repo.saveSpellSlotsUsed = vi.fn().mockResolvedValue(undefined);
+    await run(repo, '{"narration":"พัก","rest":"ok"}');
+    expect(savedState(repo)[0].spellSlotsUsed).toBe(1);
+    expect(vi.mocked(repo.saveSpellSlotsUsed!).mock.calls[0][0].map((c) => [c.id, c.spellSlotsUsed])).toEqual([['p1', 1]]);
+    const interrupted = make(vote('short'), { characters: [mage, downed] });
+    interrupted.saveSpellSlotsUsed = vi.fn().mockResolvedValue(undefined);
+    await run(interrupted, '{"narration":"พัก","rest":"interrupted"}');
+    expect(interrupted.saveSpellSlotsUsed).not.toHaveBeenCalled();
+  });
+
+  it('ok with checks in the JSON: the rest still applies and the second call tells the DM it was approved', async () => {
+    const repo = make(vote('long'));
+    const generate = await run(repo, '{"checks":[],"rest":"ok"}', 'พักสงบ');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0]).toContain('approved');
+    expect(savedState(repo)[0].hp).toBe(20);
+  });
+
+  it('interrupted: nobody recovers, the vote is consumed, the DM is told and it is logged', async () => {
+    const repo = make(vote('long'));
+    const generate = await run(repo, '{"checks":[],"rest":"interrupted"}', 'หมาป่าบุก [[enemy: หมาป่า | normal]]');
+    expect(generate.mock.calls[1][0]).toContain('INTERRUPTED');
+    expect(savedState(repo)[0]).toMatchObject({ hp: 5, shortRestsUsed: 0 });
+    expect(repo.saveShortRestsUsed).not.toHaveBeenCalled();
+    expect(repo.clearRestVote).toHaveBeenCalledWith('camp-1');
+    expect(stats(repo).join(' ')).toContain('ขัดจังหวะ');
+  });
+
+  it('JSON without the rest field: no rest, but the vote is still consumed', async () => {
+    const repo = make(vote('long'));
+    await run(repo, '{"narration":"เดินทางต่อ"}');
+    expect(savedState(repo)[0]).toMatchObject({ hp: 5, abilityCooldown: 2 });
+    expect(repo.saveShortRestsUsed).not.toHaveBeenCalled();
+    expect(repo.clearRestVote).toHaveBeenCalledWith('camp-1');
+  });
+
+  it('ignores a vote that belongs to another round, and never rests during an encounter', async () => {
+    const other = make({ ...vote('long'), roundId: 'round-0' });
+    const g1 = await run(other, '{"narration":"x","rest":"ok"}');
+    expect(g1.mock.calls[0][0]).not.toContain('"rest": "ok"');
+    expect(savedState(other)[0].hp).toBe(5);
+    const fight = make(vote('long'), { currentEncounter: { enemies: [{ name: 'หมาป่า', tier: 'normal', pips: 3, maxPips: 3 }], round: 1 } });
+    await run(fight, '{"narration":"x","rest":"ok"}');
+    expect(savedState(fight)[0].hp).toBe(5);
+  });
+});
+
+describe('processRound cooldown map persistence (K2)', () => {
+  const mapped = {
+    id: 'p1', displayName: 'Prem', weaponId: 'dagger', hp: 20, maxHp: 20, status: 'active' as const,
+    revivesSinceSanctuary: 0, classId: 'rogue', xp: 0, abilityCooldown: 0, abilityCooldowns: { extra: 3 },
+    abilities: { STR: 8, DEX: 16, CON: 14, INT: 12, WIS: 10, CHA: 14 },
+  };
+  const plain = { ...mapped, id: 'p2', displayName: 'Nok', abilityCooldowns: undefined };
+  const make = (save: (c: unknown[]) => Promise<void>) =>
+    createFakeRepository({
+      saveAbilityCooldowns: vi.fn(save),
+      getRoundContext: vi.fn().mockResolvedValue({
+        campaignId: 'camp-1', campaignSummary: '', recentMessages: [], inventories: {}, pendingWipe: false,
+        currentShop: null, facts: [], tagsApplied: false, adventure: null,
+        allowedSceneIds: allowedScenes(undefined).map((s) => s.id), sceneInstructionText: '',
+        actions: [{ playerDisplayName: 'Prem', actionText: 'เดิน', playerId: 'p1' }],
+        characters: [mapped, plain],
+      }),
+    });
+  const run = (repository: RoundRepository) =>
+    processRound({ claimRound: vi.fn().mockResolvedValue(true), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream(['{"narration":"x"}'])), rollDie: () => 10, rollSides: () => 4 }, 'round-1');
+
+  it('saves the per-ability map (quiet round: unticked), after saving the round state', async () => {
+    const repo = make(async () => {});
+    await run(repo);
+    const saved = vi.mocked(repo.saveAbilityCooldowns!).mock.calls[0][0];
+    expect(saved.find((c) => c.id === 'p1')?.abilityCooldowns).toEqual({ extra: 3 });
+  });
+
+  it('does not fail the round when the map cannot be saved (column missing)', async () => {
+    const repo = make(async () => { throw new Error('column does not exist'); });
+    await expect(run(repo)).resolves.not.toThrow();
+  });
+});
+
+describe('processRound campaign stats (L1)', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
+  const make = (addCampaignStats: RoundRepository['addCampaignStats'], over: object = {}) => createFakeRepository({
+    addCampaignStats,
+    getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'สู้', playerId: 'p1', useItemId: null }], ...over })),
+  });
+  const run = (repository: RoundRepository, narration: string) =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('counts the round, the fallen enemy by tier and the gold earned', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    await run(make(add, { currentEncounter: { enemies: [{ ...wolf, pip: 2 }] } }), ['[[enemy_hurt: หมาป่า | heavy]]', '[[gold: Prem | small]]'].join('\n'));
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith('camp-1', expect.objectContaining({
+      rounds: 1, defeated: { minion: 0, normal: 1, strong: 0, boss: 0 }, gold: 4, magicItems: 0, downs: 0, deaths: 0, nat20: 0,
+    }));
+  });
+
+  it('still closes the round when the stats update fails (column missing)', async () => {
+    const add = vi.fn().mockRejectedValue(new Error('column "stats" does not exist'));
+    const repository = make(add);
+    const result = await run(repository, 'เงียบสงบ');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+    expect(add).toHaveBeenCalled();
+    expect(repository.closeRoundAndOpenNext).toHaveBeenCalled();
+  });
+
+  it('works with a repository that has no stats support', async () => {
+    const result = await run(make(undefined), 'เงียบสงบ');
+    expect(result).toMatchObject({ processed: true });
+  });
+});
+
+describe('processRound campaign end (L2)', () => {
+  const hero = { id: 'p1', displayName: 'Prem', weaponId: 'shortsword', hp: 20, maxHp: 20, status: 'active' as const, revivesSinceSanctuary: 0, gold: 0, xp: 0 };
+  const wolf = { name: 'หมาป่า', tier: 'normal' as const, pip: 4, maxPip: 4, fled: false };
+  const stats = (rounds: number, chapterBase?: number) => ({ ...emptyStats(), rounds, ...(chapterBase ? { chapterBase } : {}) });
+  const make = (rounds: number, over: object = {}, chapterBase?: number) => {
+    const endCampaign = vi.fn().mockResolvedValue(undefined);
+    const repository = createFakeRepository({
+      endCampaign,
+      addCampaignStats: vi.fn().mockResolvedValue(stats(rounds, chapterBase)),
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [hero], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText: 'ปิดฉาก', playerId: 'p1', useItemId: null }], ...over })),
+    });
+    return { repository, endCampaign };
+  };
+  const run = (repository: RoundRepository, narration = 'ตอนจบ\n[[campaign_end]]') =>
+    processRound({ claimRound: claim(), repository, generateNarration: vi.fn().mockResolvedValue(fakeStream([narration])), rollSides: () => 1 }, 'round-1');
+
+  it('ends the campaign after enough rounds with no fight', async () => {
+    const { repository, endCampaign } = make(15);
+    await run(repository);
+    expect(endCampaign).toHaveBeenCalledWith('camp-1');
+  });
+
+  it('ignores the tag before 15 rounds in this chapter', async () => {
+    const { repository, endCampaign } = make(14);
+    await run(repository);
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('counts only the rounds of the current chapter', async () => {
+    const { repository, endCampaign } = make(20, {}, 10);
+    await run(repository);
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('ignores the tag while a fight is still on', async () => {
+    const { repository, endCampaign } = make(30, { currentEncounter: { enemies: [wolf] } });
+    await run(repository);
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('does nothing without the tag', async () => {
+    const { repository, endCampaign } = make(30);
+    await run(repository, 'เงียบสงบ');
+    expect(endCampaign).not.toHaveBeenCalled();
+  });
+
+  it('still closes the round when ending fails (status column missing)', async () => {
+    const { repository, endCampaign } = make(30);
+    endCampaign.mockRejectedValue(new Error('column "status" does not exist'));
+    const result = await run(repository);
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
+  });
+
+  it('writes the epilogue after the campaign ends, with a second AI call', async () => {
+    const { repository } = make(15);
+    const insertEpilogue = vi.fn().mockResolvedValue(undefined);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(false);
+    repository.insertEpilogue = insertEpilogue;
+    const generateNarration = vi.fn().mockResolvedValueOnce(fakeStream(['ตอนจบ\n[[campaign_end]]'])).mockResolvedValue(fakeStream(['Prem: สุขสบาย']));
+    await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(generateNarration).toHaveBeenCalledTimes(2);
+    expect(generateNarration.mock.calls[1][0]).toContain('Prem');
+    expect(insertEpilogue).toHaveBeenCalledWith('camp-1', 'round-1', expect.stringContaining('Prem: สุขสบาย'));
+  });
+
+  it('does not write an epilogue when the campaign did not end', async () => {
+    const { repository } = make(14);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(false);
+    repository.insertEpilogue = vi.fn();
+    await run(repository);
+    expect(repository.insertEpilogue).not.toHaveBeenCalled();
+  });
+
+  it('does not write it twice', async () => {
+    const { repository } = make(15);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(true);
+    repository.insertEpilogue = vi.fn();
+    await run(repository);
+    expect(repository.insertEpilogue).not.toHaveBeenCalled();
+  });
+
+  it('a failing epilogue never breaks the round', async () => {
+    const { repository } = make(15);
+    repository.hasEpilogue = vi.fn().mockResolvedValue(false);
+    repository.insertEpilogue = vi.fn().mockRejectedValue(new Error('db'));
+    const generateNarration = vi.fn().mockResolvedValueOnce(fakeStream(['ตอนจบ\n[[campaign_end]]'])).mockRejectedValue(new Error('ai'));
+    const result = await processRound({ claimRound: claim(), repository, generateNarration, rollSides: () => 1 }, 'round-1');
+    expect(result).toMatchObject({ processed: true, nextRoundId: 'round-2' });
   });
 });

@@ -19,12 +19,20 @@ export interface RoundPlayer {
   classId?: string | null;
   /** Eventful rounds left before the class ability is ready. */
   abilityCooldown?: number;
+  /** K3/K4: spell slots a mage has spent since the last rest; absent/0 means none (also when the column is not readable yet). */
+  spellSlotsUsed?: number;
+  /** K7: chosen subclass id; null = none yet; absent when the column is not readable yet. */
+  subclassId?: string | null;
+  /** K7: abilities picked at Lv6/Lv9; absent when the column is not readable yet. */
+  abilityPicks?: Record<string, string>;
+  /** K7: cooldown of each extra ability (beyond the class's main one). */
+  abilityCooldowns?: Record<string, number>;
   /** Ability scores; absent when the column is not readable yet. */
   abilities?: AbilityScores;
   /** Unspent ability score improvements (level 4 and 8); absent/0 means none. */
   abilityChoicesLeft?: number;
   items: InventoryItem[];
-  status: 'active' | 'downed';
+  status: 'active' | 'downed' | 'dead';
   gold: number;
 }
 
@@ -43,6 +51,33 @@ export async function fetchRoundPlayers(
     ({ data: players, error } = await load(baseColumns));
   }
   if (error) throw error;
+
+  // K4: spell slots spent in their own query: players.spell_slots_used may not exist yet, which must not hide the players above.
+  const slotsById = new Map<string, number>();
+  try {
+    const { data: slotRows, error: slotError } = await load('id, spell_slots_used');
+    if (!slotError) for (const row of (slotRows ?? []) as any[]) slotsById.set(row.id as string, Number(row.spell_slots_used ?? 0));
+  } catch {
+    /* unreadable means no slots spent */
+  }
+
+  // K7: subclass, picks and per-ability cooldowns in their own query: columns from migration 0030 may not exist yet.
+  const optionsById = new Map<string, { subclassId: string | null; abilityPicks: Record<string, string>; abilityCooldowns: Record<string, number> }>();
+  try {
+    const { data: optionRows, error: optionError } = await load('id, subclass_id, ability_picks, ability_cooldowns');
+    if (!optionError) {
+      const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+      for (const row of (optionRows ?? []) as any[]) {
+        optionsById.set(row.id as string, {
+          subclassId: typeof row.subclass_id === 'string' && row.subclass_id ? row.subclass_id : null,
+          abilityPicks: Object.fromEntries(Object.entries(obj(row.ability_picks)).filter(([, v]) => typeof v === 'string')) as Record<string, string>,
+          abilityCooldowns: Object.fromEntries(Object.entries(obj(row.ability_cooldowns)).map(([k, v]) => [k, Number(v) || 0])),
+        });
+      }
+    }
+  } catch {
+    /* unreadable means no choices are offered */
+  }
 
   // A database without the inventory table (migration not applied yet) plays with empty packs.
   const inventories = await fetchCampaignInventories(campaignId).catch(() => ({}) as Inventories);
@@ -67,7 +102,9 @@ export async function fetchRoundPlayers(
     xp: Number(p.xp ?? 0),
     classId: (p.class_id ?? null) as string | null,
     abilityCooldown: Number(p.ability_cooldown ?? 0),
-    status: p.status as 'active' | 'downed',
+    spellSlotsUsed: slotsById.get(p.id as string) ?? 0,
+    ...optionsById.get(p.id as string),
+    status: p.status as 'active' | 'downed' | 'dead',
     gold: Number(p.gold ?? 0),
     abilities: withAbilities ? normalizeAbilities(p.abilities) : undefined,
     abilityChoicesLeft: withAbilities
@@ -85,6 +122,10 @@ export async function fetchRoundPlayers(
     xp: p.xp,
     classId: p.classId,
     abilityCooldown: p.abilityCooldown,
+    spellSlotsUsed: p.spellSlotsUsed,
+    subclassId: p.subclassId,
+    abilityPicks: p.abilityPicks,
+    abilityCooldowns: p.abilityCooldowns,
     items: p.items,
     status: p.status,
     gold: p.gold,
@@ -135,4 +176,52 @@ export async function requestAbilityChoice(campaignId: string, choice: AbilityCh
     body: JSON.stringify({ choice }),
   });
   if (!response.ok) throw new Error('could not save the ability choice');
+}
+
+async function postChoice(campaignId: string, path: string, body: object): Promise<void> {
+  const { data } = await supabaseBrowserClient.auth.getSession();
+  const response = await fetch(`/api/campaigns/${campaignId}/${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`could not save the ${path}`);
+}
+
+/** K7: pick the subclass (Lv3); the API lets only the character's own owner do it. */
+export const requestSubclassChoice = (campaignId: string, subclassId: string) => postChoice(campaignId, 'subclass-choice', { subclassId });
+
+/** K7: pick the Lv6 / Lv9 ability. */
+export const requestAbilityPick = (campaignId: string, abilityId: string) => postChoice(campaignId, 'ability-pick', { abilityId });
+
+export interface RespawnRequest {
+  displayName: string;
+  classId: string;
+  backstory?: string;
+  personality?: string;
+  goal?: string;
+}
+
+/** Replaces the caller's permanently dead character; throws an Error whose message is the API error code. */
+export async function requestRespawn(
+  campaignId: string,
+  request: RespawnRequest
+): Promise<{ playerId: string; level: number }> {
+  const { data } = await supabaseBrowserClient.auth.getSession();
+  const response = await fetch(`/api/campaigns/${campaignId}/respawn`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(typeof body?.error === 'string' ? body.error : 'failed');
+  }
+  return response.json();
 }

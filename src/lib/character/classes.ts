@@ -1,13 +1,14 @@
 import { MAX_LEVEL, type AbilityKey, type AbilityScores } from './constants';
+import { TRICKSTER_EXPERTISE_SKILLS } from './subclassConstants';
 
-export type ClassId = 'warrior' | 'archer' | 'cleric' | 'rogue';
+export type ClassId = 'warrior' | 'archer' | 'cleric' | 'rogue' | 'mage';
 /** Who an ability needs the player to pick: another ally, an ally or themselves, or nobody. */
 export type AbilityTarget = 'ally' | 'ally_or_self' | null;
 
 export interface ClassDef {
   id: ClassId;
   nameTh: string;
-  weaponId: 'shortsword' | 'shortbow' | 'staff' | 'dagger';
+  weaponId: 'shortsword' | 'shortbow' | 'staff' | 'dagger' | 'wand';
   ability: { nameTh: string; descTh: string; target: AbilityTarget; cooldown: number };
   /** Starting ability scores: the D&D standard array (15/14/13/12/10/8) ordered by what the class leans on. */
   abilities: AbilityScores;
@@ -57,9 +58,15 @@ export function skillModifier(params: {
   level: number;
   /** Worn-accessory bonuses (F5d), added when they name this skill. */
   skillBonuses?: Partial<Record<SkillId, number>>;
+  /** Complete-set bonus (X9), added to every skill once. */
+  setSkillBonus?: number;
+  /** K5: rogue_trickster counts the proficiency bonus twice on stealth, deception and sleight_of_hand. */
+  subclassId?: string | null;
 }): number {
   const mod = Math.floor((params.abilities[SKILL_ABILITIES[params.skill]] - 10) / 2);
-  return mod + (CLASSES[params.classId].skills.includes(params.skill) ? proficiencyBonus(params.level) : 0) + (params.skillBonuses?.[params.skill] ?? 0);
+  const expertise = params.subclassId === 'rogue_trickster' && params.classId === 'rogue' && TRICKSTER_EXPERTISE_SKILLS.includes(params.skill);
+  const proficient = CLASSES[params.classId].skills.includes(params.skill);
+  return mod + (proficient ? proficiencyBonus(params.level) * (expertise ? 2 : 1) : 0) + (params.skillBonuses?.[params.skill] ?? 0) + (params.setSkillBonus ?? 0);
 }
 
 export const CLASSES: Record<ClassId, ClassDef> = {
@@ -95,9 +102,17 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     abilities: { STR: 8, DEX: 15, CON: 13, INT: 12, WIS: 10, CHA: 14 },
     skills: ['deception', 'sleight_of_hand', 'stealth', 'investigation'],
   },
+  mage: {
+    id: 'mage',
+    nameTh: 'นักเวท',
+    weaponId: 'wand',
+    ability: { nameTh: 'เวทไหลล้น', descTh: 'ร่ายเวทหนึ่งบทโดยไม่เสียช่องเวท (เลเวล 5 ขึ้นไปเวทนั้นแรงขึ้น: ทอยโจมตี +2 หรือ DC +2)', target: null, cooldown: 4 },
+    abilities: { STR: 8, DEX: 14, CON: 13, INT: 15, WIS: 12, CHA: 10 },
+    skills: ['arcana', 'history', 'investigation', 'insight'],
+  },
 };
 
-export const CLASS_IDS: readonly ClassId[] = ['warrior', 'archer', 'cleric', 'rogue'];
+export const CLASS_IDS: readonly ClassId[] = ['warrior', 'archer', 'cleric', 'rogue', 'mage'];
 export const DEFAULT_CLASS_ID: ClassId = 'warrior';
 
 export function isClassId(value: unknown): value is ClassId {

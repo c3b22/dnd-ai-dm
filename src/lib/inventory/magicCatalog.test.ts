@@ -57,6 +57,26 @@ describe('accessories wired into catalog / prices (F5d)', () => {
   });
 });
 
+describe('revive charms wired into catalog / prices (F5g)', () => {
+  const charms = MAGIC_ITEMS.filter((i) => i.mechanic.kind === 'charm');
+  it('every charm is in CATALOG as a charm in the accessory slot, priced, with its revive HP', () => {
+    expect(charms.length).toBeGreaterThanOrEqual(4);
+    for (const item of charms) {
+      const entry = catalogEntry(item.id);
+      expect(entry, item.id).toMatchObject({ kind: 'charm', weight: item.weight });
+      if (item.mechanic.kind === 'charm') expect(entry).toMatchObject({ reviveHp: item.mechanic.reviveHp });
+      expect(slotOf(entry!)).toBe('accessory');
+      expect(buyPrice(item.id), item.id).toBe(item.price);
+    }
+  });
+  it('charms are legendary and never sold in shops', () => {
+    for (const item of charms) {
+      expect(item.rarity).toBe('legendary');
+      expect(normalizeShop({ name: 'ร้าน', itemIds: [item.id] })).toBeNull();
+    }
+  });
+});
+
 describe('scrolls wired into catalog / prices (F5e)', () => {
   const scrolls = MAGIC_ITEMS.filter((i) => i.mechanic.kind === 'scroll');
   it('every scroll is in CATALOG with its pip reduction, has no slot, and is priced', () => {

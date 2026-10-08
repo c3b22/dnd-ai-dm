@@ -5,17 +5,31 @@ import { normalizeSettings } from '@/lib/campaign/settings';
 import { parseCharacterTags } from '@/lib/character/tags';
 import { applyCharacterTags } from '@/lib/character/applyTags';
 import { applyAbilityActions, eventfulRound, tickCooldowns } from '@/lib/character/applyAbilities';
+import { applySpellActions } from '@/lib/character/applySpells';
 import { applyXpTags, levelDamageBonus, levelForXp } from '@/lib/character/leveling';
 import { weaponFor } from '@/lib/character/constants';
 import { randomDie, rollDice } from '@/lib/character/dice';
 import { applyInventoryTags, applyPotionActions, applyScrollActions } from '@/lib/inventory/apply';
-import { applyEnemyTags } from '@/lib/combat/encounter';
-import { applyAttackOutcomes, applyEnemyAttacks, applyLifesteal, runAttacks, type AttackOutcome } from '@/lib/combat/attack';
 import { PromptBlockedError } from '@/lib/ai/geminiClient';
+import { takeItem } from '@/lib/inventory/rules';
+import { teamLevel } from '@/lib/combat/scaling';
+import { advanceEncounter, applyEnemyTags, type Encounter } from '@/lib/combat/encounter';
+import { applyDefeatHeals, applyVenom, applyAttackOutcomes, applyEnemyAttackOutcomes, applyEnemyAttackTags, applyBloodRush, applyLifesteal, runAttacks, runEnemyAttacks, type AttackOutcome, type EnemyAttackOutcome } from '@/lib/combat/attack';
 import { selectFacts } from '@/lib/memory/facts';
 import { applyEconomyTags } from '@/lib/economy/apply';
+import { withFallbackShop } from '@/lib/economy/shopFallback';
 import { parseCheckPlan, runChecks } from '@/lib/character/checkPlan';
+import { changedDeathSaves, runDeathSaves, settleDeathSaves, type DeathSaveRoll } from '@/lib/character/deathSaves';
+import { DEATH_SAVE_SKILL } from '@/lib/character/skillLabels';
 import type { RollSummaryEntry } from './roundRepository';
+import { applyPermadeath, type Corpse } from '@/lib/character/permadeath';
+import { applyLootTags } from '@/lib/character/loot';
+import type { Character } from '@/lib/character/types';
+import { applyTeamRest } from '@/lib/character/applyRest';
+import type { RestAnswer } from '@/lib/character/checkPlan';
+import { defeatedThisRound, countStatusChanges, goldEarned, type CampaignStats } from '@/lib/campaign/stats';
+import { shouldEndCampaign } from '@/lib/campaign/campaignEnd';
+import { writeEpilogue, type EpilogueInput } from '@/lib/campaign/epilogue';
 
 async function collect(stream: AsyncIterable<string>): Promise<string> {
   let text = '';
@@ -25,6 +39,24 @@ async function collect(stream: AsyncIterable<string>): Promise<string> {
 
 async function* single(text: string): AsyncIterable<string> {
   yield text;
+}
+
+/** A death save shown like a skill check so the dice overlay renders it for everyone (H1). */
+function deathSaveEntry(r: DeathSaveRoll): RollSummaryEntry {
+  return {
+    playerDisplayName: r.playerDisplayName,
+    roll: r.die,
+    check: { skill: DEATH_SAVE_SKILL, dc: r.dc, advantage: 'none', dice: [r.die], modifier: 0, proficiency: 0, total: r.total, success: r.success, critical: r.critical },
+  };
+}
+
+/** An enemy attack shown like a roll so the dice overlay renders it for everyone (I2). */
+function enemyAttackEntry(o: EnemyAttackOutcome): RollSummaryEntry {
+  return {
+    playerDisplayName: o.enemy,
+    roll: o.die,
+    enemyAttack: { target: o.playerDisplayName, bonus: o.bonus, total: o.total, ac: o.ac, hit: o.hit, critical: o.critical },
+  };
 }
 
 export interface ProcessRoundDeps {
@@ -49,6 +81,7 @@ export async function processRound(
   deps: ProcessRoundDeps,
   roundId: string
 ): Promise<ProcessRoundResult> {
+  const rollD20 = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
   const claimed = await deps.claimRound(roundId);
   if (!claimed) {
     return { processed: false };
@@ -58,13 +91,32 @@ export async function processRound(
   let prompt: string;
   let rolled: RoundAction[];
   let attackOutcomes: AttackOutcome[] = [];
+  let enemyAttackOutcomes: EnemyAttackOutcome[] = [];
+  let deathSaveRolls: DeathSaveRoll[] = [];
+  let deathSaveChanges: string[] = [];
+  let roundCharacters: Character[] = [];
+  let storedEncounter: Encounter | null = null;
+  let venomChanges: string[] = [];
+  let defeatHealChanges: string[] = [];
+  let corpses: Corpse[] = [];
   let diceEnabled = true;
+  // J3: the passed rest vote for this round (not while a fight is on) and the DM's verdict on it.
+  let restRequest: { kind: 'short' | 'long' } | null = null;
+  let restAnswer: RestAnswer | undefined;
+  // L3: set when this round ended the campaign; the epilogue is written after the round is closed.
+  let epilogueInput: EpilogueInput | null = null;
   let stream: AsyncIterable<string>;
   let potions: ReturnType<typeof applyPotionActions>;
   let abilities: ReturnType<typeof applyAbilityActions>;
   let scrolls: ReturnType<typeof applyScrollActions>;
+  let spells: ReturnType<typeof applySpellActions>;
+  /** The fight as this round's spells and scrolls left it, before the players' attacks. */
+  let roundEncounter: Encounter | null = null;
   try {
     context = await deps.repository.getRoundContext(roundId);
+    // H3a: a permanently dead character cannot act; their action (e.g. from a stale client) never reaches the AI.
+    const deadIds = new Set(context.characters.filter((c) => c.status === 'dead').map((c) => c.id));
+    if (deadIds.size > 0) context = { ...context, actions: context.actions.filter((a) => !(a.playerId && deadIds.has(a.playerId))) };
     if (context.tagsApplied) {
       // An earlier attempt already generated this round's narration and applied its HP/
       // inventory/gold tags, then failed or timed out before closing (claimRound's staleness
@@ -73,22 +125,63 @@ export async function processRound(
       const nextRoundId = await deps.repository.closeRoundAndOpenNext(context.campaignId, roundId);
       return { processed: true, nextRoundId };
     }
+    // I4 venomous: last round's poisoned players lose HP now, before anything else; the stored encounter keeps its
+    // poisoned list until this round's end-of-round save replaces it, so a retry before that never loses it.
+    storedEncounter = context.currentEncounter ?? null;
+    if (storedEncounter?.poisoned) {
+      const venom = applyVenom(context.characters, storedEncounter.poisoned);
+      venomChanges = venom.changes;
+      const { poisoned: _poisoned, ...rest } = storedEncounter;
+      void _poisoned;
+      context = { ...context, characters: venom.characters, currentEncounter: rest };
+    }
     // The server rolls, not the model, so results are fair and can be shown to the table.
-    const rollDie = deps.rollDie ?? (() => 1 + Math.floor(Math.random() * 20));
+    const rollDie = rollD20;
     const settings = normalizeSettings(context.settings);
     diceEnabled = settings.diceEnabled;
     const rollSides = deps.rollSides ?? randomDie;
+    const vote = context.restVote;
+    if (vote && vote.status === 'passed' && vote.roundId === roundId && !context.currentEncounter) restRequest = { kind: vote.kind };
     // Potions resolve before narration so the DM sees the real HP; nothing is saved until the end,
     // so a failed generation leaves the potion untouched for the retry.
     potions = applyPotionActions(context.characters, context.inventories, context.actions, rollSides);
     // Class abilities resolve here too, before narration and unsaved until the end, like potions.
-    abilities = applyAbilityActions(potions.characters, context.actions, rollSides);
+    abilities = applyAbilityActions(potions.characters, context.actions, rollSides, context.currentEncounter ?? null);
     // F5e: scrolls cut pips off the targeted enemy before narration; like potions nothing is saved until the end.
-    scrolls = applyScrollActions(abilities.characters, potions.inventories, context.currentEncounter ?? null, context.actions);
+    scrolls = applyScrollActions(abilities.characters, potions.inventories, abilities.encounter, context.actions);
+    // K4: spells resolve after scrolls on the same working encounter (pips, statuses, slots); like everything above,
+    // nothing is saved until the end. They roll with the server's d20 even at a table without dice rolls.
+    spells = applySpellActions({ characters: abilities.characters, actions: context.actions, encounter: scrolls.encounter, rollDie: rollD20, effects: abilities.effects, actionSpent: abilities.actionSpent });
+    roundEncounter = spells.encounter;
+    // H1: downed characters roll a death save before narration (dice tables only, like every other roll).
+    // Unsaved until the end, like potions; a nat 20 stands the character up before the DM narrates.
+    const deaths = diceEnabled ? runDeathSaves(spells.characters, rollDie) : { characters: spells.characters, outcomes: [], changes: [] as string[], died: [] as string[], charmsSpent: [] as { characterId: string; itemId: string }[] };
+    // F5g: a charm that just revived its wearer is spent: remove it from the pack now (saved with the other
+    // inventory changes at the end) so the narration prompt and every later step already see it gone.
+    const spentCharms = deaths.charmsSpent;
+    if (spentCharms.length > 0) {
+      const inventories = { ...scrolls.inventories };
+      const changed = new Set(scrolls.changedPlayerIds);
+      for (const { characterId, itemId } of spentCharms) {
+        inventories[characterId] = takeItem(inventories[characterId] ?? [], itemId).items;
+        changed.add(characterId);
+      }
+      scrolls = { ...scrolls, inventories, changedPlayerIds: [...changed] };
+    }
+    deathSaveRolls = deaths.outcomes;
+    deathSaveChanges = deaths.changes;
+    roundCharacters = deaths.characters;
+    // H3a: only in rooms with permadeath does a third failed save (without a charm) kill for good.
+    if (settings.permadeath && deaths.died.length > 0) {
+      const permanent = applyPermadeath(deaths.characters, scrolls.inventories, deaths.died);
+      roundCharacters = permanent.characters;
+      corpses = permanent.corpses;
+      deathSaveChanges = [...deathSaveChanges, ...permanent.changes];
+    }
     const characterByName = new Map(context.characters.map((c) => [c.displayName.toLowerCase(), c]));
     rolled = context.actions.map((action) => {
       const note = action.playerId
-        ? [potions.notes[action.playerId], scrolls.notes[action.playerId], abilities.notes[action.playerId]].filter(Boolean).join('; ') || undefined
+        ? [potions.notes[action.playerId], scrolls.notes[action.playerId], abilities.notes[action.playerId], spells.notes[action.playerId]].filter(Boolean).join('; ') || undefined
         : undefined;
       const a = { ...action, note };
       if (!diceEnabled) return a;
@@ -110,7 +203,7 @@ export async function processRound(
         return deps.generateNarration(makePrompt());
       }
     };
-    const build = (actions: RoundAction[], planChecks = false) =>
+    const build = (actions: RoundAction[], planChecks = false, enemyAttackResults: EnemyAttackOutcome[] = []) =>
       assemblePrompt(
         context.campaignSummary,
         history,
@@ -118,48 +211,58 @@ export async function processRound(
         context.adventure,
         context.sceneInstructionText,
         settings,
-        { characters: abilities.characters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: scrolls.encounter },
+        { characters: roundCharacters, pendingWipe: context.pendingWipe, inventories: scrolls.inventories, shop: context.currentShop, encounter: roundEncounter, corpses: context.corpses ?? [] },
         context.facts ?? [],
-        { planChecks }
+        { planChecks, enemyAttacks: enemyAttackResults, ...(restRequest ? { rest: { kind: restRequest.kind, answer: restAnswer } } : {}) }
       );
     prompt = build(rolled);
     // Generate before writing anything: the real adapter resolves only once Gemini has
     // answered (and throws on API failure), so a failed attempt leaves no orphaned empty
     // DM message or player-action messages that a retry would duplicate.
-    if (diceEnabled && abilities.characters.length > 0) {
+    if (diceEnabled && roundCharacters.length > 0) {
       // Dice tables: the first call either asks for skill checks or narrates outright. Only a
       // round with checks costs a second call; anything unusable falls back to a plain narration.
       const first = parseCheckPlan(await collect(await generate(() => build(rolled, true))));
+      if (first.kind !== 'plain' && first.kind !== 'invalid') restAnswer = first.rest;
       if (first.kind === 'narration' || first.kind === 'plain') {
         stream = single(first.text);
       } else {
         // C8: attacks on enemies resolve first (their damage was already rolled above); a player
         // who attacks does not also get a skill check this round.
         const damageByName = new Map(rolled.map((a) => [a.playerDisplayName.toLowerCase(), a.damage]));
+        // A caster who cast a spell this round spent their action on it: no weapon attack on top.
+        const casterNames = new Set(roundCharacters.filter((c) => spells.casters.includes(c.id) || abilities.actionSpent.includes(c.id)).map((c) => c.displayName.toLowerCase()));
         attackOutcomes =
           first.kind === 'checks'
-            ? runAttacks(first.attacks, abilities.characters, scrolls.encounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie)
+            ? runAttacks(first.attacks.filter((a) => !casterNames.has(a.player.toLowerCase())), roundCharacters, roundEncounter, (c) => damageByName.get(c.displayName.toLowerCase()), rollDie, spells.effects)
             : [];
+        // K5: a berserk strike that defeated an enemy heals the attacker before anything else reads their HP.
+        const defeatHeals = applyDefeatHeals(roundCharacters, attackOutcomes, spells.effects);
+        roundCharacters = defeatHeals.characters;
+        defeatHealChanges = defeatHeals.changes;
         const attackers = new Set(attackOutcomes.map((o) => o.playerDisplayName.toLowerCase()));
         const outcomes =
           first.kind === 'checks'
-            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), abilities.characters, rollDie)
+            ? runChecks(first.checks.filter((c) => !attackers.has(c.player.toLowerCase())), roundCharacters, rollDie, spells.effects.skillAdvantage)
             : [];
-        if (outcomes.length > 0 || attackOutcomes.length > 0) {
+        // I2: enemy attacks roll against the players' AC before the narration, then the DM narrates the real result.
+        enemyAttackOutcomes = first.kind === 'checks' ? runEnemyAttacks(first.enemyAttacks, roundCharacters, roundEncounter, rollDie, rollSides, applyAttackOutcomes(roundEncounter, attackOutcomes), spells.effects) : [];
+        if (outcomes.length > 0 || attackOutcomes.length > 0 || enemyAttackOutcomes.length > 0 || restAnswer) {
           const byName = new Map(outcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
-          const attackByName = new Map(attackOutcomes.map((o) => [o.playerDisplayName.toLowerCase(), o]));
+          // K5: a volley has several outcomes for one player; the first shot rides on the action, the others get their own roll lines.
+          const attackByName = new Map(attackOutcomes.filter((o) => !o.shot).map((o) => [o.playerDisplayName.toLowerCase(), o]));
           rolled = rolled.map((a) => {
             const key = a.playerDisplayName.toLowerCase();
             const check = byName.get(key);
             const attack = attackByName.get(key);
             return { ...a, ...(check ? { check } : {}), ...(attack ? { attack } : {}) };
           });
-          prompt = build(rolled);
+          prompt = build(rolled, false, enemyAttackOutcomes);
         }
-        stream = await generate(() => build(rolled));
+        stream = await generate(() => build(rolled, false, enemyAttackOutcomes));
       }
     } else {
-      stream = await generate(() => build(rolled));
+      stream = await generate(() => build(rolled, false, enemyAttackOutcomes));
     }
   } catch (error) {
     // Nothing was written yet, so it is safe to release the claim for an immediate retry.
@@ -168,21 +271,34 @@ export async function processRound(
   }
 
   await deps.repository.insertPlayerActionMessages(context.campaignId, roundId, context.actions);
-  if (diceEnabled) {
+  // K4: each spell die is its own line (attack roll or enemy save); the caster's plain action die is dropped for them.
+  const spellEntries = [...abilities.rolls, ...spells.rolls].map((r): RollSummaryEntry => ({
+    playerDisplayName: r.playerDisplayName,
+    roll: r.die,
+    spell: { name: r.spellNameTh, target: r.target, kind: r.kind, bonus: r.bonus, total: r.total, dc: r.dc, success: r.success, critical: r.critical, pips: r.pips },
+  }));
+  const spellRollers = new Set([...abilities.rolls, ...spells.rolls].map((r) => r.playerDisplayName.toLowerCase()));
+  if (diceEnabled || spellEntries.length > 0) {
     await deps.repository
       .insertRollSummary(
         context.campaignId,
         roundId,
-        rolled.map((r): RollSummaryEntry => {
+        [...(diceEnabled ? rolled.filter((r) => !spellRollers.has(r.playerDisplayName.toLowerCase())) : []).map((r): RollSummaryEntry => {
           const c = r.check;
-          if (r.attack) return { playerDisplayName: r.playerDisplayName, roll: r.attack.die };
+          if (r.attack) {
+            const a = r.attack;
+            return { playerDisplayName: r.playerDisplayName, roll: a.die, attack: { target: a.target, modifier: a.modifier, proficiency: a.proficiency, magic: a.magic, total: a.total, ac: a.dc, hit: a.hit, critical: a.critical } };
+          }
           if (!c) return { playerDisplayName: r.playerDisplayName, roll: r.roll ?? 0 };
           return {
             playerDisplayName: r.playerDisplayName,
             roll: c.die,
             check: { skill: c.skill, dc: c.dc, advantage: c.advantage, dice: c.dice, modifier: c.modifier, proficiency: c.proficiency, total: c.total, success: c.success, critical: c.critical },
           };
-        })
+        }), ...spellEntries,
+          // K5: the second and later shots of a volley, one line each.
+          ...attackOutcomes.filter((o) => o.shot).map((o): RollSummaryEntry => ({ playerDisplayName: o.playerDisplayName, roll: o.die, attack: { target: o.target, modifier: o.modifier, proficiency: o.proficiency, magic: o.magic, total: o.total, ac: o.dc, hit: o.hit, critical: o.critical } })),
+          ...enemyAttackOutcomes.map(enemyAttackEntry), ...deathSaveRolls.map(deathSaveEntry)]
       )
       .catch(() => {});
   }
@@ -215,41 +331,157 @@ export async function processRound(
     try {
       // C8: enemy attacks land first so a wipe they cause is handled by applyCharacterTags below.
       // An enemy that joins this very round may attack; one the players just downed still did.
-      const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'));
+      const roundStart = applyEnemyTags(context.currentEncounter ?? null, tags.filter((t) => t.kind === 'enemy'), teamLevel(context.characters));
       const wardUsed = new Set<string>(); // F5j4: one ward use per wearer per round, across both damage paths
-      const enemyAttacks = applyEnemyAttacks(abilities.characters, roundStart, tags, wardUsed);
+      // I2: attacks the server rolled from the plan land first; only when there were none, an [[enemy_attack]]
+      // tag from a pure narration is rolled by the same formula and reported in the stats summary.
+      const plannedHits = applyEnemyAttackOutcomes(roundCharacters, enemyAttackOutcomes, wardUsed, abilities.guards);
+      const tagHits =
+        enemyAttackOutcomes.length === 0
+          ? applyEnemyAttackTags(plannedHits.characters, roundStart, tags, rollD20, deps.rollSides ?? randomDie, wardUsed, abilities.guards, spells.effects)
+          : { characters: plannedHits.characters, changes: [] as string[], outcomes: [] as EnemyAttackOutcome[] };
+      const poisonedIds = [...enemyAttackOutcomes, ...tagHits.outcomes].filter((o) => o.venomous).map((o) => o.playerId);
+      const enemyAttacks = { characters: tagHits.characters, changes: [...plannedHits.changes, ...tagHits.changes] };
       // F5j2: lifesteal heals after enemy attacks so a wearer downed this round is not revived by it.
-      const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : scrolls.encounter, attackOutcomes);
-      const result = applyCharacterTags(lifesteal.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
+      const lifesteal = applyLifesteal(enemyAttacks.characters, sceneChanged ? null : roundEncounter, attackOutcomes);
+      // K6 warrior_blood_rush: same replay as lifesteal, for the warrior pick.
+      const bloodRush = applyBloodRush(lifesteal.characters, sceneChanged ? null : roundEncounter, attackOutcomes);
+      const result = applyCharacterTags(bloodRush.characters, tags, deps.rollSides ?? randomDie, abilities.guards, wardUsed);
       const inventoryResult = applyInventoryTags(result.characters, scrolls.inventories, tags, { given: context.magicGiven ?? null });
-      const economy = applyEconomyTags(result.characters, tags, deps.rollSides ?? randomDie);
+      // H3c: the corpse's things move to the looter; the corpse row is only written back after the pack save below.
+      const lootable = context.corpses ?? [];
+      const lootResult = lootable.length > 0 && deps.repository.saveCorpseLoot
+        ? applyLootTags(result.characters, inventoryResult.inventories, lootable, tags)
+        : null;
+      // N2: the DM narrated a purchase but forgot [[shop]]; the server opens the default shop through the same tag path.
+      const economyTags = withFallbackShop({
+        tags,
+        currentShop: context.currentShop,
+        currentEncounter: context.currentEncounter,
+        actionTexts: context.actions.map((a) => a.actionText),
+        dmText: cleanText,
+      });
+      if (economyTags !== tags) console.log(`[shopFallback] auto-opened shop campaign=${context.campaignId} round=${roundId}`);
+      const economy = applyEconomyTags(result.characters, economyTags, deps.rollSides ?? randomDie);
       // A wiped party was just revived to active; paying XP for that would reward losing.
       const xpResult = result.wiped ? { characters: result.characters, changes: [] as string[] } : applyXpTags(result.characters, tags);
+      // J3: only an "ok" from the DM rests the team (and never after a wipe); "interrupted" or no field means no rest.
+      const rest = restRequest && restAnswer === 'ok' && !result.wiped
+        ? applyTeamRest(xpResult.characters, restRequest.kind, deps.rollSides ?? randomDie)
+        : { characters: xpResult.characters, changes: [] as string[], shortRestChanged: [] as Character[], spellSlotsChanged: [] as Character[] };
+      const restChanges = restRequest && restAnswer === 'ok' && !result.wiped
+        ? [`ทีมพัก${restRequest.kind === 'long' ? 'ยาว' : 'สั้น'}`, ...rest.changes]
+        : restRequest && restAnswer === 'interrupted'
+          ? [`การพัก${restRequest.kind === 'long' ? 'ยาว' : 'สั้น'}ของทีมถูกขัดจังหวะ`]
+          : [];
       // HP first on purpose: if only the inventory write fails, a potion heals without being
       // consumed, which is better for the player than being consumed without healing.
       // Cooldowns tick inside the tagsApplied claim, so a stale retry can never tick them twice.
-      const finalCharacters = tickCooldowns(
-        xpResult.characters,
-        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
-        abilities.used
-      );
+      // K4: the round-only spell bonuses (roundAcBonus / roundWard) end with the round and are never handed to the repository.
+      const finalCharacters = settleDeathSaves(tickCooldowns(
+        rest.characters,
+        eventfulRound({ character: [...enemyAttacks.changes, ...lifesteal.changes, ...bloodRush.changes, ...defeatHealChanges, ...result.changes], inventory: inventoryResult.changes, economy: economy.changes, xp: xpResult.changes }),
+        [...abilities.used, ...spells.surgeUsed],
+        abilities.usedExtra,
+        spells.effects.cooldownCut
+      )).map(({ roundAcBonus: _ac, roundWard: _ward, ...c }) => {
+        void _ac;
+        void _ward;
+        return c;
+      });
       await deps.repository.saveCharacterState(context.campaignId, finalCharacters, result.wiped);
-      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds])];
+      // K2: best-effort; a missing players.ability_cooldowns column just means the extra cooldowns do not carry over.
+      if (deps.repository.saveAbilityCooldowns && finalCharacters.some((c) => c.abilityCooldowns)) {
+        try {
+          await deps.repository.saveAbilityCooldowns(finalCharacters);
+        } catch {
+          /* best-effort */
+        }
+      }
+      // J3: best-effort; a missing short_rests_used / rest_vote column just means nothing carries over.
+      // K3/K4: slots spent by this round's spells and slots a rest gave back; best-effort like the rest of the extra columns.
+      const slotWrites = finalCharacters.filter(
+        (c) => c.classId === 'mage' && (c.spellSlotsUsed ?? 0) !== (context.characters.find((x) => x.id === c.id)?.spellSlotsUsed ?? 0)
+      );
+      if (slotWrites.length > 0 && deps.repository.saveSpellSlotsUsed) {
+        try {
+          await deps.repository.saveSpellSlotsUsed(slotWrites);
+        } catch {
+          /* best-effort */
+        }
+      }
+      if (rest.shortRestChanged.length > 0 && deps.repository.saveShortRestsUsed) {
+        try {
+          await deps.repository.saveShortRestsUsed(rest.shortRestChanged);
+        } catch {
+          /* best-effort */
+        }
+      }
+      if (context.restVote && deps.repository.clearRestVote) {
+        try {
+          await deps.repository.clearRestVote(context.campaignId);
+        } catch {
+          /* best-effort */
+        }
+      }
+      // H1: best-effort like the rest; a missing death_saves column just means no tally carries over.
+      const deathSaveWrites = changedDeathSaves(context.characters, finalCharacters);
+      if (deathSaveWrites.length > 0 && deps.repository.saveDeathSaves) {
+        try {
+          await deps.repository.saveDeathSaves(deathSaveWrites);
+        } catch {
+          /* best-effort */
+        }
+      }
+      // H3a: the corpse is written first; only once it exists do the pack and gold leave the dead character.
+      let corpsesSaved = false;
+      if (corpses.length > 0 && deps.repository.saveCorpses) {
+        try {
+          await deps.repository.saveCorpses(context.campaignId, corpses);
+          corpsesSaved = true;
+        } catch {
+          /* best-effort: without the table the dead character keeps their things */
+        }
+      }
+      const finalInventories = { ...(lootResult?.inventories ?? inventoryResult.inventories) };
+      const corpseIds: string[] = [];
+      if (corpsesSaved) {
+        for (const corpse of corpses) {
+          if ((context.inventories[corpse.playerId] ?? []).length > 0 || corpse.items.length > 0) {
+            finalInventories[corpse.playerId] = [];
+            corpseIds.push(corpse.playerId);
+          }
+        }
+      }
+      const changedIds = [...new Set([...potions.changedPlayerIds, ...scrolls.changedPlayerIds, ...inventoryResult.changedPlayerIds, ...(lootResult?.changedPlayerIds ?? []), ...corpseIds])];
       // Its own try: if only the inventory write fails, the table must still see what happened.
+      let packSaved = changedIds.length === 0;
       if (changedIds.length > 0) {
         try {
           await deps.repository.saveInventories(
             context.campaignId,
             changedIds.map((playerId) => ({
               playerId,
-              items: inventoryResult.inventories[playerId] ?? [],
+              items: finalInventories[playerId] ?? [],
               // What this round assumed the pack looked like when it started; lets the repository
               // detect a shop purchase or trade that landed mid-round instead of overwriting it.
               baseItems: context.inventories[playerId] ?? [],
             }))
           );
+          packSaved = true;
         } catch {
           /* best-effort, like the rest of the mechanics */
+        }
+      }
+      // H3c: looted things leave the corpse only once the looter's pack is saved, so a failure can duplicate
+      // (a retry of the tag is blocked by the claim) but never destroys items; gold follows the same gate.
+      let lootGold: Record<string, number> = {};
+      if (lootResult && lootResult.corpseUpdates.length > 0 && packSaved) {
+        lootGold = lootResult.goldDeltas;
+        try {
+          await deps.repository.saveCorpseLoot!(lootResult.corpseUpdates);
+        } catch {
+          /* best-effort */
         }
       }
       // F5f: remember which magic items were handed out. Best-effort: a missing table must not matter.
@@ -260,7 +492,10 @@ export async function processRound(
           /* best-effort, like the facts */
         }
       }
-      const goldChanges = Object.entries(economy.goldDeltas)
+      const goldDeltas: Record<string, number> = { ...economy.goldDeltas };
+      for (const [playerId, delta] of Object.entries(lootGold)) goldDeltas[playerId] = (goldDeltas[playerId] ?? 0) + delta;
+      if (corpsesSaved) for (const corpse of corpses) if (corpse.gold > 0) goldDeltas[corpse.playerId] = (goldDeltas[corpse.playerId] ?? 0) - corpse.gold;
+      const goldChanges = Object.entries(goldDeltas)
         .filter(([, delta]) => delta !== 0)
         .map(([playerId, delta]) => ({ playerId, delta }));
       if (goldChanges.length > 0) {
@@ -279,8 +514,8 @@ export async function processRound(
       }
       // Enemy tags go last, after every other tag. No automatic rewards: XP and gold still come
       // only from the DM's own xp/gold tags. Moving to another scene ends the fight.
-      const before = context.currentEncounter ?? null;
-      const after = applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : scrolls.encounter, attackOutcomes), tags);
+      const before = storedEncounter;
+      const after = advanceEncounter(sceneChanged ? null : before, applyEnemyTags(applyAttackOutcomes(sceneChanged ? null : roundEncounter, attackOutcomes), tags, teamLevel(context.characters)), poisonedIds);
       if (JSON.stringify(after) !== JSON.stringify(before)) {
         try {
           await deps.repository.setEncounter(context.campaignId, after);
@@ -297,16 +532,53 @@ export async function processRound(
           /* best-effort, like the encounter */
         }
       }
+      // L1: campaign totals. Best-effort in its own try: a missing campaigns.stats column or any failure here
+      // must never stall the round (and the tags claim above keeps a retry from counting twice).
+      let statsNow: CampaignStats | null = null;
+      if (deps.repository.addCampaignStats) {
+        try {
+          const { downs, deaths } = countStatusChanges(context.characters, finalCharacters);
+          const updated = await deps.repository.addCampaignStats(context.campaignId, {
+            rounds: 1,
+            defeated: defeatedThisRound(sceneChanged ? null : before, sceneChanged ? null : applyAttackOutcomes(roundEncounter, attackOutcomes), tags),
+            gold: goldEarned(economy.goldDeltas),
+            magicItems: inventoryResult.magicGiven.length,
+            downs,
+            deaths,
+            nat20: rolled.filter((r) => r.check?.die === 20).length,
+          });
+          statsNow = updated ?? null;
+        } catch {
+          /* best-effort */
+        }
+      }
+      // L2: the DM's [[campaign_end]] only counts with no fight left and enough rounds in this chapter. Best-effort
+      // like the stats; if the status column is missing the room simply stays open.
+      if (deps.repository.endCampaign && shouldEndCampaign({ tags, encounter: after, stats: statsNow })) {
+        try {
+          await deps.repository.endCampaign(context.campaignId);
+          epilogueInput = { characters: finalCharacters, facts: context.facts ?? [], stats: statsNow, summary: context.campaignSummary };
+        } catch {
+          /* best-effort */
+        }
+      }
       await deps.repository.insertStatsSummary(context.campaignId, roundId, [
+        ...venomChanges,
+        ...deathSaveChanges,
         ...potions.changes,
         ...scrolls.changes,
         ...abilities.changes,
+        ...spells.changes,
         ...enemyAttacks.changes,
         ...lifesteal.changes,
+        ...bloodRush.changes,
+        ...defeatHealChanges,
         ...result.changes,
         ...xpResult.changes,
         ...inventoryResult.changes,
+        ...(lootResult?.changes ?? []),
         ...economy.changes,
+        ...restChanges,
       ]);
     } catch {
       /* the narration is already posted; the next round reads whatever state was saved */
@@ -329,6 +601,18 @@ ${prompt}`;
     } catch {
       // Swallowed on purpose; see above.
     }
+  }
+
+  // L3: the per-character epilogue, best-effort and after the round is closed like the summary; writeEpilogue
+  // never throws and skips if one was already written.
+  const repo = deps.repository;
+  if (epilogueInput && repo.hasEpilogue && repo.insertEpilogue) {
+    await writeEpilogue(
+      { hasEpilogue: (id) => repo.hasEpilogue!(id), insertEpilogue: (id, r, c) => repo.insertEpilogue!(id, r, c), generateNarration: deps.generateNarration },
+      context.campaignId,
+      roundId,
+      epilogueInput
+    );
   }
 
   return { processed: true, messageId, nextRoundId };
