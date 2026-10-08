@@ -526,6 +526,27 @@ describe('processRound economy', () => {
     expect(repository.setShop).not.toHaveBeenCalled();
   });
 
+  // N3: regression fixtures from the real production round (campaign 1, 2026-10-07). The sentence before "..." is the real DM text;
+  // the continuation, and the whole refusal narration, are composed fixtures.
+  const withAction = (actionText: string) =>
+    createFakeRepository({
+      getRoundContext: vi.fn().mockResolvedValue(contextWith({ characters: [gold], inventories: {}, actions: [{ playerDisplayName: 'Prem', actionText, playerId: 'p1', useItemId: null }] })),
+    });
+
+  it('N3: real round "พยายามปิดบังหน้า แล้วไปที่ร้านอื่น" with purchase narration and no [[shop]] opens the default shop', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const repository = withAction('พยายามปิดบังหน้า แล้วไปที่ร้านอื่น');
+    await run(repository, 'ซูกิสามารถเลือกซื้ออาหารแห้งและอุปกรณ์สำรวจที่จำเป็นสำหรับการเดินทางใส่ย่ามได้ เจ้าของร้านวางของทั้งหมดไว้บนเคาน์เตอร์ให้เลือก');
+    expect(repository.setShop).toHaveBeenCalledWith('camp-1', { name: 'ร้านค้า', itemIds: DEFAULT_SHOP_ITEMS });
+    log.mockRestore();
+  });
+
+  it('N3: real round "ไปที่ร้านค้า" where the DM narrates the owner refusing and closing the door does not open a shop', async () => {
+    const repository = withAction('ไปที่ร้านค้า');
+    await run(repository, 'ซูกิเดินเข้าไปที่ร้านค้า แต่เจ้าของร้านจำเธอได้ เขาปฏิเสธที่จะขายของให้ แล้วผลักเธอออกมาและปิดประตูดังปัง');
+    expect(repository.setShop).not.toHaveBeenCalled();
+  });
+
   it('closes the open shop when the scene actually changes, but not when the same scene is repeated', async () => {
     const shop = { name: 'Old Mara', itemIds: ['staff'] };
     const moved = one({ currentShop: shop, currentSceneId: 'crypt' });
