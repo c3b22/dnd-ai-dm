@@ -40,3 +40,11 @@ describe('combatPrompt', () => {
     expect(text).not.toContain('No fight is in progress');
   });
 });
+
+describe('combatPrompt trait limit (P20)', () => {
+  it('asks for at most one trait below level 6 only', () => {
+    expect(combatPrompt(null, true, 5).join('\n')).toContain('at most ONE trait');
+    expect(combatPrompt(null, true, 6).join('\n')).not.toContain('at most ONE trait');
+    expect(combatPrompt(null).join('\n')).toContain('at most ONE trait');
+  });
+});

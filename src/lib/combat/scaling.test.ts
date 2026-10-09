@@ -40,11 +40,12 @@ describe('Q2 scaledPips', () => {
   it('is the I6 base value at level 1', () => {
     expect([scaledPips('minion', 1), scaledPips('normal', 1), scaledPips('strong', 1), scaledPips('boss', 1)]).toEqual([2, 4, 6, 10]);
   });
-  it('adds 35% of the base per level above 1, rounded', () => {
+  it('adds a per-tier share of the base per level above 1 (minion 10%, normal 15%, strong 20%, boss 35%), rounded', () => {
     expect(scaledPips('boss', 3)).toBe(17);
     expect(scaledPips('boss', 8)).toBe(35);
-    expect(scaledPips('normal', 5)).toBe(10);
-    expect(scaledPips('minion', 8)).toBe(7);
+    expect(scaledPips('normal', 5)).toBe(6);
+    expect(scaledPips('strong', 8)).toBe(14);
+    expect(scaledPips('minion', 8)).toBe(3);
   });
   it('maxScaledPips is the level 10 value and a level below 1 never goes under the base', () => {
     expect(scaledPips('boss', 99)).toBeGreaterThan(maxScaledPips('boss'));

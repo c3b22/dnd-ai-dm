@@ -25,7 +25,7 @@ export function enemyLevelBonus(level: number): { attack: number; damage: number
 /** Pips a new enemy of this tier starts with against a team of this level (the I6 base value at level 1). */
 export function scaledPips(tier: EnemyTier, level: number): number {
   const base = TIER_PIPS[tier];
-  return base + Math.round((base * Math.max(0, level - 1) * ENEMY_LEVEL_PIP_PERCENT) / 100);
+  return base + Math.round((base * Math.max(0, level - 1) * ENEMY_LEVEL_PIP_PERCENT[tier]) / 100);
 }
 
 /** The most pips an enemy of this tier can ever have (used to validate a stored encounter). */

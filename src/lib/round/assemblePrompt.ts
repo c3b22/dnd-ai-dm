@@ -18,6 +18,7 @@ import type { ShopState } from '@/lib/economy/apply';
 import { memoryPrompt } from '@/lib/memory/prompt';
 import type { CampaignFact } from '@/lib/memory/types';
 import { combatPrompt } from '@/lib/combat/prompt';
+import { teamLevel } from '@/lib/combat/scaling';
 import type { Encounter } from '@/lib/combat/encounter';
 import { isStoryRole, type MessageRole } from '@/lib/messages/roles';
 import { checkPlanInstructions, type CheckOutcome } from '@/lib/character/checkPlan';
@@ -156,7 +157,7 @@ export function assemblePrompt(
           const inventory = inventoryPrompt(characterState.characters, characterState.inventories ?? {});
           const corpseBlock = corpsePrompt(characterState.corpses ?? []);
           const economy = economyPrompt(characterState.characters, characterState.shop ?? null);
-          const combat = combatPrompt(characterState.encounter ?? null, settings.diceEnabled && characterState.characters.length > 0);
+          const combat = combatPrompt(characterState.encounter ?? null, settings.diceEnabled && characterState.characters.length > 0, teamLevel(characterState.characters));
           return [
             ...(block.length ? [...block, ''] : []),
             ...(inventory.length ? [...inventory, ''] : []),

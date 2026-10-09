@@ -40,7 +40,7 @@ describe('Q2 scaled pips', () => {
   const ok = { name: 'a', tier: 'boss', pip: 17, maxPip: 17, fled: false };
   it('a new enemy starts with pips scaled to the team level and the encounter survives normalizing', () => {
     const r = applyEnemyTags(null, [enemy('a', 'boss'), enemy('b', 'minion')], 3);
-    expect(r?.enemies.map((e) => [e.name, e.pip, e.maxPip])).toEqual([['a', 17, 17], ['b', 3, 3]]);
+    expect(r?.enemies.map((e) => [e.name, e.pip, e.maxPip])).toEqual([['a', 17, 17], ['b', 2, 2]]);
     expect(normalizeEncounter(r)).toEqual(r);
   });
   it('normalizeEncounter accepts a maxPip between the base and the level 10 value only', () => {
