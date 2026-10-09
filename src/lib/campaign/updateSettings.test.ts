@@ -48,6 +48,15 @@ describe('updateCampaignSettings', () => {
     expect(updates).toEqual([{ settings: result }]);
   });
 
+  it('saves dmQuality, and old rooms without it read as good', async () => {
+    const { client, updates } = fakeSupabase({ difficulty: 'hard' });
+    const result = await updateCampaignSettings(client, { campaignId: 'c', userId: 'u1', patch: { dmQuality: 'fast' } });
+    expect(result.dmQuality).toBe('fast');
+    expect(updates).toEqual([{ settings: result }]);
+    const other = await updateCampaignSettings(fakeSupabase({}).client, { campaignId: 'c', userId: 'u1', patch: { roundSeconds: 60 } });
+    expect(other.dmQuality).toBe('good');
+  });
+
   it('refuses anyone who is not the owner', async () => {
     const { client, updates } = fakeSupabase();
 

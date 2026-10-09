@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import {
+  DM_QUALITY_LABELS,
+  DM_QUALITY_OPTIONS,
   DIFFICULTY_LABELS,
   DIFFICULTY_OPTIONS,
   NARRATION_LABELS,
@@ -52,6 +54,7 @@ export function CampaignSettingsPanel({ settings, isOwner, started = false, onSa
     ['ความยาก', DIFFICULTY_LABELS[settings.difficulty]],
     ['ลูกเต๋า', settings.diceEnabled ? 'ใช้ทอย d20' : 'ไม่ใช้ลูกเต๋า'],
     ['คนที่จัดลำดับได้', REORDER_LABELS[settings.reorderPolicy]],
+    ['คุณภาพ DM', DM_QUALITY_LABELS[settings.dmQuality]],
     ['โหมดตายจริง', settings.permadeath ? 'เปิด' : 'ปิด'],
   ];
 
@@ -148,6 +151,20 @@ export function CampaignSettingsPanel({ settings, isOwner, started = false, onSa
           {REORDER_OPTIONS.map((o) => (
             <option key={o} value={o}>
               {REORDER_LABELS[o]}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="set-quality">คุณภาพ DM</label>
+        <select
+          id="set-quality"
+          value={draft.dmQuality}
+          onChange={(e) => setDraft({ ...draft, dmQuality: e.target.value as CampaignSettings['dmQuality'] })}
+        >
+          {DM_QUALITY_OPTIONS.map((o) => (
+            <option key={o} value={o}>
+              {DM_QUALITY_LABELS[o]}
             </option>
           ))}
         </select>
