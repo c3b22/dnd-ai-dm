@@ -274,3 +274,7 @@ where ic.column_name is null;
 ## Deploy รอบใหญ่ H–Q + P20 (2026-10-09)
 
 สำรองข้อมูลที่ `dnd-ai-dm-backups/2026-10-09-predeploy` → รัน migration 0029–0033 ใน transaction เดียว (SHA-256 `0318ed5a…607c` ตรงกับไฟล์) → ตรวจคอลัมน์ใหม่ครบและจำนวนแถวเท่าเดิม (players 46, campaigns 43, rounds 260, messages 801) → `vercel deploy --prod` จาก master (`8c11e29`) สถานะ Ready alias `dnd-ai-dm-omega.vercel.app` → smoke อ่านอย่างเดียว: `/` 200, `/api/adventures/mine` 401, share code ไม่มี 404, `/icon.svg` 200 ถอยกลับ: promote deployment `dnd-ai-5neunhpsw` บน Vercel (migration เพิ่มอย่างเดียว ไม่ต้องถอย) migration 0034 (ติดตามห้องที่เข้า) ยังไม่รัน เพราะโค้ดอยู่บน `auto/tasks` เท่านั้น
+
+## Deploy auto/tasks R1–R5 + S1–S3 (2026-10-09)
+
+merge `auto/tasks` เข้า master (แก้ conflict ใน `processRound.ts` และ `vercelAiSdkAdapter.ts`) เทสต์ 1,731 ข้อผ่าน → รัน migration 0034 (SHA-256 `9ab57846…f22b`) ได้ตาราง `player_recaps` และคอลัมน์ `players.last_seen_*` จำนวนแถวเท่าเดิม → `vercel deploy --prod` Ready (`dnd-ai-g9equupk9`) → smoke: `/` 200, `/api/adventures/mine` 401, `/icon.svg` 200, `POST /api/campaigns/<id>/seen` ไม่ล็อกอิน 401 ถอยกลับ: promote deployment `dnd-ai-2bcj490g7`
