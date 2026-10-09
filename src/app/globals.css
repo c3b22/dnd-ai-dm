@@ -367,3 +367,10 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 .collapsible.is-open > .collapsible-toggle { border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; padding-bottom: 0; }
 .collapsible.is-open > .card, .collapsible.is-open > form.card { border-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; padding-top: 6px; }
 .collapsible > .card > h3, .collapsible > .card > .enc-head > h3 { display: none; }
+
+/* S3: personal recap box above the story */
+.recap-card { border-color: var(--accent); }
+.recap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recap-head h3 { margin: 0; }
+.recap-close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 4px 8px; min-width: 32px; min-height: 32px; }
+.recap-text { margin: 0; font-family: var(--f-story); font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow-y: auto; }

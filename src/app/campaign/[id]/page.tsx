@@ -6,6 +6,8 @@ import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
 import { reportSeen } from '@/lib/supabase/seenClient';
+import { RecapCard } from '@/components/RecapCard';
+import { fetchRecap } from '@/lib/supabase/recapClient';
 import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
@@ -88,6 +90,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [recapRequest, setRecapRequest] = useState(0);
   const [settings, setSettings] = useState<CampaignSettings>(DEFAULT_SETTINGS);
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   // Which round's timer has run out. Tying it to the round id stops an expired round from
@@ -588,6 +591,13 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             {adventure && <span className="round">{adventure.titleTh}</span>}
           </div>
           <SceneBanner sceneId={sceneId} adventureId={adventureId} />
+          {!ended && (
+            <RecapCard
+              ready={!loadingCampaign && !loadError}
+              load={(force) => fetchRecap(campaignId, force)}
+              manualRequest={recapRequest}
+            />
+          )}
           <MessageList
             campaignId={campaignId}
             fetchInitialMessages={fetchInitialMessages}
@@ -740,6 +750,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
                 </div>
               </section>
             </CollapsibleCard>
+          )}
+          {!ended && (
+            <button type="button" className="btn ghost" onClick={() => setRecapRequest((n) => n + 1)}>
+              สรุปเรื่อง
+            </button>
           )}
           {!ended && roundId && (
             <button type="button" className="btn ghost" onClick={() => triggerProcessing(roundId)}>
