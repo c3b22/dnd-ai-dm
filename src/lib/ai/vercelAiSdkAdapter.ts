@@ -5,6 +5,8 @@ import { bufferTextOrThrow, type GeminiClientDeps } from './geminiClient';
 export const GEMINI_MODELS = {
   primary: 'gemini-3.5-flash-lite',
   fallback: 'gemini-3.1-flash-lite',
+  // Bigger non-lite model for narration when a room asks for quality (see docs/ai-models.md).
+  narrationPremium: 'gemini-3.5-flash',
 };
 
 // Two sequential calls (primary, then fallback) plus a summary must fit in the route's 60s
