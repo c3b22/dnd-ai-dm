@@ -1,4 +1,6 @@
 export type NarrationLength = 'short' | 'medium' | 'long';
+/** 'fast': cheaper lite model. 'good': larger model for storytelling (default). */
+export type DmQuality = 'fast' | 'good';
 export type Difficulty = 'easy' | 'normal' | 'hard';
 /** 'owner': only the table owner arranges the order. 'self': players may also move themselves. */
 export type ReorderPolicy = 'owner' | 'self';
@@ -12,6 +14,7 @@ export interface CampaignSettings {
   reorderPolicy: ReorderPolicy;
   /** Permanent death: stored and shown only for now; the game does not act on it yet. Owner sets it before the game starts. */
   permadeath: boolean;
+  dmQuality: DmQuality;
 }
 
 export const DEFAULT_SETTINGS: CampaignSettings = {
@@ -21,11 +24,13 @@ export const DEFAULT_SETTINGS: CampaignSettings = {
   diceEnabled: true,
   reorderPolicy: 'self',
   permadeath: false,
+  dmQuality: 'good',
 };
 
 export const ROUND_SECONDS_OPTIONS = [0, 60, 120, 180, 300, 600, 900, 1800];
 export const NARRATION_OPTIONS: NarrationLength[] = ['short', 'medium', 'long'];
 export const DIFFICULTY_OPTIONS: Difficulty[] = ['easy', 'normal', 'hard'];
+export const DM_QUALITY_OPTIONS: DmQuality[] = ['fast', 'good'];
 export const REORDER_OPTIONS: ReorderPolicy[] = ['owner', 'self'];
 
 export const NARRATION_LABELS: Record<NarrationLength, string> = {
@@ -37,6 +42,10 @@ export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   easy: 'ง่าย ผ่อนปรน',
   normal: 'ปกติ',
   hard: 'ยาก โหด',
+};
+export const DM_QUALITY_LABELS: Record<DmQuality, string> = {
+  fast: 'เร็ว (ประหยัด)',
+  good: 'ดี (เล่าเรื่องละเอียดกว่า อาจช้ากว่า)',
 };
 export const REORDER_LABELS: Record<ReorderPolicy, string> = {
   owner: 'เฉพาะเจ้าของโต๊ะ',
@@ -66,6 +75,9 @@ export function normalizeSettings(raw: unknown): CampaignSettings {
       ? (source.reorderPolicy as ReorderPolicy)
       : DEFAULT_SETTINGS.reorderPolicy,
     permadeath: typeof source.permadeath === 'boolean' ? source.permadeath : DEFAULT_SETTINGS.permadeath,
+    dmQuality: DM_QUALITY_OPTIONS.includes(source.dmQuality as DmQuality)
+      ? (source.dmQuality as DmQuality)
+      : DEFAULT_SETTINGS.dmQuality,
   };
 }
 
@@ -103,6 +115,10 @@ export function parseSettingsPatch(raw: unknown): Partial<CampaignSettings> | nu
       case 'permadeath':
         if (typeof value !== 'boolean') return null;
         patch.permadeath = value;
+        break;
+      case 'dmQuality':
+        if (!DM_QUALITY_OPTIONS.includes(value as DmQuality)) return null;
+        patch.dmQuality = value as DmQuality;
         break;
       default:
         return null;

@@ -5,6 +5,8 @@ import { bufferTextOrThrow, EmptyResponseError, PromptBlockedError, type GeminiC
 export const GEMINI_MODELS = {
   primary: 'gemini-3.5-flash-lite',
   fallback: 'gemini-3.1-flash-lite',
+  // Bigger non-lite model for narration when a room asks for quality (see docs/ai-models.md).
+  narrationPremium: 'gemini-3.5-flash',
 };
 
 // Two sequential calls (primary, then fallback) plus a summary must fit in the route's 60s
@@ -14,8 +16,9 @@ export const GEMINI_CALL_TIMEOUT_MS = 18_000;
 export const realGeminiDeps: GeminiClientDeps = {
   primaryModel: GEMINI_MODELS.primary,
   fallbackModel: GEMINI_MODELS.fallback,
-  streamText: async ({ model, prompt }) => {
-    const signal = AbortSignal.timeout(GEMINI_CALL_TIMEOUT_MS);
+  premiumModel: GEMINI_MODELS.narrationPremium,
+  streamText: async ({ model, prompt, timeoutMs }) => {
+    const signal = AbortSignal.timeout(timeoutMs ?? GEMINI_CALL_TIMEOUT_MS);
     const startedAt = Date.now();
     const result = streamText({
       model: google(model),

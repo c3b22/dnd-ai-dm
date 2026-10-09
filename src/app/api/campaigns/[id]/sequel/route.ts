@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceRoleClient } from '@/lib/supabase/server';
 import { SequelError, startSequel, supabaseSequelStore } from '@/lib/campaign/sequel';
+import { loadDmQuality } from '@/lib/campaign/dmQuality';
 import { generateNarration } from '@/lib/ai/geminiClient';
 import { realGeminiDeps } from '@/lib/ai/vercelAiSdkAdapter';
 
@@ -23,7 +24,7 @@ export async function POST(
       {
         store: supabaseSequelStore(supabase),
         generate: async (prompt) => {
-          const stream = await generateNarration(prompt, realGeminiDeps);
+          const stream = await generateNarration(prompt, realGeminiDeps, { purpose: 'sequel', quality: await loadDmQuality(supabase, id) });
           let text = '';
           for await (const chunk of stream) text += chunk;
           return text;

@@ -12,6 +12,8 @@ import { CAMPAIGN_ENDED_MESSAGE, isCampaignEnded } from '@/lib/campaign/campaign
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  // R4: the time budget counts from the start of this request, against maxDuration.
+  const deadlineAt = Date.now() + maxDuration * 1000;
   const { roundId } = await request.json();
   if (!roundId) {
     return NextResponse.json({ error: 'roundId is required' }, { status: 400 });
@@ -24,6 +26,8 @@ export async function POST(request: NextRequest) {
   if (roundCampaignId && (await isCampaignEnded(supabase, roundCampaignId))) {
     return NextResponse.json({ error: CAMPAIGN_ENDED_MESSAGE }, { status: 409 });
   }
+  // R5: remember if the big model was skipped or failed for the plan/narration of this round.
+  let fellBack = false;
   try {
     const result = await processRound(
       {
@@ -36,7 +40,14 @@ export async function POST(request: NextRequest) {
             .eq('status', 'processing');
         },
         repository: createSupabaseRoundRepository(supabase),
-        generateNarration: (prompt) => generateNarration(prompt, realGeminiDeps),
+        generateNarration: (prompt, call) =>
+          generateNarration(prompt, realGeminiDeps, call, {
+            deadlineAt,
+            onUsed: (info) => {
+              if (info.fellBack && (info.purpose === 'plan' || info.purpose === 'narration')) fellBack = true;
+            },
+          }),
+        usedFallback: () => fellBack,
       },
       roundId
     );

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { getUser, start } = vi.hoisted(() => ({ getUser: vi.fn(), start: vi.fn() }));
+const { getUser, start, gen, quality } = vi.hoisted(() => ({ getUser: vi.fn(), start: vi.fn(), gen: vi.fn(), quality: vi.fn() }));
 vi.mock('@/lib/supabase/server', () => ({ createServiceRoleClient: () => ({ auth: { getUser } }) }));
-vi.mock('@/lib/ai/geminiClient', () => ({ generateNarration: vi.fn() }));
+vi.mock('@/lib/ai/geminiClient', () => ({ generateNarration: gen }));
+vi.mock('@/lib/campaign/dmQuality', () => ({ loadDmQuality: quality }));
 vi.mock('@/lib/ai/vercelAiSdkAdapter', () => ({ realGeminiDeps: {} }));
 vi.mock('@/lib/campaign/sequel', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/campaign/sequel')>()),
@@ -42,6 +43,14 @@ describe('POST sequel', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ chapter: 2, adventureId: 'a2' });
     expect(start.mock.calls[0][1]).toEqual({ campaignId: 'c1', userId: 'u1' });
+  });
+
+  it.each(['fast', 'good'] as const)('asks the AI for the sequel outline with purpose sequel and the room quality %s', async (q) => {
+    quality.mockResolvedValue(q);
+    gen.mockResolvedValue((async function* () { yield 'ok'; })());
+    start.mockImplementation(async (deps) => ({ text: await deps.generate('PROMPT') }));
+    expect(await (await call('t')).json()).toEqual({ text: 'ok' });
+    expect(gen).toHaveBeenCalledWith('PROMPT', expect.anything(), { purpose: 'sequel', quality: q });
   });
 
   it('passes through the flow error status', async () => {

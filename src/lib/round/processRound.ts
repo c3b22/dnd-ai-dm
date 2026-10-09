@@ -1,3 +1,4 @@
+import type { AiCallOptions } from '@/lib/ai/geminiClient';
 import { assemblePrompt, shouldRotateSummary, type RoundAction } from './assemblePrompt';
 import type { RoundRepository } from './roundRepository';
 import { parseSceneTag } from '@/lib/scenes/scenes';
@@ -59,12 +60,18 @@ function enemyAttackEntry(o: EnemyAttackOutcome): RollSummaryEntry {
   };
 }
 
+/** R5: shown in the stats summary of a round whose DM call fell back from the big model to lite. */
+export const FALLBACK_NOTE = 'DM ตอบช้า ใช้โหมดเร็วแทนในรอบนี้';
+
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
   /** Hands a claimed round back to 'pending' so a retry doesn't wait out the stale window. */
   releaseRound?: (roundId: string) => Promise<void>;
   repository: RoundRepository;
-  generateNarration: (prompt: string) => Promise<AsyncIterable<string>>;
+  /** `call` says what the request is for and the room's quality, so the adapter can pick the model (R3). */
+  generateNarration: (prompt: string, call?: AiCallOptions) => Promise<AsyncIterable<string>>;
+  /** R5: true when a premium call of this request ended up on the lite model; noted in the round's stats summary. */
+  usedFallback?: () => boolean;
   /** Rolls one d20 (1-20). Injectable so tests are deterministic. */
   rollDie?: () => number;
   /** Rolls one die with the given number of sides (weapon and tier damage). Injectable for tests. */
@@ -100,6 +107,8 @@ export async function processRound(
   let defeatHealChanges: string[] = [];
   let corpses: Corpse[] = [];
   let diceEnabled = true;
+  // R3: the room's quality setting, read once the context is loaded; a 'fast' (or unknown) room never uses the big model.
+  let dmQuality: AiCallOptions['quality'] = 'good';
   // J3: the passed rest vote for this round (not while a fight is on) and the DM's verdict on it.
   let restRequest: { kind: 'short' | 'long' } | null = null;
   let restAnswer: RestAnswer | undefined;
@@ -139,6 +148,7 @@ export async function processRound(
     const rollDie = rollD20;
     const settings = normalizeSettings(context.settings);
     diceEnabled = settings.diceEnabled;
+    dmQuality = settings.dmQuality;
     const rollSides = deps.rollSides ?? randomDie;
     const vote = context.restVote;
     if (vote && vote.status === 'passed' && vote.roundId === roundId && !context.currentEncounter) restRequest = { kind: vote.kind };
@@ -194,13 +204,13 @@ export async function processRound(
     // Gemini sometimes refuses a prompt because of something in the chat history. Retry once without
     // it (the campaign summary and facts still carry the story) rather than leave the table stuck.
     let history = context.recentMessages;
-    const generate = async (makePrompt: () => string) => {
+    const generate = async (makePrompt: () => string, purpose: NonNullable<AiCallOptions['purpose']>) => {
       try {
-        return await deps.generateNarration(makePrompt());
+        return await deps.generateNarration(makePrompt(), { purpose, quality: dmQuality });
       } catch (error) {
         if (!(error instanceof PromptBlockedError) || history.length === 0) throw error;
         history = [];
-        return deps.generateNarration(makePrompt());
+        return deps.generateNarration(makePrompt(), { purpose, quality: dmQuality });
       }
     };
     const build = (actions: RoundAction[], planChecks = false, enemyAttackResults: EnemyAttackOutcome[] = []) =>
@@ -222,7 +232,7 @@ export async function processRound(
     if (diceEnabled && roundCharacters.length > 0) {
       // Dice tables: the first call either asks for skill checks or narrates outright. Only a
       // round with checks costs a second call; anything unusable falls back to a plain narration.
-      const first = parseCheckPlan(await collect(await generate(() => build(rolled, true))));
+      const first = parseCheckPlan(await collect(await generate(() => build(rolled, true), 'plan')));
       if (first.kind !== 'plain' && first.kind !== 'invalid') restAnswer = first.rest;
       if (first.kind === 'narration' || first.kind === 'plain') {
         stream = single(first.text);
@@ -259,10 +269,10 @@ export async function processRound(
           });
           prompt = build(rolled, false, enemyAttackOutcomes);
         }
-        stream = await generate(() => build(rolled, false, enemyAttackOutcomes));
+        stream = await generate(() => build(rolled, false, enemyAttackOutcomes), 'narration');
       }
     } else {
-      stream = await generate(() => build(rolled, false, enemyAttackOutcomes));
+      stream = await generate(() => build(rolled, false, enemyAttackOutcomes), 'narration');
     }
   } catch (error) {
     // Nothing was written yet, so it is safe to release the claim for an immediate retry.
@@ -579,6 +589,7 @@ export async function processRound(
         ...(lootResult?.changes ?? []),
         ...economy.changes,
         ...restChanges,
+        ...(deps.usedFallback?.() ? [FALLBACK_NOTE] : []),
       ]);
     } catch {
       /* the narration is already posted; the next round reads whatever state was saved */
@@ -594,7 +605,7 @@ export async function processRound(
       const summaryPrompt = `Summarize the campaign so far in under 500 words:
 
 ${prompt}`;
-      const summaryStream = await deps.generateNarration(summaryPrompt);
+      const summaryStream = await deps.generateNarration(summaryPrompt, { purpose: 'summary', quality: dmQuality });
       let summaryText = '';
       for await (const chunk of summaryStream) summaryText += chunk;
       await deps.repository.updateCampaignSummary(context.campaignId, summaryText, roundId);
@@ -608,7 +619,7 @@ ${prompt}`;
   const repo = deps.repository;
   if (epilogueInput && repo.hasEpilogue && repo.insertEpilogue) {
     await writeEpilogue(
-      { hasEpilogue: (id) => repo.hasEpilogue!(id), insertEpilogue: (id, r, c) => repo.insertEpilogue!(id, r, c), generateNarration: deps.generateNarration },
+      { hasEpilogue: (id) => repo.hasEpilogue!(id), insertEpilogue: (id, r, c) => repo.insertEpilogue!(id, r, c), generateNarration: (p) => deps.generateNarration(p, { purpose: 'epilogue', quality: dmQuality }) },
       context.campaignId,
       roundId,
       epilogueInput

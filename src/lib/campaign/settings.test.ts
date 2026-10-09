@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_SETTINGS,
+  DM_QUALITY_LABELS,
+  DM_QUALITY_OPTIONS,
   diceInstructions,
   normalizeSettings,
   parseSettingsPatch,
@@ -25,6 +27,28 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings({}).permadeath).toBe(false);
     expect(normalizeSettings({ permadeath: true }).permadeath).toBe(true);
     expect(normalizeSettings({ permadeath: 'yes' }).permadeath).toBe(false);
+  });
+});
+
+describe('dmQuality', () => {
+  it('defaults to good, including for old rooms without the value', () => {
+    expect(DEFAULT_SETTINGS.dmQuality).toBe('good');
+    expect(normalizeSettings({ permadeath: true }).dmQuality).toBe('good');
+    expect(normalizeSettings({ dmQuality: 'fast' }).dmQuality).toBe('fast');
+    expect(normalizeSettings({ dmQuality: 'ultra' }).dmQuality).toBe('good');
+  });
+
+  it('is validated in patches', () => {
+    expect(parseSettingsPatch({ dmQuality: 'fast' })).toEqual({ dmQuality: 'fast' });
+    expect(parseSettingsPatch({ dmQuality: 'good' })).toEqual({ dmQuality: 'good' });
+    expect(parseSettingsPatch({ dmQuality: 'ultra' })).toBeNull();
+    expect(parseSettingsPatch({ dmQuality: true })).toBeNull();
+  });
+
+  it('has Thai labels', () => {
+    expect(DM_QUALITY_LABELS.fast).toBe('เร็ว (ประหยัด)');
+    expect(DM_QUALITY_LABELS.good).toBe('ดี (เล่าเรื่องละเอียดกว่า อาจช้ากว่า)');
+    expect(DM_QUALITY_OPTIONS).toEqual(['fast', 'good']);
   });
 });
 
