@@ -59,6 +59,9 @@ function enemyAttackEntry(o: EnemyAttackOutcome): RollSummaryEntry {
   };
 }
 
+/** R5: shown in the stats summary of a round whose DM call fell back from the big model to lite. */
+export const FALLBACK_NOTE = 'DM ตอบช้า ใช้โหมดเร็วแทนในรอบนี้';
+
 export interface ProcessRoundDeps {
   claimRound: (roundId: string) => Promise<boolean>;
   /** Hands a claimed round back to 'pending' so a retry doesn't wait out the stale window. */
@@ -66,6 +69,8 @@ export interface ProcessRoundDeps {
   repository: RoundRepository;
   /** `call` says what the request is for and the room's quality, so the adapter can pick the model (R3). */
   generateNarration: (prompt: string, call?: AiCallOptions) => Promise<AsyncIterable<string>>;
+  /** R5: true when a premium call of this request ended up on the lite model; noted in the round's stats summary. */
+  usedFallback?: () => boolean;
   /** Rolls one d20 (1-20). Injectable so tests are deterministic. */
   rollDie?: () => number;
   /** Rolls one die with the given number of sides (weapon and tier damage). Injectable for tests. */
@@ -571,6 +576,7 @@ export async function processRound(
         ...(lootResult?.changes ?? []),
         ...economy.changes,
         ...restChanges,
+        ...(deps.usedFallback?.() ? [FALLBACK_NOTE] : []),
       ]);
     } catch {
       /* the narration is already posted; the next round reads whatever state was saved */

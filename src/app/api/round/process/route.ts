@@ -26,6 +26,8 @@ export async function POST(request: NextRequest) {
   if (roundCampaignId && (await isCampaignEnded(supabase, roundCampaignId))) {
     return NextResponse.json({ error: CAMPAIGN_ENDED_MESSAGE }, { status: 409 });
   }
+  // R5: remember if the big model was skipped or failed for the plan/narration of this round.
+  let fellBack = false;
   try {
     const result = await processRound(
       {
@@ -38,7 +40,14 @@ export async function POST(request: NextRequest) {
             .eq('status', 'processing');
         },
         repository: createSupabaseRoundRepository(supabase),
-        generateNarration: (prompt, call) => generateNarration(prompt, realGeminiDeps, call, { deadlineAt }),
+        generateNarration: (prompt, call) =>
+          generateNarration(prompt, realGeminiDeps, call, {
+            deadlineAt,
+            onUsed: (info) => {
+              if (info.fellBack && (info.purpose === 'plan' || info.purpose === 'narration')) fellBack = true;
+            },
+          }),
+        usedFallback: () => fellBack,
       },
       roundId
     );
