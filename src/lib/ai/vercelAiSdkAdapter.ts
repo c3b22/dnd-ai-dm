@@ -17,11 +17,11 @@ export const realGeminiDeps: GeminiClientDeps = {
   primaryModel: GEMINI_MODELS.primary,
   fallbackModel: GEMINI_MODELS.fallback,
   premiumModel: GEMINI_MODELS.narrationPremium,
-  streamText: async ({ model, prompt }) => {
+  streamText: async ({ model, prompt, timeoutMs }) => {
     const result = streamText({
       model: google(model),
       prompt,
-      abortSignal: AbortSignal.timeout(GEMINI_CALL_TIMEOUT_MS),
+      abortSignal: AbortSignal.timeout(timeoutMs ?? GEMINI_CALL_TIMEOUT_MS),
       // The SDK's default 2 retries back off silently; our own fallback model handles 429/5xx.
       maxRetries: 0,
     });

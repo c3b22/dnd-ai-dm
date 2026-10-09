@@ -1,5 +1,5 @@
 export interface TextStreamer {
-  (params: { model: string; prompt: string }): Promise<{
+  (params: { model: string; prompt: string; timeoutMs?: number }): Promise<{
     textStream: AsyncIterable<string>;
   }>;
 }
@@ -10,7 +10,33 @@ export interface GeminiClientDeps {
   fallbackModel: string;
   /** The bigger model used for the premium purposes when a room is set to 'good'. */
   premiumModel?: string;
+  /** Clock for the time budget (R4); tests inject one. */
+  now?: () => number;
+  /** Where the per-call model/time line goes; defaults to console.log. */
+  log?: (line: string) => void;
 }
+
+/** Time budget for one request (R4): everything must finish before `deadlineAt` (ms on the `now` clock). */
+export interface AiBudget {
+  deadlineAt: number;
+  /** Told which model actually answered and whether the big model was skipped or failed over. */
+  onUsed?: (info: AiUsedInfo) => void;
+}
+
+export interface AiUsedInfo {
+  purpose?: AiPurpose;
+  model: string;
+  elapsedMs: number;
+  /** True when a premium call ended up on a lite model (skipped for lack of time, or it failed). */
+  fellBack: boolean;
+}
+
+/** The big model gets at most this long, and must leave RESERVE_MS for the rest of the request. */
+export const PREMIUM_MAX_MS = 25_000;
+export const RESERVE_MS = 20_000;
+const LITE_MAX_MS = 18_000;
+const LITE_MIN_MS = 3_000;
+const LITE_MARGIN_MS = 2_000;
 
 /** What an AI call is for. Only the premium purposes may use the bigger model, and only in a 'good' room. */
 export type AiPurpose = 'plan' | 'narration' | 'summary' | 'epilogue' | 'sequel' | 'ask';
@@ -44,6 +70,13 @@ export function isRateLimitError(error: unknown): boolean {
   return status === 429;
 }
 
+export function isServerError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const status =
+    (error as { status?: number }).status ?? (error as { statusCode?: number }).statusCode;
+  return typeof status === 'number' && status >= 500 && status < 600;
+}
+
 /** A call that outlived its abort signal (AbortSignal.timeout throws TimeoutError). */
 export function isTimeoutError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -61,7 +94,12 @@ export class EmptyResponseError extends Error {
 
 /** Failures worth retrying once on the fallback model; anything else (bad key) would fail again. */
 export function isFallbackWorthy(error: unknown): boolean {
-  return isRateLimitError(error) || isTimeoutError(error) || error instanceof EmptyResponseError;
+  return (
+    isRateLimitError(error) ||
+    isServerError(error) ||
+    isTimeoutError(error) ||
+    error instanceof EmptyResponseError
+  );
 }
 
 /**
@@ -145,16 +183,47 @@ export async function bufferTextOrThrow(
 export async function generateNarration(
   prompt: string,
   deps: GeminiClientDeps,
-  call?: AiCallOptions
+  call?: AiCallOptions,
+  budget?: AiBudget
 ): Promise<AsyncIterable<string>> {
-  const models = modelsForCall(deps, call);
+  const now = deps.now ?? Date.now;
+  const log = deps.log ?? ((line: string) => console.log(line));
+  const started = now();
+  const intended = modelsForCall(deps, call);
+  let models = intended;
+  const bigModel = intended.length > 2 ? intended[0] : undefined;
+  let premiumTimeout: number | undefined;
+  if (bigModel && budget) {
+    premiumTimeout = Math.min(PREMIUM_MAX_MS, budget.deadlineAt - started - RESERVE_MS);
+    // Not enough time left for the big model to be worth trying: go straight to lite.
+    if (premiumTimeout <= 0) models = intended.slice(1);
+  }
   for (let i = 0; ; i++) {
+    const model = models[i];
+    let timeoutMs: number | undefined;
+    if (budget) {
+      timeoutMs =
+        model === bigModel
+          ? premiumTimeout
+          : Math.min(LITE_MAX_MS, Math.max(budget.deadlineAt - now() - LITE_MARGIN_MS, LITE_MIN_MS));
+    }
     try {
-      const result = await deps.streamText({ model: models[i], prompt });
+      const result = await deps.streamText(
+        timeoutMs === undefined ? { model, prompt } : { model, prompt, timeoutMs }
+      );
+      const info: AiUsedInfo = {
+        purpose: call?.purpose,
+        model,
+        elapsedMs: now() - started,
+        fellBack: bigModel !== undefined && model !== bigModel,
+      };
+      log(`[ai] purpose=${info.purpose ?? 'unknown'} model=${model} elapsedMs=${info.elapsedMs} fellBack=${info.fellBack}`);
+      budget?.onUsed?.(info);
       return result.textStream;
     } catch (error) {
       // Retry down the chain only for failures another model could fix, and only while a model is left.
       if (!isFallbackWorthy(error) || i === models.length - 1) throw error;
+      log(`[ai] purpose=${call?.purpose ?? 'unknown'} model=${model} failed after ${now() - started}ms, trying next`);
     }
   }
 }

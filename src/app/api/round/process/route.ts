@@ -12,6 +12,8 @@ import { CAMPAIGN_ENDED_MESSAGE, isCampaignEnded } from '@/lib/campaign/campaign
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  // R4: the time budget counts from the start of this request, against maxDuration.
+  const deadlineAt = Date.now() + maxDuration * 1000;
   const { roundId } = await request.json();
   if (!roundId) {
     return NextResponse.json({ error: 'roundId is required' }, { status: 400 });
@@ -36,7 +38,7 @@ export async function POST(request: NextRequest) {
             .eq('status', 'processing');
         },
         repository: createSupabaseRoundRepository(supabase),
-        generateNarration: (prompt, call) => generateNarration(prompt, realGeminiDeps, call),
+        generateNarration: (prompt, call) => generateNarration(prompt, realGeminiDeps, call, { deadlineAt }),
       },
       roundId
     );

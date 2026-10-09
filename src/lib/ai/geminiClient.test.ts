@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   bufferTextOrThrow,
+  EmptyResponseError,
   generateNarration,
   isRateLimitError,
   normalizeGeminiError,
@@ -249,5 +250,97 @@ describe('generateNarration model per purpose (R3)', () => {
       generateNarration('p', premiumDeps(streamText), { purpose: 'plan', quality: 'good' })
     ).rejects.toBe(err);
     expect(streamText).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('generateNarration time budget (R4)', () => {
+  const good = { purpose: 'narration', quality: 'good' } as const;
+  const setup = (streamText: ReturnType<typeof vi.fn>, clock = { t: 0 }) => ({
+    clock,
+    logs: [] as string[],
+    deps: {
+      streamText,
+      primaryModel: 'lite-1',
+      fallbackModel: 'lite-2',
+      premiumModel: 'big',
+      now: () => clock.t,
+      log: (l: string) => logs.push(l),
+    },
+  });
+  let logs: string[] = [];
+  const run = (streamText: ReturnType<typeof vi.fn>, startAt: number, clock = { t: 0 }) => {
+    clock.t = startAt;
+    logs = [];
+    const used: unknown[] = [];
+    const deps = setup(streamText, clock).deps;
+    const p = generateNarration('p', deps, good, { deadlineAt: 60_000, onUsed: (i) => used.push(i) });
+    return { p, used, clock };
+  };
+
+  it('gives the big model min(25s, remaining - 20s) and reports success', async () => {
+    const streamText = vi.fn().mockResolvedValue({ textStream: fakeStream(['x']) });
+    const { p, used } = run(streamText, 5_000);
+    await p;
+    expect(streamText).toHaveBeenCalledTimes(1);
+    expect(streamText.mock.calls[0][0]).toMatchObject({ model: 'big', timeoutMs: 25_000 });
+    expect(used).toEqual([{ purpose: 'narration', model: 'big', elapsedMs: 0, fellBack: false }]);
+    expect(logs[0]).toContain('model=big');
+    expect(logs[0]).not.toContain('p ');
+  });
+
+  it('shrinks the big model timeout when little time is left', async () => {
+    const streamText = vi.fn().mockResolvedValue({ textStream: fakeStream(['x']) });
+    await run(streamText, 30_000).p; // remaining 30s -> 10s
+    expect(streamText.mock.calls[0][0].timeoutMs).toBe(10_000);
+  });
+
+  it('skips the big model when remaining - 20s is not positive', async () => {
+    const streamText = vi.fn().mockResolvedValue({ textStream: fakeStream(['x']) });
+    const { p, used } = run(streamText, 40_000);
+    await p;
+    expect(streamText.mock.calls.map((c) => c[0].model)).toEqual(['lite-1']);
+    expect(used[0]).toMatchObject({ model: 'lite-1', fellBack: true });
+  });
+
+  it('falls back to lite when the big model times out', async () => {
+    const clock = { t: 0 };
+    const streamText = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        clock.t += 25_000;
+        throw Object.assign(new Error('t'), { name: 'TimeoutError' });
+      })
+      .mockResolvedValueOnce({ textStream: fakeStream(['x']) });
+    const { p, used } = run(streamText, 0, clock);
+    await p;
+    expect(streamText.mock.calls.map((c) => c[0].model)).toEqual(['big', 'lite-1']);
+    expect(streamText.mock.calls[1][0].timeoutMs).toBe(18_000);
+    expect(used[0]).toMatchObject({ model: 'lite-1', elapsedMs: 25_000, fellBack: true });
+  });
+
+  it.each([429, 503])('falls back to lite on a %i from the big model', async (status) => {
+    const streamText = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { status }))
+      .mockResolvedValueOnce({ textStream: fakeStream(['x']) });
+    const { p, used } = run(streamText, 0);
+    await p;
+    expect(streamText.mock.calls.map((c) => c[0].model)).toEqual(['big', 'lite-1']);
+    expect(used[0]).toMatchObject({ fellBack: true });
+  });
+
+  it('falls back when the big model answers empty or blocked', async () => {
+    const streamText = vi
+      .fn()
+      .mockRejectedValueOnce(new EmptyResponseError())
+      .mockResolvedValueOnce({ textStream: fakeStream(['x']) });
+    await run(streamText, 0).p;
+    expect(streamText.mock.calls.map((c) => c[0].model)).toEqual(['big', 'lite-1']);
+  });
+
+  it('caps lite by the time left so the round cannot hang', async () => {
+    const streamText = vi.fn().mockResolvedValue({ textStream: fakeStream(['x']) });
+    await run(streamText, 55_000).p; // big skipped; 5s left -> 3s floor
+    expect(streamText.mock.calls[0][0]).toMatchObject({ model: 'lite-1', timeoutMs: 3_000 });
   });
 });
