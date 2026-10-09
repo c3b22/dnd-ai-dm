@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { MessageList } from '@/components/MessageList';
 import { ActionInput } from '@/components/ActionInput';
 import { ASK_LIMIT, ChatPanel } from '@/components/ChatPanel';
+import { reportSeen } from '@/lib/supabase/seenClient';
 import { askDmForClient, fetchAskCount, sendTeamChat } from '@/lib/supabase/chatClient';
 import { SceneBanner } from '@/components/SceneBanner';
 import { PlayerOrder } from '@/components/PlayerOrder';
@@ -125,6 +126,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
     setProcessing(true);
     triggerRoundProcessing(currentRoundId).finally(() => setProcessing(false));
   }, []);
+
+  // S1: tell the server this player is here (on open and when a new round shows up); throttled to 1/min.
+  useEffect(() => {
+    if (!loadingCampaign && !loadError) void reportSeen(campaignId);
+  }, [campaignId, roundId, loadingCampaign, loadError]);
 
   useEffect(() => {
     supabaseBrowserClient
