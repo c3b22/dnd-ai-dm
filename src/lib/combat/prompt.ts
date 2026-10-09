@@ -1,4 +1,4 @@
-import { ENEMY_TRAIT_HINTS, ENEMY_TRAIT_IDS, HURT_PIPS, MAX_ENEMY_TRAITS, TIER_PIPS } from './constants';
+import { ENEMY_TRAIT_HINTS, ENEMY_TRAIT_IDS, HURT_PIPS, MAX_ENEMY_TRAITS, SINGLE_TRAIT_BELOW_LEVEL, TIER_PIPS } from './constants';
 import type { Encounter } from './encounter';
 
 /**
@@ -7,7 +7,7 @@ import type { Encounter } from './encounter';
  * declared in the first-call JSON ("enemyAttacks"); the [[enemy_attack]] tag only remains for dice-off tables
  * and as a server-rolled fallback when the DM narrates one anyway.
  */
-export function combatPrompt(encounter: Encounter | null, serverAttacks = false): string[] {
+export function combatPrompt(encounter: Encounter | null, serverAttacks = false, level = 1): string[] {
   const state = encounter
     ? [
         'Enemies in the current fight (the server tracks their health in pips; never state pip numbers yourself):',
@@ -21,6 +21,9 @@ export function combatPrompt(encounter: Encounter | null, serverAttacks = false)
   return [
     'Track combat with tags, each on its own line after your narration. The server keeps the enemies and their health:',
     '  [[enemy: Name | minion/normal/strong/boss | trait1, trait2]] - an enemy joins the fight (minion ' + TIER_PIPS.minion + ' pips, normal ' + TIER_PIPS.normal + ', strong ' + TIER_PIPS.strong + ', boss ' + TIER_PIPS.boss + '); the server adds pips, attack and damage as the party levels up, so do not scale enemies yourself; use a distinct name for each enemy. The traits part is optional: give an enemy 0 to ' + MAX_ENEMY_TRAITS + ' traits that fit the story (most enemies need none; do not use them all), picked ONLY from the list below, otherwise they are ignored. The server applies the effects itself:',
+    ...(level < SINGLE_TRAIT_BELOW_LEVEL
+      ? ['  The party is still low level (average level ' + level + '): give a boss at most ONE trait, and never combine armored with boss_signature; two traits are for parties of level ' + SINGLE_TRAIT_BELOW_LEVEL + ' and up.']
+      : []),
     ...ENEMY_TRAIT_IDS.map((id) => `    ${id}: ${ENEMY_TRAIT_HINTS[id]}`),
     ...(serverAttacks
       ? ['  Do not use an enemy_hurt tag: the server rolls the attacks of the players and removes the health of the enemies itself; just narrate the attack results you are given.']

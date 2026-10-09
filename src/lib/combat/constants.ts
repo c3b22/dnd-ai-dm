@@ -49,8 +49,8 @@ export const ENEMY_DAMAGE_DICE: Record<EnemyTier, DiceSpec> = {
 export const ENEMY_LEVEL_ATTACK_EVERY = 3;
 /** Q2: ... and its damage gets + floor((L-1) / this) flat (not doubled on a natural 20). */
 export const ENEMY_LEVEL_DAMAGE_EVERY = 1;
-/** Q2: ... and a new enemy starts with this many percent more pips per level above 1 (rounded; at least +0 pips). */
-export const ENEMY_LEVEL_PIP_PERCENT = 35;
+/** Q2/P20: ... and a new enemy starts with this many percent more pips per level above 1, by tier (rounded; smaller tiers grow slower so ordinary fights do not drag on). */
+export const ENEMY_LEVEL_PIP_PERCENT: Record<EnemyTier, number> = { minion: 10, normal: 15, strong: 20, boss: 35 };
 /** K3: an enemy's saving throw is d20 + this bonus against a spell's DC (nat 20 always saves, nat 1 always fails). */
 export const ENEMY_SAVE_BONUS: Record<EnemyTier, number> = { minion: 0, normal: 2, strong: 4, boss: 6 };
 /** Ward and the warrior's guard can never reduce an enemy hit below this. */
@@ -71,6 +71,8 @@ export const ENEMY_TRAIT_IDS = ['armored', 'brute', 'pack', 'venomous', 'nimble'
 export type EnemyTrait = (typeof ENEMY_TRAIT_IDS)[number];
 /** An enemy carries at most this many traits (extra ones in a tag are ignored). */
 export const MAX_ENEMY_TRAITS = 2;
+/** P20: below this average party level the prompt asks for at most one trait per enemy (armored + boss_signature bosses beat low-level parties only 9-39% of the time). */
+export const SINGLE_TRAIT_BELOW_LEVEL = 6;
 /** Thai badge shown in the enemy panel. */
 export const ENEMY_TRAIT_LABELS: Record<EnemyTrait, string> = {
   armored: 'เกราะหนา',
