@@ -26,7 +26,7 @@ export async function POST(
       { campaignId: id, userId: authData.user.id, question: body?.question },
       {
         answer: async (prompt) => {
-          const stream = await generateNarration(prompt, realGeminiDeps);
+          const stream = await generateNarration(prompt, realGeminiDeps, { purpose: 'ask', quality: 'fast' });
           let text = '';
           for await (const chunk of stream) text += chunk;
           return text;

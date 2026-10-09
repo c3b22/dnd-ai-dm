@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
             .eq('status', 'processing');
         },
         repository: createSupabaseRoundRepository(supabase),
-        generateNarration: (prompt) => generateNarration(prompt, realGeminiDeps),
+        generateNarration: (prompt, call) => generateNarration(prompt, realGeminiDeps, call),
       },
       roundId
     );

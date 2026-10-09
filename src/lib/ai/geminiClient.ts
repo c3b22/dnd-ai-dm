@@ -8,6 +8,33 @@ export interface GeminiClientDeps {
   streamText: TextStreamer;
   primaryModel: string;
   fallbackModel: string;
+  /** The bigger model used for the premium purposes when a room is set to 'good'. */
+  premiumModel?: string;
+}
+
+/** What an AI call is for. Only the premium purposes may use the bigger model, and only in a 'good' room. */
+export type AiPurpose = 'plan' | 'narration' | 'summary' | 'epilogue' | 'sequel' | 'ask';
+
+export type AiQuality = 'fast' | 'good';
+
+export interface AiCallOptions {
+  purpose: AiPurpose;
+  quality: AiQuality;
+}
+
+/** Narration, the epilogue (L3) and the sequel outline (L5) are the only calls that use the big model. */
+export const PREMIUM_PURPOSES: readonly AiPurpose[] = ['narration', 'epilogue', 'sequel'];
+
+/**
+ * The models to try, in order, for one call. Premium calls start on the big model and then follow the usual
+ * lite chain; everything else (and every 'fast' room) uses primary then fallback as before.
+ */
+export function modelsForCall(deps: GeminiClientDeps, call?: AiCallOptions): string[] {
+  const lite = [deps.primaryModel, deps.fallbackModel];
+  if (call && call.quality === 'good' && deps.premiumModel && PREMIUM_PURPOSES.includes(call.purpose)) {
+    return [deps.premiumModel, ...lite];
+  }
+  return lite;
 }
 
 export function isRateLimitError(error: unknown): boolean {
@@ -117,14 +144,17 @@ export async function bufferTextOrThrow(
 
 export async function generateNarration(
   prompt: string,
-  deps: GeminiClientDeps
+  deps: GeminiClientDeps,
+  call?: AiCallOptions
 ): Promise<AsyncIterable<string>> {
-  try {
-    const result = await deps.streamText({ model: deps.primaryModel, prompt });
-    return result.textStream;
-  } catch (error) {
-    if (!isFallbackWorthy(error)) throw error;
-    const fallbackResult = await deps.streamText({ model: deps.fallbackModel, prompt });
-    return fallbackResult.textStream;
+  const models = modelsForCall(deps, call);
+  for (let i = 0; ; i++) {
+    try {
+      const result = await deps.streamText({ model: models[i], prompt });
+      return result.textStream;
+    } catch (error) {
+      // Retry down the chain only for failures another model could fix, and only while a model is left.
+      if (!isFallbackWorthy(error) || i === models.length - 1) throw error;
+    }
   }
 }

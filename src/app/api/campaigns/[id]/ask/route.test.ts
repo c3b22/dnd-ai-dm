@@ -45,7 +45,7 @@ describe('POST campaign ask', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ answer: 'ตอบแล้ว' });
     expect(run).toHaveBeenCalledWith(expect.anything(), { campaignId: 'c1', userId: 'u1', question: 'ถาม?' }, expect.anything());
-    expect(gen).toHaveBeenCalledWith('PROMPT', expect.anything());
+    expect(gen).toHaveBeenCalledWith('PROMPT', expect.anything(), { purpose: 'ask', quality: 'fast' });
   });
 
   it('treats a malformed body as an empty question', async () => {

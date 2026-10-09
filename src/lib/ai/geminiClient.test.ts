@@ -4,6 +4,7 @@ import {
   generateNarration,
   isRateLimitError,
   normalizeGeminiError,
+  type AiPurpose,
   type NarrationStreamPart,
 } from './geminiClient';
 
@@ -193,5 +194,60 @@ describe('generateNarration fallback', () => {
     const streamText = vi.fn().mockRejectedValue(new Error('bad api key'));
     await expect(generateNarration('p', deps(streamText))).rejects.toThrow('bad api key');
     expect(streamText).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('generateNarration model per purpose (R3)', () => {
+  const premiumDeps = (streamText: ReturnType<typeof vi.fn>) => ({
+    streamText,
+    primaryModel: 'lite-1',
+    fallbackModel: 'lite-2',
+    premiumModel: 'big',
+  });
+  const ok = () => vi.fn().mockResolvedValue({ textStream: fakeStream(['x']) });
+  const modelUsed = async (purpose: AiPurpose, quality: 'fast' | 'good') => {
+    const streamText = ok();
+    await generateNarration('p', premiumDeps(streamText), { purpose, quality });
+    return streamText.mock.calls[0][0].model;
+  };
+
+  it.each(['narration', 'epilogue', 'sequel'] as const)('%s uses the big model in a good room', async (purpose) => {
+    expect(await modelUsed(purpose, 'good')).toBe('big');
+  });
+
+  it.each(['plan', 'summary', 'ask'] as const)('%s stays on lite in a good room', async (purpose) => {
+    expect(await modelUsed(purpose, 'good')).toBe('lite-1');
+  });
+
+  it.each(['plan', 'narration', 'summary', 'epilogue', 'sequel', 'ask'] as const)(
+    '%s uses lite in a fast room',
+    async (purpose) => {
+      expect(await modelUsed(purpose, 'fast')).toBe('lite-1');
+    }
+  );
+
+  it('uses lite when no purpose is given', async () => {
+    const streamText = ok();
+    await generateNarration('p', premiumDeps(streamText));
+    expect(streamText.mock.calls[0][0].model).toBe('lite-1');
+  });
+
+  it('falls back from the big model to lite, then to the second lite model', async () => {
+    const streamText = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { status: 429 }))
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { status: 429 }))
+      .mockResolvedValueOnce({ textStream: fakeStream(['x']) });
+    await generateNarration('p', premiumDeps(streamText), { purpose: 'narration', quality: 'good' });
+    expect(streamText.mock.calls.map((c) => c[0].model)).toEqual(['big', 'lite-1', 'lite-2']);
+  });
+
+  it('keeps the lite chain at two models', async () => {
+    const err = Object.assign(new Error('x'), { status: 429 });
+    const streamText = vi.fn().mockRejectedValue(err);
+    await expect(
+      generateNarration('p', premiumDeps(streamText), { purpose: 'plan', quality: 'good' })
+    ).rejects.toBe(err);
+    expect(streamText).toHaveBeenCalledTimes(2);
   });
 });
