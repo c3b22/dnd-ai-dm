@@ -270,3 +270,7 @@ where ic.column_name is null;
 - เครื่องรางคืนชีพ (F5g รอ H1) และกลไกไอเท็มที่เหลือ: ถุงเงินโชคดี, จังหวะไว, ครบชุดเป็นธีม (F5j6–F5j8), กระจายกลไกลงไอเท็ม (F5j9), แสดงในหน้ากระเป๋า (F5j10)
 - หน้าจอ UI ของงานทั้งหมดยังไม่เคยถูกตรวจด้วยตาบนเบราว์เซอร์จริง ผลที่มีคือเทสต์อัตโนมัติเท่านั้น
 - รายการของ `auto/tasks` ยังเพิ่มขึ้นอยู่ ก่อน merge ให้ดู `git log --oneline master..auto/tasks` และรันเทสต์ซ้ำอีกครั้ง
+
+## Deploy รอบใหญ่ H–Q + P20 (2026-10-09)
+
+สำรองข้อมูลที่ `dnd-ai-dm-backups/2026-10-09-predeploy` → รัน migration 0029–0033 ใน transaction เดียว (SHA-256 `0318ed5a…607c` ตรงกับไฟล์) → ตรวจคอลัมน์ใหม่ครบและจำนวนแถวเท่าเดิม (players 46, campaigns 43, rounds 260, messages 801) → `vercel deploy --prod` จาก master (`8c11e29`) สถานะ Ready alias `dnd-ai-dm-omega.vercel.app` → smoke อ่านอย่างเดียว: `/` 200, `/api/adventures/mine` 401, share code ไม่มี 404, `/icon.svg` 200 ถอยกลับ: promote deployment `dnd-ai-5neunhpsw` บน Vercel (migration เพิ่มอย่างเดียว ไม่ต้องถอย) migration 0034 (ติดตามห้องที่เข้า) ยังไม่รัน เพราะโค้ดอยู่บน `auto/tasks` เท่านั้น
