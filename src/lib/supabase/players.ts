@@ -4,6 +4,7 @@ import { abilityChoicesAvailable, effectiveMaxHp, levelForXp, type AbilityChoice
 import { normalizeAbilities, type AbilityScores } from '@/lib/character/constants';
 import { fetchCampaignInventories } from './inventory';
 import type { Inventories, InventoryItem } from '@/lib/inventory/types';
+import { channelTopic } from './channelTopic';
 
 export interface RoundPlayer {
   id: string;
@@ -136,7 +137,7 @@ export async function fetchRoundPlayers(
 
 export function subscribeToPlayers(campaignId: string, onChange: () => void): () => void {
   const channel = supabaseBrowserClient
-    .channel(`players:${campaignId}`)
+    .channel(channelTopic(`players:${campaignId}`))
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'players', filter: `campaign_id=eq.${campaignId}` },

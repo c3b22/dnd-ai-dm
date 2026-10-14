@@ -1,29 +1,27 @@
 import './globals.css';
-import { Cinzel, IBM_Plex_Sans_Thai, Noto_Serif_Thai } from 'next/font/google';
-import { Embers } from '@/components/Embers';
+import { Bai_Jamjuree, JetBrains_Mono, Taviraj } from 'next/font/google';
 import { SiteHeader } from '@/components/SiteHeader';
 
-const cinzel = Cinzel({ subsets: ['latin'], weight: ['700'], variable: '--font-cinzel', display: 'swap' });
-const plexThai = IBM_Plex_Sans_Thai({
+const taviraj = Taviraj({
   subsets: ['thai', 'latin'],
   weight: ['400', '500', '600'],
-  variable: '--font-plex-thai',
+  variable: '--font-taviraj',
   display: 'swap',
 });
-const notoSerifThai = Noto_Serif_Thai({
+const baiJamjuree = Bai_Jamjuree({
   subsets: ['thai', 'latin'],
-  weight: ['400', '600'],
-  variable: '--font-noto-serif-thai',
+  weight: ['400', '500', '600'],
+  variable: '--font-bai-jamjuree',
   display: 'swap',
 });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['500'], variable: '--font-mono', display: 'swap' });
 
 export const metadata = { title: 'D&D AI DM' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={`${cinzel.variable} ${plexThai.variable} ${notoSerifThai.variable}`}>
+    <html lang="th" className={`${taviraj.variable} ${baiJamjuree.variable} ${mono.variable}`}>
       <body>
-        <Embers />
         <div className="wrap">
           <SiteHeader />
           {children}

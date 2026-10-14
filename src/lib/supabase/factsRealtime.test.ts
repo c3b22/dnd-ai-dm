@@ -49,7 +49,7 @@ describe('subscribeToFacts', () => {
     const { client, handlers } = fakeRealtimeClient();
     const onChange = vi.fn();
     subscribeToFacts('c1', onChange, client);
-    expect(client.channel).toHaveBeenCalledWith('campaign_facts:c1');
+    expect(client.channel).toHaveBeenCalledWith(expect.stringMatching(/^campaign_facts:c1:/));
     expect(handlers[0].filter).toMatchObject({ event: '*', table: 'campaign_facts', filter: 'campaign_id=eq.c1' });
     handlers[0].cb({});
     expect(onChange).toHaveBeenCalledTimes(1);

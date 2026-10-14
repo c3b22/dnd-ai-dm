@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseBrowserClient } from './client';
 import { loadFacts } from '@/lib/memory/facts';
 import type { CampaignFact } from '@/lib/memory/types';
+import { channelTopic } from './channelTopic';
 
 // Tolerant read: a database without the campaign_facts table just means an empty log.
 export function fetchCampaignFacts(
@@ -18,7 +19,7 @@ export function subscribeToFacts(
   client: SupabaseClient = supabaseBrowserClient
 ): () => void {
   const channel = client
-    .channel(`campaign_facts:${campaignId}`)
+    .channel(channelTopic(`campaign_facts:${campaignId}`))
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'campaign_facts', filter: `campaign_id=eq.${campaignId}` },

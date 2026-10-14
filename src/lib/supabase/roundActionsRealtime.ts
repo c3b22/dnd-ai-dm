@@ -1,13 +1,14 @@
 import { supabaseBrowserClient } from './client';
 import { normalizeShop } from '@/lib/economy/shop';
 import type { ShopState } from '@/lib/economy/apply';
+import { channelTopic } from './channelTopic';
 
 export function subscribeToCurrentShop(
   campaignId: string,
   onShop: (shop: ShopState | null) => void
 ): () => void {
   const channel = supabaseBrowserClient
-    .channel(`campaign_shop:${campaignId}`)
+    .channel(channelTopic(`campaign_shop:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
@@ -24,7 +25,7 @@ export function subscribeToCurrentRound(
   onRoundChange: (roundId: string | null) => void
 ): () => void {
   const channel = supabaseBrowserClient
-    .channel(`campaigns:${campaignId}`)
+    .channel(channelTopic(`campaigns:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
@@ -42,7 +43,7 @@ export function subscribeToCurrentScene(
   onSceneChange: (sceneId: string | null) => void
 ): () => void {
   const channel = supabaseBrowserClient
-    .channel(`campaign_scene:${campaignId}`)
+    .channel(channelTopic(`campaign_scene:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
@@ -61,7 +62,7 @@ export function subscribeToCampaignStarted(
   onStartedChange: (startedAt: string | null) => void
 ): () => void {
   const channel = supabaseBrowserClient
-    .channel(`campaign_started:${campaignId}`)
+    .channel(channelTopic(`campaign_started:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },
@@ -95,7 +96,7 @@ export function subscribeToRoundActionCount(
   }
 
   const channel = supabaseBrowserClient
-    .channel(`round_actions:${roundId}`)
+    .channel(channelTopic(`round_actions:${roundId}`))
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'round_actions', filter: `round_id=eq.${roundId}` },

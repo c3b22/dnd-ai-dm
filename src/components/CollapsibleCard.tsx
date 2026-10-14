@@ -15,6 +15,8 @@ export interface CollapsibleCardProps {
    * value after mount (shop opened, enemy appeared, new trade offer). Clearing it does nothing.
    */
   signal?: string | number | null;
+  /** Which mobile tab shows this card (the table page's bottom tab bar). */
+  pane?: 'team' | 'bag';
   children: ReactNode;
 }
 
@@ -38,7 +40,7 @@ function writeStored(id: string, open: boolean): void {
 }
 
 // The wrapped child keeps its own card markup and behaviour; this only adds a header button that hides it.
-export function CollapsibleCard({ id, title, defaultOpen = true, visible = true, signal = null, children }: CollapsibleCardProps) {
+export function CollapsibleCard({ id, title, defaultOpen = true, visible = true, signal = null, pane = 'team', children }: CollapsibleCardProps) {
   // Read storage after mount so server and first client render agree.
   const [open, setOpen] = useState(defaultOpen);
   const prevSignal = useRef(signal);
@@ -65,7 +67,7 @@ export function CollapsibleCard({ id, title, defaultOpen = true, visible = true,
   }
 
   return (
-    <div className={`collapsible${open ? ' is-open' : ''}`}>
+    <div className={`collapsible${open ? ' is-open' : ''}`} data-pane={pane}>
       <button type="button" className="collapsible-toggle" aria-expanded={open} onClick={toggle}>
         <span>{title}</span>
         <span aria-hidden="true" className="collapsible-chevron">{open ? '▾' : '▸'}</span>

@@ -35,6 +35,7 @@ import {
   subscribeToCampaignSettings,
 } from '@/lib/supabase/campaignSettings';
 import { getAdventureById, type Adventure } from '@/lib/adventures/adventures';
+import { openingSceneId } from '@/lib/scenes/scenes';
 import {
   fetchRoundPlayers,
   requestAbilityChoice,
@@ -72,6 +73,7 @@ import type { Encounter } from '@/lib/combat/encounter';
 import { fetchCampaignFacts, subscribeToFacts } from '@/lib/supabase/factsRealtime';
 import type { CampaignFact } from '@/lib/memory/types';
 import { CampaignSummary } from '@/components/CampaignSummary';
+import { TableTabs, type TableTab } from '@/components/TableTabs';
 import { fetchCampaignEnd, fetchEpilogue, subscribeToCampaignEnd } from '@/lib/supabase/campaignEnd';
 import type { CampaignStats } from '@/lib/campaign/stats';
 
@@ -110,6 +112,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const [shopError, setShopError] = useState<string | null>(null);
   const [tradeError, setTradeError] = useState<string | null>(null);
   const autoProcessedRound = useRef<string | null>(null);
+  // Narrow screens show one part of the table at a time; wide screens ignore this.
+  const [mobileTab, setMobileTab] = useState<TableTab>('story');
   const [asksUsed, setAsksUsed] = useState(0);
 
   // Separate query so a database without the scene columns still loads the campaign.
@@ -564,6 +568,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
       <CampaignLobby
         campaignName={campaignName}
         adventureTitle={adventure?.titleTh}
+        adventureTagline={adventure?.taglineTh}
+        coverUrl={openingSceneId(adventure?.id) ? `/scenes/${openingSceneId(adventure?.id)}.jpg` : undefined}
         joinCode={joinCode}
         players={players}
         currentPlayerId={playerId}
@@ -574,8 +580,8 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   }
 
   return (
-    <main className="screen">
-      <div className="table-grid">
+    <main className="screen table-screen">
+      <div className="table-grid" data-tab={mobileTab}>
         {me && (
           <RailSummary
             name={me.displayName}
@@ -684,7 +690,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             <EncounterPanel encounter={encounter} />
           </CollapsibleCard>
           {me && (
-            <CollapsibleCard id="inventory" title="กระเป๋า">
+            <CollapsibleCard id="inventory" title="กระเป๋า" pane="bag">
             <Inventory
               items={me.items}
               gold={me.gold}
@@ -697,7 +703,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             />
             </CollapsibleCard>
           )}
-          <CollapsibleCard id="shop" title="ร้านค้า" visible={Boolean(!ended && shop && me)} signal={shop ? shop.name : null}>
+          <CollapsibleCard id="shop" title="ร้านค้า" pane="bag" visible={Boolean(!ended && shop && me)} signal={shop ? shop.name : null}>
             {shop && me && (
               <Shop shop={shop} items={me.items} gold={me.gold} onBuy={handleBuy} onSell={handleSell} error={shopError} />
             )}
@@ -706,6 +712,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             <CollapsibleCard
               id="trades"
               title="แลกของ"
+              pane="bag"
               defaultOpen={trades.some((t) => t.toPlayerId === me.id)}
               signal={trades.filter((t) => t.toPlayerId === me.id).length || null}
             >
@@ -763,6 +770,11 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
           )}
         </aside>
       </div>
+      <TableTabs
+        value={mobileTab}
+        onChange={setMobileTab}
+        badges={{ bag: me ? trades.filter((t) => t.toPlayerId === me.id).length : 0 }}
+      />
     </main>
   );
 }

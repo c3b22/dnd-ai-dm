@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseBrowserClient } from './client';
 import { normalizeStats, type CampaignStats } from '@/lib/campaign/stats';
 import { EPILOGUE_MARKER } from '@/lib/campaign/epilogue';
+import { channelTopic } from './channelTopic';
 
 export interface CampaignEndState {
   ended: boolean;
@@ -65,7 +66,7 @@ export function subscribeToCampaignEnd(
   client: SupabaseClient = supabaseBrowserClient
 ): () => void {
   const channel = client
-    .channel(`campaign_end:${campaignId}`)
+    .channel(channelTopic(`campaign_end:${campaignId}`))
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` }, () => onChange())
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `campaign_id=eq.${campaignId}` }, () => onChange())
     .subscribe();
