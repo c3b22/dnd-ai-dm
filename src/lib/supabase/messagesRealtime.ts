@@ -1,5 +1,6 @@
 import { supabaseBrowserClient } from './client';
 import type { Message } from '@/components/MessageList';
+import { channelTopic } from './channelTopic';
 
 export async function fetchInitialMessages(campaignId: string): Promise<Message[]> {
   const query = (columns: string) =>
@@ -22,7 +23,7 @@ export function subscribeToNewMessages(
   onMessage: (message: Message) => void
 ): () => void {
   const channel = supabaseBrowserClient
-    .channel(`messages:${campaignId}`)
+    .channel(channelTopic(`messages:${campaignId}`))
     .on(
       'postgres_changes',
       {

@@ -1,5 +1,6 @@
 import { supabaseBrowserClient } from './client';
 import type { TradeItem } from '@/lib/economy/trade';
+import { channelTopic } from './channelTopic';
 
 export interface TradeRow {
   id: string;
@@ -34,7 +35,7 @@ export async function fetchPendingTrades(campaignId: string): Promise<TradeRow[]
 
 export function subscribeToTrades(campaignId: string, onChange: () => void): () => void {
   const channel = supabaseBrowserClient
-    .channel(`trades:${campaignId}`)
+    .channel(channelTopic(`trades:${campaignId}`))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trades', filter: `campaign_id=eq.${campaignId}` }, onChange)
     .subscribe();
   return () => {

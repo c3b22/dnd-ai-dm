@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseBrowserClient } from './client';
 import { normalizeRestVote, type RestKind, type RestVote } from '@/lib/campaign/restVote';
+import { channelTopic } from './channelTopic';
 
 // Tolerant read: a database without rest_vote / short_rests_used just means "no vote" / 0 used.
 export async function fetchRestState(
@@ -41,7 +42,7 @@ export function subscribeToRestVote(
   client: SupabaseClient = supabaseBrowserClient
 ): () => void {
   const channel = client
-    .channel(`campaign_rest_vote:${campaignId}`)
+    .channel(channelTopic(`campaign_rest_vote:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },

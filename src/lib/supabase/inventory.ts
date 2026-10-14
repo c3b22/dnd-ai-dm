@@ -1,6 +1,7 @@
 import { supabaseBrowserClient } from './client';
 import { rowsToInventories, type InventoryRow } from '@/lib/inventory/rows';
 import type { Inventories } from '@/lib/inventory/types';
+import { channelTopic } from './channelTopic';
 
 export async function fetchCampaignInventories(campaignId: string): Promise<Inventories> {
   const { data, error } = await supabaseBrowserClient
@@ -13,7 +14,7 @@ export async function fetchCampaignInventories(campaignId: string): Promise<Inve
 
 export function subscribeToInventory(campaignId: string, onChange: () => void): () => void {
   const channel = supabaseBrowserClient
-    .channel(`inventory:${campaignId}`)
+    .channel(channelTopic(`inventory:${campaignId}`))
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'inventory_items', filter: `campaign_id=eq.${campaignId}` },

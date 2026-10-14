@@ -166,105 +166,132 @@ export function AdventureForm({ existing }: AdventureFormProps) {
   }
 
   return (
-    <form className="panel adventure-form" onSubmit={handleSubmit}>
-      <div className="field">
-        <label htmlFor="adv-title-th">ชื่อเรื่อง (ไทย)</label>
-        <input id="adv-title-th" value={titleTh} onChange={(e) => setTitleTh(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-title-en">ชื่อเรื่อง (อังกฤษ)</label>
-        <input id="adv-title-en" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-tagline-th">แทกไลน์ (ไทย)</label>
-        <input id="adv-tagline-th" value={taglineTh} onChange={(e) => setTaglineTh(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-tagline-en">แทกไลน์ (อังกฤษ)</label>
-        <input id="adv-tagline-en" value={tagline} onChange={(e) => setTagline(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-tone-th">อารมณ์เรื่อง (ไทย)</label>
-        <input id="adv-tone-th" value={toneTh} onChange={(e) => setToneTh(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-tone-en">อารมณ์เรื่อง (อังกฤษ)</label>
-        <input id="adv-tone-en" value={tone} onChange={(e) => setTone(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-setting">ฉาก (อังกฤษ)</label>
-        <input id="adv-setting" value={setting} onChange={(e) => setSetting(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-hook">จุดเกี่ยว (อังกฤษ)</label>
-        <input id="adv-hook" value={hook} onChange={(e) => setHook(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-opening-th">บทเปิดเรื่อง (ไทย)</label>
-        <textarea id="adv-opening-th" value={openingTh} onChange={(e) => setOpeningTh(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="adv-secret">ความลับ (อังกฤษ)</label>
-        <textarea id="adv-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
-      </div>
-
-      <fieldset className="adv-acts">
-        <legend>องก์ของเรื่อง</legend>
-        {acts.map((act, i) => (
-          <div className="field adv-act-row" key={i}>
-            <label htmlFor={`adv-act-${i}`}>{`องก์ที่ ${i + 1}`}</label>
-            <input id={`adv-act-${i}`} value={act} onChange={(e) => updateAct(i, e.target.value)} />
-            <button type="button" onClick={() => removeAct(i)}>ลบ</button>
+    <div className="editor">
+      <nav className="editor-nav" aria-label="ส่วนของเนื้อเรื่อง">
+        <a href="#adv-sec-overview">ภาพรวม</a>
+        <a href="#adv-sec-story">ฉากและบทเปิด</a>
+        <a href="#adv-sec-secret">ความลับของ DM</a>
+        <a href="#adv-sec-acts">องก์ <span>{acts.length}</span></a>
+        <a href="#adv-sec-npcs">NPC <span>{npcs.length}</span></a>
+        {scenes.length > 0 && <a href="#adv-sec-scenes">ภาพฉาก <span>{scenes.length}</span></a>}
+      </nav>
+      <form className="adventure-form" onSubmit={handleSubmit}>
+        <section id="adv-sec-overview" className="editor-sec" aria-labelledby="adv-sec-overview-h">
+          <h2 id="adv-sec-overview-h">ภาพรวม</h2>
+          <div className="editor-pair">
+            <div className="field">
+              <label htmlFor="adv-title-th">ชื่อเรื่อง (ไทย)</label>
+              <input id="adv-title-th" value={titleTh} onChange={(e) => setTitleTh(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="adv-title-en">ชื่อเรื่อง (อังกฤษ)</label>
+              <input id="adv-title-en" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </div>
           </div>
-        ))}
-        <button type="button" onClick={addAct}>+ เพิ่มองก์</button>
-      </fieldset>
-
-      <fieldset className="adv-npcs">
-        <legend>ตัวละคร NPC</legend>
-        {npcs.map((npc, i) => (
-          <div className="field adv-npc-row" key={i}>
-            <label htmlFor={`adv-npc-name-${i}`}>{`ชื่อ NPC ${i + 1}`}</label>
-            <input id={`adv-npc-name-${i}`} value={npc.name} onChange={(e) => updateNpc(i, 'name', e.target.value)} />
-            <label htmlFor={`adv-npc-role-${i}`}>{`บทบาท NPC ${i + 1}`}</label>
-            <input id={`adv-npc-role-${i}`} value={npc.role} onChange={(e) => updateNpc(i, 'role', e.target.value)} />
-            <button type="button" onClick={() => removeNpc(i)}>ลบ</button>
+          <div className="editor-pair">
+            <div className="field">
+              <label htmlFor="adv-tagline-th">แทกไลน์ (ไทย)</label>
+              <input id="adv-tagline-th" value={taglineTh} onChange={(e) => setTaglineTh(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="adv-tagline-en">แทกไลน์ (อังกฤษ)</label>
+              <input id="adv-tagline-en" value={tagline} onChange={(e) => setTagline(e.target.value)} />
+            </div>
           </div>
-        ))}
-        <button type="button" onClick={addNpc}>+ เพิ่ม NPC</button>
-      </fieldset>
+          <div className="editor-pair">
+            <div className="field">
+              <label htmlFor="adv-tone-th">อารมณ์เรื่อง (ไทย)</label>
+              <input id="adv-tone-th" value={toneTh} onChange={(e) => setToneTh(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="adv-tone-en">อารมณ์เรื่อง (อังกฤษ)</label>
+              <input id="adv-tone-en" value={tone} onChange={(e) => setTone(e.target.value)} />
+            </div>
+          </div>
+        </section>
+        <section id="adv-sec-story" className="editor-sec" aria-labelledby="adv-sec-story-h">
+          <h2 id="adv-sec-story-h">ฉากและบทเปิด</h2>
+          <div className="editor-pair">
+            <div className="field">
+              <label htmlFor="adv-setting">ฉาก (อังกฤษ)</label>
+              <input id="adv-setting" value={setting} onChange={(e) => setSetting(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="adv-hook">จุดเกี่ยว (อังกฤษ)</label>
+              <input id="adv-hook" value={hook} onChange={(e) => setHook(e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="adv-opening-th">บทเปิดเรื่อง (ไทย)</label>
+            <textarea id="adv-opening-th" value={openingTh} onChange={(e) => setOpeningTh(e.target.value)} />
+          </div>
+        </section>
+        <section id="adv-sec-secret" className="editor-sec editor-secret" aria-labelledby="adv-sec-secret-h">
+          <h2 id="adv-sec-secret-h">ความลับของ DM</h2>
+          <div className="field">
+            <label htmlFor="adv-secret">ความลับ (อังกฤษ)</label>
+            <textarea id="adv-secret" value={secret} onChange={(e) => setSecret(e.target.value)} />
+          </div>
+        </section>
 
-      {scenes.length > 0 && (
-        <fieldset className="adv-scenes">
-          <legend>ภาพประกอบแต่ละฉาก</legend>
-          {scenes.map((scene) => (
-            <div className="field" key={scene.key}>
-              <label htmlFor={`scene-image-${scene.key}`}>{scene.nameTh}</label>
-              {scene.imagePath && <img src={scene.imagePath} alt={scene.nameTh} />}
-              <input
-                id={`scene-image-${scene.key}`}
-                aria-label={scene.nameTh}
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void handleImageChange(scene.key, file);
-                }}
-              />
-              {imageErrors[scene.key] && (
-                <p role="alert" className="error">
-                  {imageErrors[scene.key]}
-                </p>
-              )}
+        <fieldset id="adv-sec-acts" className="editor-sec adv-acts">
+          <legend>องก์ของเรื่อง</legend>
+          {acts.map((act, i) => (
+            <div className="field adv-act-row" key={i}>
+              <label htmlFor={`adv-act-${i}`}>{`องก์ที่ ${i + 1}`}</label>
+              <input id={`adv-act-${i}`} value={act} onChange={(e) => updateAct(i, e.target.value)} />
+              <button type="button" className="btn ghost small" onClick={() => removeAct(i)}>ลบ</button>
             </div>
           ))}
+          <button type="button" className="btn ghost" onClick={addAct}>+ เพิ่มองก์</button>
         </fieldset>
-      )}
 
-      {error && <p className="error">{error}</p>}
-      <button type="submit" className="adv" disabled={submitting}>
-        {adventureId ? 'บันทึก' : 'สร้างเนื้อเรื่อง'}
-      </button>
-    </form>
+        <fieldset id="adv-sec-npcs" className="editor-sec adv-npcs">
+          <legend>ตัวละคร NPC</legend>
+          {npcs.map((npc, i) => (
+            <div className="field adv-npc-row" key={i}>
+              <label htmlFor={`adv-npc-name-${i}`}>{`ชื่อ NPC ${i + 1}`}</label>
+              <input id={`adv-npc-name-${i}`} value={npc.name} onChange={(e) => updateNpc(i, 'name', e.target.value)} />
+              <label htmlFor={`adv-npc-role-${i}`}>{`บทบาท NPC ${i + 1}`}</label>
+              <input id={`adv-npc-role-${i}`} value={npc.role} onChange={(e) => updateNpc(i, 'role', e.target.value)} />
+              <button type="button" className="btn ghost small" onClick={() => removeNpc(i)}>ลบ</button>
+            </div>
+          ))}
+          <button type="button" className="btn ghost" onClick={addNpc}>+ เพิ่ม NPC</button>
+        </fieldset>
+
+        {scenes.length > 0 && (
+          <fieldset id="adv-sec-scenes" className="editor-sec adv-scenes">
+            <legend>ภาพประกอบแต่ละฉาก</legend>
+            {scenes.map((scene) => (
+              <div className="field" key={scene.key}>
+                <label htmlFor={`scene-image-${scene.key}`}>{scene.nameTh}</label>
+                {scene.imagePath && <img src={scene.imagePath} alt={scene.nameTh} />}
+                <input
+                  id={`scene-image-${scene.key}`}
+                  aria-label={scene.nameTh}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleImageChange(scene.key, file);
+                  }}
+                />
+                {imageErrors[scene.key] && (
+                  <p role="alert" className="error">
+                    {imageErrors[scene.key]}
+                  </p>
+                )}
+              </div>
+            ))}
+          </fieldset>
+        )}
+
+        {error && <p className="error">{error}</p>}
+        <button type="submit" className="btn editor-save" disabled={submitting}>
+          {adventureId ? 'บันทึก' : 'สร้างเนื้อเรื่อง'}
+        </button>
+      </form>
+    </div>
   );
 }

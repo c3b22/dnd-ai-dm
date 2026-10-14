@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseBrowserClient } from './client';
 import { normalizeEncounter, type Encounter } from '@/lib/combat/encounter';
+import { channelTopic } from './channelTopic';
 
 // Tolerant read: a database without the current_encounter column just means "no encounter".
 export async function fetchEncounter(
@@ -26,7 +27,7 @@ export function subscribeToEncounter(
   client: SupabaseClient = supabaseBrowserClient
 ): () => void {
   const channel = client
-    .channel(`campaign_encounter:${campaignId}`)
+    .channel(channelTopic(`campaign_encounter:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },

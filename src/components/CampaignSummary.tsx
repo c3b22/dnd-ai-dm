@@ -56,16 +56,31 @@ export function CampaignSummary({ epilogue, stats, players, facts, onContinue }:
         <>
           <h3>สถิติ</h3>
           <ul aria-label="สถิติ" className="summary-stats">
-            <li>จำนวนรอบ {stats.rounds}</li>
             <li>
-              ศัตรูที่ล้ม {defeated} (ลูกสมุน {stats.defeated.minion} · ธรรมดา {stats.defeated.normal} · เก่ง {stats.defeated.strong} · บอส{' '}
-              {stats.defeated.boss})
+              <span>จำนวนรอบ</span> <b>{stats.rounds}</b>
             </li>
-            <li>ทองที่ได้ {stats.gold}</li>
-            <li>ไอเท็มวิเศษที่ได้ {stats.magicItems}</li>
-            <li>ล้มลง {stats.downs} ครั้ง</li>
-            <li>เสียชีวิต {stats.deaths} ครั้ง</li>
-            <li>ทอยได้ 20 เต็ม {stats.nat20} ครั้ง</li>
+            <li>
+              <span>ศัตรูที่ล้ม</span> <b>{defeated}</b>{' '}
+              <small>
+                (ลูกสมุน {stats.defeated.minion} · ธรรมดา {stats.defeated.normal} · เก่ง {stats.defeated.strong} · บอส{' '}
+                {stats.defeated.boss})
+              </small>
+            </li>
+            <li>
+              <span>ทองที่ได้</span> <b>{stats.gold}</b>
+            </li>
+            <li>
+              <span>ไอเท็มวิเศษที่ได้</span> <b>{stats.magicItems}</b>
+            </li>
+            <li>
+              <span>ล้มลง (ครั้ง)</span> <b>{stats.downs}</b>
+            </li>
+            <li>
+              <span>เสียชีวิต (ครั้ง)</span> <b>{stats.deaths}</b>
+            </li>
+            <li>
+              <span>ทอยได้ 20 เต็ม (ครั้ง)</span> <b>{stats.nat20}</b>
+            </li>
           </ul>
         </>
       )}
@@ -95,7 +110,7 @@ export function CampaignSummary({ epilogue, stats, players, facts, onContinue }:
 
       {onContinue && (
         <div className="summary-continue">
-          <button type="button" onClick={handleContinue} disabled={busy}>
+          <button type="button" className="btn" onClick={handleContinue} disabled={busy}>
             {busy ? 'DM กำลังเขียนภาคต่อ…' : 'ผจญภัยต่อ (ภาคต่อ)'}
           </button>
           {error && (

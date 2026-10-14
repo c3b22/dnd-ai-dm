@@ -1,5 +1,6 @@
 import { supabaseBrowserClient } from './client';
 import { DEFAULT_SETTINGS, normalizeSettings, type CampaignSettings } from '@/lib/campaign/settings';
+import { channelTopic } from './channelTopic';
 
 export async function fetchCampaignSettings(campaignId: string): Promise<CampaignSettings> {
   // Errors (for example a database without the settings column) mean "use the defaults".
@@ -16,7 +17,7 @@ export function subscribeToCampaignSettings(
   onChange: (settings: CampaignSettings) => void
 ): () => void {
   const channel = supabaseBrowserClient
-    .channel(`campaign_settings:${campaignId}`)
+    .channel(channelTopic(`campaign_settings:${campaignId}`))
     .on(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${campaignId}` },

@@ -6,6 +6,9 @@ import type { RoundPlayer } from '@/lib/supabase/players';
 export interface CampaignLobbyProps {
   campaignName: string;
   adventureTitle?: string;
+  adventureTagline?: string;
+  /** Opening scene art for the left half; the lobby works without it. */
+  coverUrl?: string;
   joinCode: string;
   players: RoundPlayer[];
   currentPlayerId: string;
@@ -16,6 +19,8 @@ export interface CampaignLobbyProps {
 export function CampaignLobby({
   campaignName,
   adventureTitle,
+  adventureTagline,
+  coverUrl,
   joinCode,
   players,
   currentPlayerId,
@@ -48,15 +53,20 @@ export function CampaignLobby({
   }
 
   return (
-    <main className="screen" style={{ maxWidth: 560 }}>
-      <h1 className="h-display" style={{ fontSize: 'clamp(24px, 5vw, 34px)' }}>
-        {campaignName || 'ห้องรอผจญภัย'}
-      </h1>
-      {adventureTitle && <p className="lede">{adventureTitle}</p>}
+    <main className="screen lobby">
+      <div className="lobby-cover">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {coverUrl && <img src={coverUrl} alt="" />}
+        <div className="lobby-cover-text">
+          <h1 className="h-display">{campaignName || 'ห้องรอผจญภัย'}</h1>
+          {adventureTitle && <p className="lobby-adventure">{adventureTitle}</p>}
+          {adventureTagline && <p className="lede">{adventureTagline}</p>}
+        </div>
+      </div>
 
-      <section className="panel" style={{ marginTop: 20 }}>
+      <section className="lobby-panel">
         <div>
-          <label htmlFor="join-code-value" className="lede" style={{ display: 'block', marginBottom: 6 }}>
+          <label htmlFor="join-code-value" className="lobby-label">
             รหัสห้อง — ส่งให้เพื่อนเพื่อเข้าร่วม
           </label>
           <div className="join-code-row">
@@ -69,28 +79,26 @@ export function CampaignLobby({
           </div>
         </div>
 
-        <section className="card" aria-label="ผู้เล่นที่เข้าห้องแล้ว">
-          <h3>ผู้เล่นในห้อง ({players.length})</h3>
-          <ol className="pl-list">
+        <section aria-label="ผู้เล่นที่เข้าห้องแล้ว">
+          <h3 className="lobby-label">ผู้เล่นในห้อง ({players.length})</h3>
+          <ol className="seats">
             {players.map((player) => (
-              <li key={player.id} className="pl-row">
-                <span className="av" aria-hidden="true">
-                  {player.displayName.charAt(0)}
-                </span>
-                <span className="who">
-                  <span className="nm">
-                    {player.displayName}
-                    {player.id === currentPlayerId ? ' (คุณ)' : ''}
-                    {player.isOwner ? ' · เจ้าของห้อง' : ''}
-                  </span>
-                </span>
+              <li key={player.id} className={`seat${player.isOwner ? ' owner' : ''}`}>
+                <b>
+                  {player.displayName}
+                  {player.id === currentPlayerId ? ' (คุณ)' : ''}
+                </b>
+                {player.isOwner && <small>เจ้าของห้อง</small>}
               </li>
             ))}
+            <li className="seat empty" aria-hidden="true">
+              รอเพื่อนเข้าห้อง…
+            </li>
           </ol>
         </section>
 
         {isOwner ? (
-          <button type="button" className="btn" disabled={starting} onClick={handleStart}>
+          <button type="button" className="btn lobby-start" disabled={starting} onClick={handleStart}>
             {starting ? 'กำลังเริ่ม…' : 'เริ่มเกม'}
           </button>
         ) : (
