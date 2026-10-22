@@ -166,7 +166,7 @@ export default function Home() {
           <D20Icon />
         </div>
         <div>
-          <h1 className="h-display" style={{ fontSize: 'clamp(26px, 5vw, 40px)' }}>
+          <h1 className="h-display reg" style={{ fontSize: 'clamp(30px, 5.4vw, 52px)' }}>
             เลือกการผจญภัยของคุณ
           </h1>
           <p className="lede">
