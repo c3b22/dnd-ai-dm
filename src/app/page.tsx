@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ADVENTURES } from '@/lib/adventures/adventures';
 import { openingSceneId } from '@/lib/scenes/scenes';
-import { D20Icon } from '@/components/D20Icon';
 import { MyCampaigns } from '@/components/MyCampaigns';
 import { ClassPicker } from '@/components/ClassPicker';
 import { DEFAULT_CLASS_ID } from '@/lib/character/classes';
@@ -161,61 +160,59 @@ export default function Home() {
 
   return (
     <main className="screen">
-      <div className="hero">
-        <div className="hero-die">
-          <D20Icon />
-        </div>
+      <div className="masthead">
         <div>
-          <h1 className="h-display reg" style={{ fontSize: 'clamp(30px, 5.4vw, 52px)' }}>
-            เลือกการผจญภัยของคุณ
-          </h1>
+          <h1 className="h-display">เลือกการผจญภัยของคุณ</h1>
           <p className="lede">
             DM ที่เป็น AI จะเล่าเรื่องตามโครงเรื่องที่คุณเลือก และปรับตามการตัดสินใจของผู้เล่นทุกคนในโต๊ะ
           </p>
         </div>
+        <div className="mast-actions">
+          <button type="button" className="btn ghost" onClick={rollForAdventure} disabled={rolling}>
+            ทอยเต๋าสุ่มเรื่อง
+          </button>
+          <Link href="/adventures/new" className="btn ghost">+ สร้างเนื้อเรื่องใหม่</Link>
+          <span className="num" aria-live="polite">
+            {rollText}
+          </span>
+        </div>
+      </div>
+      <div className="join-row">
+      <form
+        className="panel join-by-code"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleJoinByCode();
+        }}
+      >
+        <div className="field">
+          <label htmlFor="join-code-input">มีรหัสห้องจากเพื่อนแล้ว?</label>
+          <input
+            id="join-code-input"
+            aria-label="join code"
+            placeholder="กรอกรหัสห้อง 6 หลัก"
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            maxLength={6}
+          />
+        </div>
+        <button className="btn ghost" type="submit" disabled={!joinCode.trim() || joiningByCode}>
+          {joiningByCode ? 'กำลังค้นหา…' : 'เข้าร่วมห้อง'}
+        </button>
+        {joinError && (
+          <p role="alert" className="error">
+            {joinError}
+          </p>
+        )}
+      </form>
+        <ShareCodeEntry />
       </div>
       <MyCampaigns campaigns={myCampaigns} />
       <MyAdventures adventures={myAdventures} getAccessToken={getAccessToken} />
-      <Link href="/adventures/new" className="btn ghost">+ สร้างเนื้อเรื่องใหม่</Link>
-      <div className="roll-row">
-        <button type="button" className="btn ghost" onClick={rollForAdventure} disabled={rolling}>
-          ทอยเต๋าสุ่มเรื่อง
-        </button>
-        <span className="num" aria-live="polite">
-          {rollText}
-        </span>
-      </div>
 
       <div className="home-grid">
-        <fieldset className="adv-list">
-          <legend className="lede" style={{ marginBottom: 8 }}>
-            เนื้อเรื่อง
-          </legend>
-          {pickerItems.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              className="adv"
-              aria-pressed={adventureId === a.id}
-              onClick={() => setAdventureId(a.id)}
-            >
-              <span className="thumb">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.thumbnailUrl ?? ''} alt="" />
-              </span>
-              <span className="t">{a.titleTh}</span>
-              <span className="d">{a.taglineTh}</span>
-              {a.toneTh && (
-                <span className="chips">
-                  <span className="chip">{a.toneTh}</span>
-                </span>
-              )}
-            </button>
-          ))}
-        </fieldset>
-
-        <form
-          className="panel"
+       <form
+          className="panel quest-panel"
           onSubmit={(e) => {
             e.preventDefault();
             handleCreate();
@@ -224,6 +221,10 @@ export default function Home() {
           <div className="preview-art" key={picked.id}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={picked.thumbnailUrl ?? ''} alt={`ภาพฉากเปิดเรื่อง ${picked.titleTh}`} />
+          </div>
+          <div className="quest-head">
+            <h2 className="quest-title">{picked.titleTh}</h2>
+            {picked.toneTh && <span className="chip">{picked.toneTh}</span>}
           </div>
           {ADVENTURES.some((a) => a.id === picked.id) ? (
             <div className="preview-hook">
@@ -263,36 +264,35 @@ export default function Home() {
             </p>
           )}
         </form>
+
+        <fieldset className="adv-list">
+          <legend className="lede" style={{ marginBottom: 8 }}>
+            เนื้อเรื่อง
+          </legend>
+          {pickerItems.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className="adv"
+              aria-pressed={adventureId === a.id}
+              onClick={() => setAdventureId(a.id)}
+            >
+              <span className="thumb">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.thumbnailUrl ?? ''} alt="" />
+              </span>
+              <span className="t">{a.titleTh}</span>
+              <span className="d">{a.taglineTh}</span>
+              {a.toneTh && (
+                <span className="chips">
+                  <span className="chip">{a.toneTh}</span>
+                </span>
+              )}
+            </button>
+          ))}
+        </fieldset>
       </div>
 
-      <form
-        className="panel join-by-code"
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleJoinByCode();
-        }}
-      >
-        <div className="field">
-          <label htmlFor="join-code-input">มีรหัสห้องจากเพื่อนแล้ว?</label>
-          <input
-            id="join-code-input"
-            aria-label="join code"
-            placeholder="กรอกรหัสห้อง 6 หลัก"
-            value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            maxLength={6}
-          />
-        </div>
-        <button className="btn ghost" type="submit" disabled={!joinCode.trim() || joiningByCode}>
-          {joiningByCode ? 'กำลังค้นหา…' : 'เข้าร่วมห้อง'}
-        </button>
-        {joinError && (
-          <p role="alert" className="error">
-            {joinError}
-          </p>
-        )}
-      </form>
-      <ShareCodeEntry />
     </main>
   );
 }

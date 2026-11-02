@@ -81,6 +81,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
   const searchParams = useSearchParams();
   const playerId = searchParams.get('playerId') ?? '';
   const [roundId, setRoundId] = useState<string | null>(null);
+  const [composeMode, setComposeMode] = useState<'act' | 'talk'>('act');
   const [actionStatus, setActionStatus] = useState<{ acted: number; total: number } | null>(null);
   const [players, setPlayers] = useState<RoundPlayer[]>([]);
   const [sceneId, setSceneId] = useState<string | null>(null);
@@ -591,7 +592,7 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
             status={roundStatusText({ ended, processing, dead: me.status === 'dead', acted: me.acted, progress: actionStatus })}
           />
         )}
-        <div className="stage">
+        <div className="stage" data-compose={composeMode}>
           <div className="stage-head">
             <span className="n">{campaignName || adventure?.titleTh || 'โต๊ะเล่น'}</span>
             {adventure && <span className="round">{adventure.titleTh}</span>}
@@ -625,6 +626,16 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               onSubmit={handleRespawn}
             />
           )}
+          {!ended && roundId && me && me.status !== 'dead' && playerId && (
+            <div className="compose-tabs" role="group" aria-label="ช่องพิมพ์">
+              <button type="button" aria-pressed={composeMode === 'act'} onClick={() => setComposeMode('act')}>
+                ลงมือทำ
+              </button>
+              <button type="button" aria-pressed={composeMode === 'talk'} onClick={() => setComposeMode('talk')}>
+                คุยกับทีม / ถาม DM
+              </button>
+            </div>
+          )}
           {!ended && roundId && me?.status !== 'dead' && (
             <ActionInput
               key={roundId}
@@ -642,19 +653,6 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
                   : undefined
               }
               alreadyActed={me?.acted ?? false}
-            />
-          )}
-          {!ended && roundId && me && me.status !== 'dead' && (
-            <RestPanel
-              vote={restVote}
-              players={players}
-              currentPlayerId={playerId}
-              encounterActive={encounter !== null}
-              shortRestsUsed={shortRestsUsed}
-              isOwner={me.isOwner}
-              onPropose={(kind: RestKind) => requestRest(campaignId, 'propose', kind)}
-              onAgree={() => requestRest(campaignId, 'agree')}
-              onCancel={() => requestRest(campaignId, 'cancel')}
             />
           )}
           {!ended && playerId && (
@@ -733,6 +731,21 @@ function CampaignPageContent({ campaignId }: { campaignId: string }) {
               paused={processing}
               onExpire={() => setTimeUpRoundId(roundId)}
             />
+          )}
+          {!ended && roundId && me && me.status !== 'dead' && (
+            <CollapsibleCard id="rest" title="พัก" defaultOpen={false} signal={restVote?.status === 'open' ? 'rest-open' : null}>
+              <RestPanel
+              vote={restVote}
+              players={players}
+              currentPlayerId={playerId}
+              encounterActive={encounter !== null}
+              shortRestsUsed={shortRestsUsed}
+              isOwner={me.isOwner}
+              onPropose={(kind: RestKind) => requestRest(campaignId, 'propose', kind)}
+              onAgree={() => requestRest(campaignId, 'agree')}
+              onCancel={() => requestRest(campaignId, 'cancel')}
+            />
+            </CollapsibleCard>
           )}
           <CollapsibleCard id="settings" title="ตั้งค่าโต๊ะ" defaultOpen={false}>
             <CampaignSettingsPanel
